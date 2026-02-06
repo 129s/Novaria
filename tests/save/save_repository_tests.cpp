@@ -53,6 +53,35 @@ int main() {
     passed &= Expect(repository.SaveWorldState(expected, error), "Save should succeed.");
     passed &= Expect(error.empty(), "Save should not return error.");
 
+    std::ifstream saved_file(test_dir / "world.sav");
+    bool found_debug_section_version = false;
+    bool found_debug_section_counter = false;
+    bool found_legacy_debug_counter = false;
+    std::string saved_line;
+    while (std::getline(saved_file, saved_line)) {
+        if (saved_line == "debug_section.net.version=" +
+                std::to_string(novaria::save::kCurrentNetDebugSectionVersion)) {
+            found_debug_section_version = true;
+        }
+
+        if (saved_line.rfind("debug_section.net.session_transitions=", 0) == 0) {
+            found_debug_section_counter = true;
+        }
+
+        if (saved_line.rfind("debug_net_session_transitions=", 0) == 0) {
+            found_legacy_debug_counter = true;
+        }
+    }
+    passed &= Expect(
+        found_debug_section_version,
+        "Saved file should include debug_section.net.version.");
+    passed &= Expect(
+        found_debug_section_counter,
+        "Saved file should include versioned debug section counters.");
+    passed &= Expect(
+        !found_legacy_debug_counter,
+        "Saved file should not emit legacy flat debug_net_* counters.");
+
     novaria::save::WorldSaveState actual{};
     passed &= Expect(repository.LoadWorldState(actual, error), "Load should succeed after save.");
     passed &= Expect(error.empty(), "Load should not return error.");
@@ -112,6 +141,34 @@ int main() {
             legacy_loaded.debug_net_last_transition_reason.empty(),
         "Legacy save without debug net snapshot should default debug counters to zero.");
 
+    std::ofstream legacy_debug_file(test_dir / "world.sav", std::ios::trunc);
+    legacy_debug_file << "format_version=" << novaria::save::kCurrentWorldSaveFormatVersion << "\n";
+    legacy_debug_file << "tick_index=88\n";
+    legacy_debug_file << "local_player_id=4\n";
+    legacy_debug_file << "debug_net_session_transitions=19\n";
+    legacy_debug_file << "debug_net_timeout_disconnects=6\n";
+    legacy_debug_file << "debug_net_manual_disconnects=7\n";
+    legacy_debug_file << "debug_net_last_heartbeat_tick=2048\n";
+    legacy_debug_file << "debug_net_dropped_commands=3\n";
+    legacy_debug_file << "debug_net_dropped_remote_payloads=9\n";
+    legacy_debug_file << "debug_net_last_transition_reason=request_disconnect\n";
+    legacy_debug_file.close();
+
+    novaria::save::WorldSaveState legacy_debug_loaded{};
+    passed &= Expect(
+        repository.LoadWorldState(legacy_debug_loaded, error),
+        "Legacy flat debug_net_* save should still load.");
+    passed &= Expect(error.empty(), "Legacy debug save load should not return error.");
+    passed &= Expect(
+        legacy_debug_loaded.debug_net_session_transitions == 19 &&
+            legacy_debug_loaded.debug_net_timeout_disconnects == 6 &&
+            legacy_debug_loaded.debug_net_manual_disconnects == 7 &&
+            legacy_debug_loaded.debug_net_last_heartbeat_tick == 2048 &&
+            legacy_debug_loaded.debug_net_dropped_commands == 3 &&
+            legacy_debug_loaded.debug_net_dropped_remote_payloads == 9 &&
+            legacy_debug_loaded.debug_net_last_transition_reason == "request_disconnect",
+        "Legacy flat debug_net_* fields should map to debug snapshot state.");
+
     std::ofstream future_file(test_dir / "world.sav", std::ios::trunc);
     future_file << "format_version=" << (novaria::save::kCurrentWorldSaveFormatVersion + 1) << "\n";
     future_file << "tick_index=1\n";
@@ -124,20 +181,41 @@ int main() {
         "Future save format version should be rejected.");
     passed &= Expect(!error.empty(), "Future save rejection should include reason.");
 
+    std::ofstream future_debug_section_file(test_dir / "world.sav", std::ios::trunc);
+    future_debug_section_file << "format_version=" << novaria::save::kCurrentWorldSaveFormatVersion
+                              << "\n";
+    future_debug_section_file << "tick_index=1\n";
+    future_debug_section_file << "local_player_id=1\n";
+    future_debug_section_file
+        << "debug_section.net.version=" << (novaria::save::kCurrentNetDebugSectionVersion + 1)
+        << "\n";
+    future_debug_section_file << "debug_section.net.dropped_commands=1\n";
+    future_debug_section_file.close();
+
+    novaria::save::WorldSaveState future_debug_section_loaded{};
+    passed &= Expect(
+        !repository.LoadWorldState(future_debug_section_loaded, error),
+        "Future debug section version should be rejected.");
+    passed &= Expect(
+        !error.empty(),
+        "Future debug section rejection should include reason.");
+
     std::ofstream invalid_debug_file(test_dir / "world.sav", std::ios::trunc);
     invalid_debug_file << "format_version=" << novaria::save::kCurrentWorldSaveFormatVersion << "\n";
     invalid_debug_file << "tick_index=1\n";
     invalid_debug_file << "local_player_id=1\n";
-    invalid_debug_file << "debug_net_dropped_commands=NaN\n";
+    invalid_debug_file << "debug_section.net.version=" << novaria::save::kCurrentNetDebugSectionVersion
+                       << "\n";
+    invalid_debug_file << "debug_section.net.dropped_commands=NaN\n";
     invalid_debug_file.close();
 
     novaria::save::WorldSaveState invalid_debug_loaded{};
     passed &= Expect(
         !repository.LoadWorldState(invalid_debug_loaded, error),
-        "Invalid debug_net_* value should fail save load.");
+        "Invalid debug section value should fail save load.");
     passed &= Expect(
         !error.empty(),
-        "Invalid debug_net_* load failure should include reason.");
+        "Invalid debug section load failure should include reason.");
 
     repository.Shutdown();
     passed &= Expect(

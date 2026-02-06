@@ -7,6 +7,7 @@
 namespace novaria::save {
 
 inline constexpr std::uint32_t kCurrentWorldSaveFormatVersion = 1;
+inline constexpr std::uint32_t kCurrentNetDebugSectionVersion = 1;
 
 struct WorldSaveState final {
     std::uint32_t format_version = kCurrentWorldSaveFormatVersion;

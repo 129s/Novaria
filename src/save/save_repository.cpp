@@ -5,9 +5,26 @@
 #include <fstream>
 #include <limits>
 #include <string>
+#include <string_view>
 
 namespace novaria::save {
 namespace {
+
+constexpr std::string_view kDebugNetSectionVersionKey = "debug_section.net.version";
+constexpr std::string_view kDebugNetSessionTransitionsKey =
+    "debug_section.net.session_transitions";
+constexpr std::string_view kDebugNetTimeoutDisconnectsKey =
+    "debug_section.net.timeout_disconnects";
+constexpr std::string_view kDebugNetManualDisconnectsKey =
+    "debug_section.net.manual_disconnects";
+constexpr std::string_view kDebugNetLastHeartbeatTickKey =
+    "debug_section.net.last_heartbeat_tick";
+constexpr std::string_view kDebugNetDroppedCommandsKey =
+    "debug_section.net.dropped_commands";
+constexpr std::string_view kDebugNetDroppedRemotePayloadsKey =
+    "debug_section.net.dropped_remote_payloads";
+constexpr std::string_view kDebugNetLastTransitionReasonKey =
+    "debug_section.net.last_transition_reason";
 
 bool ParseUnsignedInteger(const std::string& text, std::uint64_t& out_value) {
     try {
@@ -21,6 +38,17 @@ bool ParseUnsignedInteger(const std::string& text, std::uint64_t& out_value) {
     } catch (...) {
         return false;
     }
+}
+
+bool ParseUInt32Value(const std::string& text, std::uint32_t& out_value) {
+    std::uint64_t parsed = 0;
+    if (!ParseUnsignedInteger(text, parsed) ||
+        parsed > std::numeric_limits<std::uint32_t>::max()) {
+        return false;
+    }
+
+    out_value = static_cast<std::uint32_t>(parsed);
+    return true;
 }
 
 }  // namespace
@@ -68,13 +96,16 @@ bool FileSaveRepository::SaveWorldState(const WorldSaveState& state, std::string
     file << "format_version=" << state.format_version << '\n';
     file << "local_player_id=" << state.local_player_id << '\n';
     file << "mod_manifest_fingerprint=" << state.mod_manifest_fingerprint << '\n';
-    file << "debug_net_session_transitions=" << state.debug_net_session_transitions << '\n';
-    file << "debug_net_timeout_disconnects=" << state.debug_net_timeout_disconnects << '\n';
-    file << "debug_net_manual_disconnects=" << state.debug_net_manual_disconnects << '\n';
-    file << "debug_net_last_heartbeat_tick=" << state.debug_net_last_heartbeat_tick << '\n';
-    file << "debug_net_dropped_commands=" << state.debug_net_dropped_commands << '\n';
-    file << "debug_net_dropped_remote_payloads=" << state.debug_net_dropped_remote_payloads << '\n';
-    file << "debug_net_last_transition_reason=" << state.debug_net_last_transition_reason << '\n';
+    file << kDebugNetSectionVersionKey << "=" << kCurrentNetDebugSectionVersion << '\n';
+    file << kDebugNetSessionTransitionsKey << "=" << state.debug_net_session_transitions << '\n';
+    file << kDebugNetTimeoutDisconnectsKey << "=" << state.debug_net_timeout_disconnects << '\n';
+    file << kDebugNetManualDisconnectsKey << "=" << state.debug_net_manual_disconnects << '\n';
+    file << kDebugNetLastHeartbeatTickKey << "=" << state.debug_net_last_heartbeat_tick << '\n';
+    file << kDebugNetDroppedCommandsKey << "=" << state.debug_net_dropped_commands << '\n';
+    file << kDebugNetDroppedRemotePayloadsKey << "="
+         << state.debug_net_dropped_remote_payloads << '\n';
+    file << kDebugNetLastTransitionReasonKey << "=" << state.debug_net_last_transition_reason
+         << '\n';
     file.close();
 
     out_error.clear();
@@ -100,6 +131,9 @@ bool FileSaveRepository::LoadWorldState(WorldSaveState& out_state, std::string& 
 
     WorldSaveState parsed_state{};
     parsed_state.format_version = 0;
+    std::uint32_t parsed_debug_net_section_version = 0;
+    bool has_debug_net_section_version = false;
+    bool has_debug_net_section_fields = false;
     std::string line;
     while (std::getline(file, line)) {
         const std::string::size_type equal_pos = line.find('=');
@@ -121,29 +155,116 @@ bool FileSaveRepository::LoadWorldState(WorldSaveState& out_state, std::string& 
         }
 
         if (key == "format_version") {
-            std::uint64_t parsed = 0;
-            if (!ParseUnsignedInteger(value, parsed) ||
-                parsed > std::numeric_limits<std::uint32_t>::max()) {
+            std::uint32_t parsed = 0;
+            if (!ParseUInt32Value(value, parsed)) {
                 out_error = "Invalid format_version value in world save file.";
                 return false;
             }
-            parsed_state.format_version = static_cast<std::uint32_t>(parsed);
+            parsed_state.format_version = parsed;
             continue;
         }
 
         if (key == "local_player_id") {
-            std::uint64_t parsed = 0;
-            if (!ParseUnsignedInteger(value, parsed) ||
-                parsed > std::numeric_limits<std::uint32_t>::max()) {
+            std::uint32_t parsed = 0;
+            if (!ParseUInt32Value(value, parsed)) {
                 out_error = "Invalid local_player_id value in world save file.";
                 return false;
             }
-            parsed_state.local_player_id = static_cast<std::uint32_t>(parsed);
+            parsed_state.local_player_id = parsed;
             continue;
         }
 
         if (key == "mod_manifest_fingerprint") {
             parsed_state.mod_manifest_fingerprint = value;
+            continue;
+        }
+
+        if (key == kDebugNetSectionVersionKey) {
+            std::uint32_t parsed = 0;
+            if (!ParseUInt32Value(value, parsed) || parsed == 0) {
+                out_error = "Invalid debug_section.net.version value in world save file.";
+                return false;
+            }
+
+            if (parsed > kCurrentNetDebugSectionVersion) {
+                out_error = "Unsupported debug section net version: " + std::to_string(parsed);
+                return false;
+            }
+
+            has_debug_net_section_version = true;
+            parsed_debug_net_section_version = parsed;
+            continue;
+        }
+
+        if (key == kDebugNetSessionTransitionsKey) {
+            std::uint64_t parsed = 0;
+            if (!ParseUnsignedInteger(value, parsed)) {
+                out_error = "Invalid debug_section.net.session_transitions value in world save file.";
+                return false;
+            }
+            parsed_state.debug_net_session_transitions = parsed;
+            has_debug_net_section_fields = true;
+            continue;
+        }
+
+        if (key == kDebugNetTimeoutDisconnectsKey) {
+            std::uint64_t parsed = 0;
+            if (!ParseUnsignedInteger(value, parsed)) {
+                out_error = "Invalid debug_section.net.timeout_disconnects value in world save file.";
+                return false;
+            }
+            parsed_state.debug_net_timeout_disconnects = parsed;
+            has_debug_net_section_fields = true;
+            continue;
+        }
+
+        if (key == kDebugNetManualDisconnectsKey) {
+            std::uint64_t parsed = 0;
+            if (!ParseUnsignedInteger(value, parsed)) {
+                out_error = "Invalid debug_section.net.manual_disconnects value in world save file.";
+                return false;
+            }
+            parsed_state.debug_net_manual_disconnects = parsed;
+            has_debug_net_section_fields = true;
+            continue;
+        }
+
+        if (key == kDebugNetLastHeartbeatTickKey) {
+            std::uint64_t parsed = 0;
+            if (!ParseUnsignedInteger(value, parsed)) {
+                out_error = "Invalid debug_section.net.last_heartbeat_tick value in world save file.";
+                return false;
+            }
+            parsed_state.debug_net_last_heartbeat_tick = parsed;
+            has_debug_net_section_fields = true;
+            continue;
+        }
+
+        if (key == kDebugNetDroppedCommandsKey) {
+            std::uint64_t parsed = 0;
+            if (!ParseUnsignedInteger(value, parsed)) {
+                out_error = "Invalid debug_section.net.dropped_commands value in world save file.";
+                return false;
+            }
+            parsed_state.debug_net_dropped_commands = parsed;
+            has_debug_net_section_fields = true;
+            continue;
+        }
+
+        if (key == kDebugNetDroppedRemotePayloadsKey) {
+            std::uint64_t parsed = 0;
+            if (!ParseUnsignedInteger(value, parsed)) {
+                out_error = "Invalid debug_section.net.dropped_remote_payloads value in world save file.";
+                return false;
+            }
+            parsed_state.debug_net_dropped_remote_payloads = parsed;
+            has_debug_net_section_fields = true;
+            continue;
+        }
+
+        if (key == kDebugNetLastTransitionReasonKey) {
+            parsed_state.debug_net_last_transition_reason = value;
+            has_debug_net_section_fields = true;
             continue;
         }
 
@@ -211,6 +332,16 @@ bool FileSaveRepository::LoadWorldState(WorldSaveState& out_state, std::string& 
             parsed_state.debug_net_last_transition_reason = value;
             continue;
         }
+    }
+
+    if (has_debug_net_section_fields && !has_debug_net_section_version) {
+        out_error = "Missing debug_section.net.version for debug section fields.";
+        return false;
+    }
+
+    if (has_debug_net_section_version && parsed_debug_net_section_version == 0) {
+        out_error = "Invalid debug_section.net.version value in world save file.";
+        return false;
     }
 
     if (parsed_state.format_version > kCurrentWorldSaveFormatVersion) {
