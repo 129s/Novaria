@@ -3,3 +3,4 @@ window_width = 1280
 window_height = 720
 vsync = true
 strict_save_mod_fingerprint = false
+script_backend = "auto"

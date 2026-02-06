@@ -22,6 +22,19 @@ const char* NetSessionStateName(net::NetSessionState state) {
     return "unknown";
 }
 
+script::ScriptBackendPreference ToScriptBackendPreference(core::ScriptBackendMode mode) {
+    switch (mode) {
+        case core::ScriptBackendMode::Auto:
+            return script::ScriptBackendPreference::Auto;
+        case core::ScriptBackendMode::Stub:
+            return script::ScriptBackendPreference::Stub;
+        case core::ScriptBackendMode::LuaJit:
+            return script::ScriptBackendPreference::LuaJit;
+    }
+
+    return script::ScriptBackendPreference::Auto;
+}
+
 }  // namespace
 
 GameApp::GameApp()
@@ -39,6 +52,12 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
         core::Logger::Error("app", "SDL3 initialization failed.");
         return false;
     }
+
+    script_host_.SetBackendPreference(ToScriptBackendPreference(config_.script_backend_mode));
+    core::Logger::Info(
+        "script",
+        "Configured script backend preference: " +
+            std::string(core::ScriptBackendModeName(config_.script_backend_mode)));
 
     std::string runtime_error;
     if (!simulation_kernel_.Initialize(runtime_error)) {

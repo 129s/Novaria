@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(NOVARIA_WARNINGS_AS_ERRORS "Treat compiler warnings as errors." OFF)
 option(NOVARIA_FETCH_SDL3 "Fetch SDL3 when local package is unavailable." OFF)
 option(NOVARIA_BUILD_TESTS "Build unit tests." ON)
+option(NOVARIA_ENABLE_LUAJIT "Enable LuaJIT backend when library is available." ON)
 
 set(NOVARIA_LOCAL_SDL3_DIR "${CMAKE_SOURCE_DIR}/third_party/SDL3-3.2.0/cmake")
 if(NOT DEFINED SDL3_DIR AND EXISTS "${NOVARIA_LOCAL_SDL3_DIR}/SDL3Config.cmake")
@@ -46,6 +47,34 @@ if(NOT NOVARIA_SDL3_TARGET)
     )
 endif()
 
+set(NOVARIA_LUAJIT_FOUND OFF)
+if(NOVARIA_ENABLE_LUAJIT)
+    find_path(
+        NOVARIA_LUAJIT_INCLUDE_DIR
+        NAMES lua.h luajit.h
+        PATH_SUFFIXES luajit-2.1 lua5.1 lua
+    )
+    find_library(
+        NOVARIA_LUAJIT_LIBRARY
+        NAMES luajit-5.1 luajit lua51
+    )
+
+    if(NOVARIA_LUAJIT_INCLUDE_DIR AND NOVARIA_LUAJIT_LIBRARY)
+        set(NOVARIA_LUAJIT_FOUND ON)
+        message(STATUS "LuaJIT found: ${NOVARIA_LUAJIT_LIBRARY}")
+    else()
+        message(STATUS "LuaJIT not found, runtime will fallback to stub backend.")
+    endif()
+endif()
+
+function(novaria_link_luajit_if_available target_name)
+    if(NOVARIA_LUAJIT_FOUND)
+        target_compile_definitions(${target_name} PRIVATE NOVARIA_WITH_LUAJIT=1)
+        target_include_directories(${target_name} PRIVATE "${NOVARIA_LUAJIT_INCLUDE_DIR}")
+        target_link_libraries(${target_name} PRIVATE "${NOVARIA_LUAJIT_LIBRARY}")
+    endif()
+endfunction()
+
 add_executable(
     novaria
     src/main.cpp
@@ -56,6 +85,8 @@ add_executable(
     src/world/world_service_basic.cpp
     src/world/snapshot_codec.cpp
     src/net/net_service_stub.cpp
+    src/script/script_host_runtime.cpp
+    src/script/lua_jit_script_host.cpp
     src/script/script_host_stub.cpp
     src/mod/mod_loader.cpp
     src/save/save_repository.cpp
@@ -65,6 +96,7 @@ add_executable(
 
 target_include_directories(novaria PRIVATE src)
 target_link_libraries(novaria PRIVATE ${NOVARIA_SDL3_TARGET})
+novaria_link_luajit_if_available(novaria)
 
 set(NOVARIA_LOCAL_SDL3_DLL "${CMAKE_SOURCE_DIR}/third_party/SDL3-3.2.0/lib/x64/SDL3.dll")
 if(EXISTS "${NOVARIA_LOCAL_SDL3_DLL}")
@@ -122,6 +154,17 @@ if(NOVARIA_BUILD_TESTS)
         src/core/logger.cpp
     )
     target_include_directories(novaria_script_host_stub_tests PRIVATE src)
+
+    add_executable(
+        novaria_script_host_runtime_tests
+        tests/script/script_host_runtime_tests.cpp
+        src/script/script_host_runtime.cpp
+        src/script/lua_jit_script_host.cpp
+        src/script/script_host_stub.cpp
+        src/core/logger.cpp
+    )
+    target_include_directories(novaria_script_host_runtime_tests PRIVATE src)
+    novaria_link_luajit_if_available(novaria_script_host_runtime_tests)
 
     add_executable(
         novaria_simulation_kernel_tests
@@ -184,6 +227,7 @@ if(NOVARIA_BUILD_TESTS)
         target_compile_options(novaria_net_service_stub_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_world_service_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_script_host_stub_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
+        target_compile_options(novaria_script_host_runtime_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_simulation_kernel_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_save_repository_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_mod_loader_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
@@ -195,6 +239,7 @@ if(NOVARIA_BUILD_TESTS)
             target_compile_options(novaria_net_service_stub_tests PRIVATE /WX)
             target_compile_options(novaria_world_service_tests PRIVATE /WX)
             target_compile_options(novaria_script_host_stub_tests PRIVATE /WX)
+            target_compile_options(novaria_script_host_runtime_tests PRIVATE /WX)
             target_compile_options(novaria_simulation_kernel_tests PRIVATE /WX)
             target_compile_options(novaria_save_repository_tests PRIVATE /WX)
             target_compile_options(novaria_mod_loader_tests PRIVATE /WX)
@@ -207,6 +252,7 @@ if(NOVARIA_BUILD_TESTS)
         target_compile_options(novaria_net_service_stub_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_world_service_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_script_host_stub_tests PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(novaria_script_host_runtime_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_simulation_kernel_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_save_repository_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_mod_loader_tests PRIVATE -Wall -Wextra -Wpedantic)
@@ -218,6 +264,7 @@ if(NOVARIA_BUILD_TESTS)
             target_compile_options(novaria_net_service_stub_tests PRIVATE -Werror)
             target_compile_options(novaria_world_service_tests PRIVATE -Werror)
             target_compile_options(novaria_script_host_stub_tests PRIVATE -Werror)
+            target_compile_options(novaria_script_host_runtime_tests PRIVATE -Werror)
             target_compile_options(novaria_simulation_kernel_tests PRIVATE -Werror)
             target_compile_options(novaria_save_repository_tests PRIVATE -Werror)
             target_compile_options(novaria_mod_loader_tests PRIVATE -Werror)
@@ -231,6 +278,7 @@ if(NOVARIA_BUILD_TESTS)
     add_test(NAME novaria_net_service_stub_tests COMMAND novaria_net_service_stub_tests)
     add_test(NAME novaria_world_service_tests COMMAND novaria_world_service_tests)
     add_test(NAME novaria_script_host_stub_tests COMMAND novaria_script_host_stub_tests)
+    add_test(NAME novaria_script_host_runtime_tests COMMAND novaria_script_host_runtime_tests)
     add_test(NAME novaria_simulation_kernel_tests COMMAND novaria_simulation_kernel_tests)
     add_test(NAME novaria_save_repository_tests COMMAND novaria_save_repository_tests)
     add_test(NAME novaria_mod_loader_tests COMMAND novaria_mod_loader_tests)

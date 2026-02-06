@@ -2,7 +2,7 @@
 
 - `status`: authoritative
 - `owner`: @novaria-core
-- `last_verified_commit`: 5ddccf3
+- `last_verified_commit`: 0b1f5c8
 - `updated`: 2026-02-06
 
 ## 1. 目标
@@ -93,8 +93,10 @@
 
 **当前实现**
 
-- `ScriptHostStub`：事件入队、上限保护、Tick 内批处理。
-- 当前未接入 LuaJIT VM，属于脚本宿主占位实现。
+- `ScriptHostRuntime`：支持 `auto/stub/luajit` 后端偏好。
+- `auto` 模式下优先尝试 `LuaJitScriptHost`，失败回退到 `ScriptHostStub`。
+- `LuaJitScriptHost` 已完成 VM 生命周期与事件回调骨架（`novaria_on_tick` / `novaria_on_event`）。
+- 当前仍未完成脚本 API 版本化与生产级脚本沙箱策略。
 
 ### 3.5 `save`
 

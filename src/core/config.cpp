@@ -49,6 +49,30 @@ bool ParseString(const std::string& value, std::string& out_value) {
     return true;
 }
 
+bool ParseScriptBackendMode(const std::string& value, ScriptBackendMode& out_mode) {
+    std::string parsed;
+    if (!ParseString(value, parsed)) {
+        return false;
+    }
+
+    if (parsed == "auto") {
+        out_mode = ScriptBackendMode::Auto;
+        return true;
+    }
+
+    if (parsed == "stub") {
+        out_mode = ScriptBackendMode::Stub;
+        return true;
+    }
+
+    if (parsed == "luajit") {
+        out_mode = ScriptBackendMode::LuaJit;
+        return true;
+    }
+
+    return false;
+}
+
 }  // namespace
 
 bool ConfigLoader::Load(
@@ -129,6 +153,16 @@ bool ConfigLoader::Load(
             }
             continue;
         }
+
+        if (key == "script_backend") {
+            if (!ParseScriptBackendMode(value, out_config.script_backend_mode)) {
+                out_error =
+                    "script_backend expects one of \"auto\"|\"stub\"|\"luajit\": line " +
+                    std::to_string(line_number);
+                return false;
+            }
+            continue;
+        }
     }
 
     if (out_config.window_width <= 0 || out_config.window_height <= 0) {
@@ -138,6 +172,19 @@ bool ConfigLoader::Load(
 
     out_error.clear();
     return true;
+}
+
+const char* ScriptBackendModeName(ScriptBackendMode mode) {
+    switch (mode) {
+        case ScriptBackendMode::Auto:
+            return "auto";
+        case ScriptBackendMode::Stub:
+            return "stub";
+        case ScriptBackendMode::LuaJit:
+            return "luajit";
+    }
+
+    return "unknown";
 }
 
 }  // namespace novaria::core

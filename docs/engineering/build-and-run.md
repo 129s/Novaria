@@ -2,7 +2,7 @@
 
 - `status`: authoritative
 - `owner`: @novaria-core
-- `last_verified_commit`: 30e0b63
+- `last_verified_commit`: 0b1f5c8
 - `updated`: 2026-02-06
 
 ## 1. 前置条件
@@ -48,6 +48,24 @@ cmake -S . -B build -DSDL3_DIR="你的SDL3Config.cmake所在目录"
 
 ```powershell
 cmake -S . -B build -DNOVARIA_FETCH_SDL3=ON
+```
+
+启用 LuaJIT 自动探测（默认开启）：
+
+```powershell
+cmake -S . -B build -DNOVARIA_ENABLE_LUAJIT=ON
+```
+
+禁用 LuaJIT 并固定走 stub：
+
+```powershell
+cmake -S . -B build -DNOVARIA_ENABLE_LUAJIT=OFF
+```
+
+运行时脚本后端配置（`config/game.toml`）：
+
+```toml
+script_backend = "auto"   # auto | stub | luajit
 ```
 
 ## 6. 调试热键（当前）

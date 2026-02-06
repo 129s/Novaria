@@ -6,7 +6,7 @@
 #include "save/save_repository.h"
 #include "sim/simulation_kernel.h"
 #include "net/net_service_stub.h"
-#include "script/script_host_stub.h"
+#include "script/script_host_runtime.h"
 #include "world/world_service_basic.h"
 
 #include <cstdint>
@@ -41,7 +41,7 @@ private:
     std::uint64_t last_net_diagnostics_tick_ = 0;
     world::WorldServiceBasic world_service_;
     net::NetServiceStub net_service_;
-    script::ScriptHostStub script_host_;
+    script::ScriptHostRuntime script_host_;
     sim::SimulationKernel simulation_kernel_;
 };
 

@@ -58,6 +58,9 @@ int main() {
     passed &= Expect(
         !missing_strict_config.strict_save_mod_fingerprint,
         "Strict fingerprint check should default to false.");
+    passed &= Expect(
+        missing_strict_config.script_backend_mode == novaria::core::ScriptBackendMode::Auto,
+        "Script backend should default to auto.");
 
     passed &= Expect(
         WriteConfigFile(
@@ -66,7 +69,8 @@ int main() {
             "window_width = 1280\n"
             "window_height = 720\n"
             "vsync = true\n"
-            "strict_save_mod_fingerprint = true\n"),
+            "strict_save_mod_fingerprint = true\n"
+            "script_backend = \"stub\"\n"),
         "Strict config file write should succeed.");
 
     novaria::core::GameConfig strict_config{};
@@ -77,6 +81,9 @@ int main() {
     passed &= Expect(
         strict_config.strict_save_mod_fingerprint,
         "Strict fingerprint check should parse as true.");
+    passed &= Expect(
+        strict_config.script_backend_mode == novaria::core::ScriptBackendMode::Stub,
+        "Script backend should parse as stub.");
 
     passed &= Expect(
         WriteConfigFile(
@@ -85,13 +92,33 @@ int main() {
             "window_width = 1280\n"
             "window_height = 720\n"
             "vsync = true\n"
-            "strict_save_mod_fingerprint = not_bool\n"),
+            "strict_save_mod_fingerprint = true\n"
+            "script_backend = \"luajit\"\n"),
+        "Invalid config file write should succeed.");
+
+    novaria::core::GameConfig luajit_config{};
+    passed &= Expect(
+        novaria::core::ConfigLoader::Load(config_path, luajit_config, error),
+        "LuaJIT script backend value should parse.");
+    passed &= Expect(
+        luajit_config.script_backend_mode == novaria::core::ScriptBackendMode::LuaJit,
+        "Script backend should parse as luajit.");
+
+    passed &= Expect(
+        WriteConfigFile(
+            config_path,
+            "window_title = \"CfgTestInvalid\"\n"
+            "window_width = 1280\n"
+            "window_height = 720\n"
+            "vsync = true\n"
+            "strict_save_mod_fingerprint = true\n"
+            "script_backend = \"invalid\"\n"),
         "Invalid config file write should succeed.");
 
     novaria::core::GameConfig invalid_config{};
     passed &= Expect(
         !novaria::core::ConfigLoader::Load(config_path, invalid_config, error),
-        "Invalid strict fingerprint value should fail config load.");
+        "Invalid script backend value should fail config load.");
     passed &= Expect(!error.empty(), "Invalid config load should provide error.");
 
     std::filesystem::remove_all(test_dir, ec);
