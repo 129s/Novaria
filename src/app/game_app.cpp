@@ -143,6 +143,24 @@ int GameApp::Run() {
                 });
             }
 
+            if (frame_actions_.debug_net_disconnect) {
+                net_service_.RequestDisconnect();
+                core::Logger::Warn("net", "Debug action: request disconnect.");
+            }
+
+            if (frame_actions_.debug_net_connect) {
+                net_service_.RequestConnect();
+                core::Logger::Info("net", "Debug action: request connect.");
+            }
+
+            if (frame_actions_.debug_net_heartbeat) {
+                net_service_.NotifyHeartbeatReceived(simulation_kernel_.CurrentTick());
+                core::Logger::Info(
+                    "net",
+                    "Debug action: heartbeat received at tick " +
+                        std::to_string(simulation_kernel_.CurrentTick()) + ".");
+            }
+
             return !quit_requested_;
         },
         [this](double fixed_delta_seconds) { simulation_kernel_.Update(fixed_delta_seconds); },

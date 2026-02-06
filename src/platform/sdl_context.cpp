@@ -71,7 +71,9 @@ bool SdlContext::Initialize(const core::GameConfig& config) {
 }
 
 bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
+#if !defined(SDL_EVENT_KEY_DOWN)
     (void)out_actions;
+#endif
 
     SDL_Event event{};
     while (SDL_PollEvent(&event)) {
@@ -108,6 +110,24 @@ bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
 #if defined(SDL_SCANCODE_F3)
             if (event.key.scancode == SDL_SCANCODE_F3) {
                 out_actions.debug_set_tile_stone = true;
+            }
+#endif
+
+#if defined(SDL_SCANCODE_F4)
+            if (event.key.scancode == SDL_SCANCODE_F4) {
+                out_actions.debug_net_disconnect = true;
+            }
+#endif
+
+#if defined(SDL_SCANCODE_F5)
+            if (event.key.scancode == SDL_SCANCODE_F5) {
+                out_actions.debug_net_heartbeat = true;
+            }
+#endif
+
+#if defined(SDL_SCANCODE_F6)
+            if (event.key.scancode == SDL_SCANCODE_F6) {
+                out_actions.debug_net_connect = true;
             }
 #endif
         }
