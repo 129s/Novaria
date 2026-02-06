@@ -67,6 +67,7 @@
   - `SaveWorldState/LoadWorldState`
 - 当前实现：`save::FileSaveRepository`
   - 启动读取 `saves/world.sav`
+  - 存档字段包含 `format_version`，支持旧档（缺失版本字段）兼容与前向版本拒绝
   - 退出写回当前 Tick、本地玩家编号与模组清单指纹
 
 ## `mod`

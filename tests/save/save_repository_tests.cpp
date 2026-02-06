@@ -38,6 +38,7 @@ int main() {
     passed &= Expect(!error.empty(), "Load without file should return a reason.");
 
     const novaria::save::WorldSaveState expected{
+        .format_version = novaria::save::kCurrentWorldSaveFormatVersion,
         .tick_index = 12345,
         .local_player_id = 9,
         .mod_manifest_fingerprint = "mods:v1:abc123",
@@ -49,6 +50,9 @@ int main() {
     passed &= Expect(repository.LoadWorldState(actual, error), "Load should succeed after save.");
     passed &= Expect(error.empty(), "Load should not return error.");
     passed &= Expect(actual.tick_index == expected.tick_index, "Loaded tick should match saved value.");
+    passed &= Expect(
+        actual.format_version == expected.format_version,
+        "Loaded format version should match saved value.");
     passed &= Expect(
         actual.local_player_id == expected.local_player_id,
         "Loaded local player id should match saved value.");
@@ -64,11 +68,24 @@ int main() {
     novaria::save::WorldSaveState legacy_loaded{};
     passed &= Expect(repository.LoadWorldState(legacy_loaded, error), "Legacy save format should still load.");
     passed &= Expect(error.empty(), "Legacy save load should not return error.");
+    passed &= Expect(legacy_loaded.format_version == 0, "Legacy save format version should default to 0.");
     passed &= Expect(legacy_loaded.tick_index == 77, "Legacy loaded tick should match.");
     passed &= Expect(legacy_loaded.local_player_id == 5, "Legacy loaded player id should match.");
     passed &= Expect(
         legacy_loaded.mod_manifest_fingerprint.empty(),
         "Legacy save without fingerprint should default to empty fingerprint.");
+
+    std::ofstream future_file(test_dir / "world.sav", std::ios::trunc);
+    future_file << "format_version=" << (novaria::save::kCurrentWorldSaveFormatVersion + 1) << "\n";
+    future_file << "tick_index=1\n";
+    future_file << "local_player_id=1\n";
+    future_file.close();
+
+    novaria::save::WorldSaveState future_loaded{};
+    passed &= Expect(
+        !repository.LoadWorldState(future_loaded, error),
+        "Future save format version should be rejected.");
+    passed &= Expect(!error.empty(), "Future save rejection should include reason.");
 
     repository.Shutdown();
     passed &= Expect(

@@ -65,6 +65,7 @@ bool FileSaveRepository::SaveWorldState(const WorldSaveState& state, std::string
     }
 
     file << "tick_index=" << state.tick_index << '\n';
+    file << "format_version=" << state.format_version << '\n';
     file << "local_player_id=" << state.local_player_id << '\n';
     file << "mod_manifest_fingerprint=" << state.mod_manifest_fingerprint << '\n';
     file.close();
@@ -91,6 +92,7 @@ bool FileSaveRepository::LoadWorldState(WorldSaveState& out_state, std::string& 
     }
 
     WorldSaveState parsed_state{};
+    parsed_state.format_version = 0;
     std::string line;
     while (std::getline(file, line)) {
         const std::string::size_type equal_pos = line.find('=');
@@ -111,6 +113,17 @@ bool FileSaveRepository::LoadWorldState(WorldSaveState& out_state, std::string& 
             continue;
         }
 
+        if (key == "format_version") {
+            std::uint64_t parsed = 0;
+            if (!ParseUnsignedInteger(value, parsed) ||
+                parsed > std::numeric_limits<std::uint32_t>::max()) {
+                out_error = "Invalid format_version value in world save file.";
+                return false;
+            }
+            parsed_state.format_version = static_cast<std::uint32_t>(parsed);
+            continue;
+        }
+
         if (key == "local_player_id") {
             std::uint64_t parsed = 0;
             if (!ParseUnsignedInteger(value, parsed) ||
@@ -126,6 +139,12 @@ bool FileSaveRepository::LoadWorldState(WorldSaveState& out_state, std::string& 
             parsed_state.mod_manifest_fingerprint = value;
             continue;
         }
+    }
+
+    if (parsed_state.format_version > kCurrentWorldSaveFormatVersion) {
+        out_error =
+            "Unsupported world save format version: " + std::to_string(parsed_state.format_version);
+        return false;
     }
 
     out_state = parsed_state;

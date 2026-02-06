@@ -43,7 +43,8 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
             local_player_id_ = loaded_save_state.local_player_id == 0 ? 1 : loaded_save_state.local_player_id;
             core::Logger::Info(
                 "save",
-                "Loaded world save: tick=" + std::to_string(loaded_save_state.tick_index) +
+                "Loaded world save: version=" + std::to_string(loaded_save_state.format_version) +
+                    ", tick=" + std::to_string(loaded_save_state.tick_index) +
                     ", player=" + std::to_string(local_player_id_));
         } else {
             core::Logger::Warn("save", "World save load skipped: " + save_error);

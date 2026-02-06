@@ -6,7 +6,10 @@
 
 namespace novaria::save {
 
+inline constexpr std::uint32_t kCurrentWorldSaveFormatVersion = 1;
+
 struct WorldSaveState final {
+    std::uint32_t format_version = kCurrentWorldSaveFormatVersion;
     std::uint64_t tick_index = 0;
     std::uint32_t local_player_id = 0;
     std::string mod_manifest_fingerprint;
