@@ -64,6 +64,15 @@ cmake -S . -B build -DNOVARIA_ENABLE_LUAJIT=ON
 script_backend = "luajit"
 ```
 
+模组脚本入口配置（`mods/<mod_name>/mod.toml`，可选）：
+
+```toml
+script_entry = "content/scripts/main.lua"
+script_api_version = "0.1.0"
+```
+
+说明：`script_api_version` 与运行时 API 不一致会在初始化阶段 fail-fast。
+
 运行时网络后端配置（`config/game.toml`）：
 
 ```toml

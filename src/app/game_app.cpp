@@ -4,7 +4,10 @@
 #include "core/logger.h"
 #include "sim/command_schema.h"
 
+#include <fstream>
+#include <iterator>
 #include <string>
+#include <vector>
 
 namespace novaria::app {
 namespace {
@@ -38,6 +41,80 @@ net::NetBackendPreference ToNetBackendPreference(core::NetBackendMode mode) {
     }
 
     return net::NetBackendPreference::UdpLoopback;
+}
+
+bool ReadTextFile(
+    const std::filesystem::path& file_path,
+    std::string& out_text,
+    std::string& out_error) {
+    std::ifstream file(file_path, std::ios::binary);
+    if (!file.is_open()) {
+        out_error = "cannot open file: " + file_path.string();
+        return false;
+    }
+
+    out_text.assign(
+        std::istreambuf_iterator<char>(file),
+        std::istreambuf_iterator<char>());
+    out_error.clear();
+    return true;
+}
+
+bool IsSafeRelativePath(const std::filesystem::path& path) {
+    if (path.empty() || path.is_absolute()) {
+        return false;
+    }
+
+    for (const auto& part : path) {
+        if (part == "..") {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool BuildModScriptModules(
+    const std::vector<mod::ModManifest>& manifests,
+    std::vector<script::ScriptModuleSource>& out_modules,
+    std::string& out_error) {
+    out_modules.clear();
+    for (const auto& manifest : manifests) {
+        if (manifest.script_entry.empty()) {
+            continue;
+        }
+
+        const std::filesystem::path script_entry_path =
+            std::filesystem::path(manifest.script_entry).lexically_normal();
+        if (!IsSafeRelativePath(script_entry_path)) {
+            out_error =
+                "Invalid script entry path in mod '" + manifest.name +
+                "': " + manifest.script_entry;
+            return false;
+        }
+
+        const std::filesystem::path module_file_path =
+            (manifest.root_path / script_entry_path).lexically_normal();
+        std::string module_source;
+        if (!ReadTextFile(module_file_path, module_source, out_error)) {
+            out_error =
+                "Failed to load script entry for mod '" + manifest.name +
+                "': " + out_error;
+            return false;
+        }
+
+        out_modules.push_back(script::ScriptModuleSource{
+            .module_name = manifest.name,
+            .api_version =
+                manifest.script_api_version.empty()
+                    ? std::string(script::kScriptApiVersion)
+                    : manifest.script_api_version,
+            .source_code = std::move(module_source),
+        });
+    }
+
+    out_error.clear();
+    return true;
 }
 
 }  // namespace
@@ -181,6 +258,28 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
                 ", recipes=" + std::to_string(recipe_definition_count) +
                 ", npcs=" + std::to_string(npc_definition_count));
         core::Logger::Info("mod", "Manifest fingerprint: " + mod_manifest_fingerprint_);
+    }
+
+    std::vector<script::ScriptModuleSource> script_modules;
+    if (!BuildModScriptModules(loaded_mods_, script_modules, runtime_error)) {
+        core::Logger::Error("script", "Build mod script modules failed: " + runtime_error);
+        mod_manifest_fingerprint_.clear();
+        loaded_mods_.clear();
+        mod_loader_.Shutdown();
+        save_repository_.Shutdown();
+        simulation_kernel_.Shutdown();
+        sdl_context_.Shutdown();
+        return false;
+    }
+    if (!script_host_.SetScriptModules(std::move(script_modules), runtime_error)) {
+        core::Logger::Error("script", "Load mod script modules failed: " + runtime_error);
+        mod_manifest_fingerprint_.clear();
+        loaded_mods_.clear();
+        mod_loader_.Shutdown();
+        save_repository_.Shutdown();
+        simulation_kernel_.Shutdown();
+        sdl_context_.Shutdown();
+        return false;
     }
 
     if (has_loaded_save_state && !loaded_save_state.mod_manifest_fingerprint.empty() &&

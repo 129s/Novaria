@@ -42,9 +42,38 @@ std::string ReadLuaError(lua_State* lua_state) {
     lua_pop(lua_state, 1);
     return output;
 }
+
+void ClearGlobal(lua_State* lua_state, const char* global_name) {
+    lua_pushnil(lua_state);
+    lua_setglobal(lua_state, global_name);
+}
 #endif
 
 }  // namespace
+
+bool LuaJitScriptHost::LoadScriptModules(
+    const std::vector<ScriptModuleSource>& module_sources,
+    std::string& out_error) {
+#if !defined(NOVARIA_WITH_LUAJIT)
+    (void)module_sources;
+    out_error = "LuaJIT support is disabled at build time.";
+    return false;
+#else
+    if (!initialized_ || lua_state_ == nullptr) {
+        out_error = "LuaJIT script host is not initialized.";
+        return false;
+    }
+
+    for (const auto& module_source : module_sources) {
+        if (!LoadModuleScript(module_source, out_error)) {
+            return false;
+        }
+    }
+
+    out_error.clear();
+    return true;
+#endif
+}
 
 bool LuaJitScriptHost::Initialize(std::string& out_error) {
     pending_events_.clear();
@@ -65,6 +94,12 @@ bool LuaJitScriptHost::Initialize(std::string& out_error) {
     }
 
     luaL_openlibs(lua_state_);
+    if (!ApplyMvpSandbox(out_error)) {
+        lua_close(lua_state_);
+        lua_state_ = nullptr;
+        initialized_ = false;
+        return false;
+    }
     if (!LoadBootstrapScript(out_error)) {
         lua_close(lua_state_);
         lua_state_ = nullptr;
@@ -140,7 +175,7 @@ ScriptRuntimeDescriptor LuaJitScriptHost::RuntimeDescriptor() const {
     return ScriptRuntimeDescriptor{
         .backend_name = "luajit",
         .api_version = kScriptApiVersion,
-        .sandbox_enabled = false,
+        .sandbox_enabled = true,
     };
 }
 
@@ -158,6 +193,31 @@ std::size_t LuaJitScriptHost::TotalProcessedEventCount() const {
 
 std::size_t LuaJitScriptHost::DroppedEventCount() const {
     return dropped_event_count_;
+}
+
+bool LuaJitScriptHost::ApplyMvpSandbox(std::string& out_error) {
+#if !defined(NOVARIA_WITH_LUAJIT)
+    (void)out_error;
+    return false;
+#else
+    if (lua_state_ == nullptr) {
+        out_error = "Lua state is null.";
+        return false;
+    }
+
+    ClearGlobal(lua_state_, "io");
+    ClearGlobal(lua_state_, "os");
+    ClearGlobal(lua_state_, "debug");
+    ClearGlobal(lua_state_, "package");
+    ClearGlobal(lua_state_, "dofile");
+    ClearGlobal(lua_state_, "loadfile");
+    ClearGlobal(lua_state_, "load");
+    ClearGlobal(lua_state_, "require");
+    ClearGlobal(lua_state_, "collectgarbage");
+
+    out_error.clear();
+    return true;
+#endif
 }
 
 bool LuaJitScriptHost::LoadBootstrapScript(std::string& out_error) {
@@ -184,6 +244,45 @@ bool LuaJitScriptHost::LoadBootstrapScript(std::string& out_error) {
     const int run_status = lua_pcall(lua_state_, 0, 0, 0);
     if (run_status != LUA_OK) {
         out_error = "Failed to run bootstrap script: " + ReadLuaError(lua_state_);
+        return false;
+    }
+
+    out_error.clear();
+    return true;
+#endif
+}
+
+bool LuaJitScriptHost::LoadModuleScript(
+    const ScriptModuleSource& module_source,
+    std::string& out_error) {
+#if !defined(NOVARIA_WITH_LUAJIT)
+    (void)module_source;
+    (void)out_error;
+    return false;
+#else
+    if (lua_state_ == nullptr) {
+        out_error = "Lua state is null.";
+        return false;
+    }
+
+    const int load_status = luaL_loadbufferx(
+        lua_state_,
+        module_source.source_code.c_str(),
+        module_source.source_code.size(),
+        module_source.module_name.c_str(),
+        nullptr);
+    if (load_status != LUA_OK) {
+        out_error =
+            "Failed to compile module '" + module_source.module_name + "': " +
+            ReadLuaError(lua_state_);
+        return false;
+    }
+
+    const int run_status = lua_pcall(lua_state_, 0, 0, 0);
+    if (run_status != LUA_OK) {
+        out_error =
+            "Failed to run module '" + module_source.module_name + "': " +
+            ReadLuaError(lua_state_);
         return false;
     }
 

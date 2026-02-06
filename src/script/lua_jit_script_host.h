@@ -13,6 +13,10 @@ class LuaJitScriptHost final : public IScriptHost {
 public:
     static constexpr std::size_t kMaxPendingEvents = 1024;
 
+    bool LoadScriptModules(
+        const std::vector<ScriptModuleSource>& module_sources,
+        std::string& out_error);
+
     bool Initialize(std::string& out_error) override;
     void Shutdown() override;
     void Tick(const sim::TickContext& tick_context) override;
@@ -25,7 +29,11 @@ public:
     std::size_t DroppedEventCount() const;
 
 private:
+    bool ApplyMvpSandbox(std::string& out_error);
     bool LoadBootstrapScript(std::string& out_error);
+    bool LoadModuleScript(
+        const ScriptModuleSource& module_source,
+        std::string& out_error);
     bool InvokeTickHandler(const sim::TickContext& tick_context, std::string& out_error);
     bool InvokeEventHandler(const ScriptEvent& event_data, std::string& out_error);
 

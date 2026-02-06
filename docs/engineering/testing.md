@@ -64,4 +64,4 @@ ctest --test-dir build -C Debug --output-on-failure -R novaria_mvp_acceptance_te
 ## 5. 当前限制
 
 - 联机稳定性验证当前基于 `NetServiceUdpLoopback`，仍不是跨主机实网端到端压力测试。
-- 脚本层已接入 `ScriptHostRuntime` + `LuaJitScriptHost` 骨架，但尚未完成生产级 API 与安全策略。
+- 脚本层已接入 `ScriptHostRuntime` + `LuaJitScriptHost` 与模组脚本装载链路，当前为 MVP 最小沙箱，尚未完成生产级资源隔离策略。

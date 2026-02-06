@@ -43,7 +43,9 @@ bool TestLoadAllAndFingerprint() {
         "name = \"mod_ok_a\"\n"
         "version = \"0.1.0\"\n"
         "description = \"A valid test mod\"\n"
-        "dependencies = []\n");
+        "dependencies = []\n"
+        "script_entry = \"content/scripts/core.lua\"\n"
+        "script_api_version = \"0.1.0\"\n");
     WriteTextFile(
         test_root / "mod_ok_a" / "content" / "items.csv",
         "wood_pickaxe,tool.mine_speed+1\n");
@@ -81,6 +83,10 @@ bool TestLoadAllAndFingerprint() {
     passed &= Expect(
         manifests[1].npcs.size() == 1 && manifests[1].npcs[0].behavior == "boss.jump_charge",
         "Mod content loader should parse npc definitions.");
+    passed &= Expect(
+        manifests[0].script_entry == "content/scripts/core.lua" &&
+            manifests[0].script_api_version == "0.1.0",
+        "Mod manifest should parse optional script metadata.");
 
     const std::string fingerprint_a = novaria::mod::ModLoader::BuildManifestFingerprint(manifests);
     passed &= Expect(!fingerprint_a.empty(), "Manifest fingerprint should not be empty.");
@@ -111,6 +117,13 @@ bool TestLoadAllAndFingerprint() {
     passed &= Expect(
         fingerprint_e != fingerprint_a,
         "Manifest fingerprint should change when mod content definitions change.");
+
+    reordered[0].npcs[0].behavior = manifests[1].npcs[0].behavior;
+    reordered[0].script_api_version = "9.9.9";
+    const std::string fingerprint_f = novaria::mod::ModLoader::BuildManifestFingerprint(reordered);
+    passed &= Expect(
+        fingerprint_f != fingerprint_a,
+        "Manifest fingerprint should change when script metadata changes.");
 
     loader.Shutdown();
     std::filesystem::remove_all(test_root, ec);

@@ -2,6 +2,9 @@
 
 #include "core/logger.h"
 
+#include <unordered_set>
+#include <utility>
+
 namespace novaria::script {
 
 const char* ScriptBackendKindName(ScriptBackendKind backend_kind) {
@@ -31,6 +34,51 @@ void ScriptHostRuntime::SetBackendPreference(ScriptBackendPreference preference)
 
     Shutdown();
     backend_preference_ = preference;
+}
+
+bool ScriptHostRuntime::SetScriptModules(
+    std::vector<ScriptModuleSource> module_sources,
+    std::string& out_error) {
+    std::unordered_set<std::string> unique_module_names;
+    unique_module_names.reserve(module_sources.size());
+    for (auto& module_source : module_sources) {
+        if (module_source.module_name.empty()) {
+            out_error = "Script module name cannot be empty.";
+            return false;
+        }
+
+        if (!unique_module_names.emplace(module_source.module_name).second) {
+            out_error = "Duplicate script module name: " + module_source.module_name;
+            return false;
+        }
+
+        if (module_source.source_code.empty()) {
+            out_error =
+                "Script module source cannot be empty: " + module_source.module_name;
+            return false;
+        }
+
+        if (module_source.api_version.empty()) {
+            module_source.api_version = kScriptApiVersion;
+        }
+
+        if (module_source.api_version != kScriptApiVersion) {
+            out_error =
+                "Script module API version mismatch: module=" + module_source.module_name +
+                ", required=" + module_source.api_version +
+                ", runtime=" + std::string(kScriptApiVersion);
+            return false;
+        }
+    }
+
+    if (active_backend_ == ScriptBackendKind::LuaJit &&
+        !lua_jit_host_.LoadScriptModules(module_sources, out_error)) {
+        return false;
+    }
+
+    module_sources_ = std::move(module_sources);
+    out_error.clear();
+    return true;
 }
 
 ScriptBackendPreference ScriptHostRuntime::BackendPreference() const {
@@ -98,6 +146,14 @@ ScriptRuntimeDescriptor ScriptHostRuntime::RuntimeDescriptor() const {
 
 bool ScriptHostRuntime::InitializeWithLuaJit(std::string& out_error) {
     if (!lua_jit_host_.Initialize(out_error)) {
+        active_host_ = nullptr;
+        active_backend_ = ScriptBackendKind::None;
+        return false;
+    }
+
+    if (!module_sources_.empty() &&
+        !lua_jit_host_.LoadScriptModules(module_sources_, out_error)) {
+        lua_jit_host_.Shutdown();
         active_host_ = nullptr;
         active_backend_ = ScriptBackendKind::None;
         return false;

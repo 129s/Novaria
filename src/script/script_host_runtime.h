@@ -4,6 +4,7 @@
 #include "script/script_host.h"
 
 #include <string>
+#include <vector>
 
 namespace novaria::script {
 
@@ -22,6 +23,9 @@ const char* ScriptBackendPreferenceName(ScriptBackendPreference preference);
 class ScriptHostRuntime final : public IScriptHost {
 public:
     void SetBackendPreference(ScriptBackendPreference preference);
+    bool SetScriptModules(
+        std::vector<ScriptModuleSource> module_sources,
+        std::string& out_error);
     ScriptBackendPreference BackendPreference() const;
     ScriptBackendKind ActiveBackend() const;
     const std::string& LastBackendError() const;
@@ -39,6 +43,7 @@ private:
     ScriptBackendKind active_backend_ = ScriptBackendKind::None;
     IScriptHost* active_host_ = nullptr;
     std::string last_backend_error_;
+    std::vector<ScriptModuleSource> module_sources_;
     LuaJitScriptHost lua_jit_host_;
 };
 

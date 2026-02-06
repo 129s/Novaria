@@ -13,6 +13,12 @@ struct ScriptEvent final {
     std::string payload;
 };
 
+struct ScriptModuleSource final {
+    std::string module_name;
+    std::string api_version = kScriptApiVersion;
+    std::string source_code;
+};
+
 struct ScriptRuntimeDescriptor final {
     std::string backend_name = "unknown";
     std::string api_version = kScriptApiVersion;

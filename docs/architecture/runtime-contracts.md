@@ -98,8 +98,10 @@
 
 - `ScriptHostRuntime`：固定走 `luajit` 后端（无 stub/无自动回退）。
 - `LuaJitScriptHost` 已完成 VM 生命周期与事件回调骨架（`novaria_on_tick` / `novaria_on_event`）。
+- `LuaJitScriptHost` 已启用 MVP 最小沙箱（禁用 `io/os/debug/package/dofile/loadfile/load/require/collectgarbage`）。
 - `IScriptHost::RuntimeDescriptor` 已统一暴露 `backend/api_version/sandbox` 元信息（当前 API 版本 `0.1.0`）。
-- 当前仍未完成生产级脚本沙箱策略与内容脚本正式装载链路。
+- 已支持按模组清单字段 `script_entry/script_api_version` 装载内容脚本并进行 API 版本 fail-fast 校验。
+- 当前仍未完成生产级脚本沙箱策略（资源配额、隔离等级等）。
 
 ### 3.5 `save`
 
@@ -134,7 +136,8 @@
   - `content/items.csv`
   - `content/recipes.csv`
   - `content/npcs.csv`
-- 指纹已纳入依赖与内容定义，支持联机一致性校验。
+- 可选解析脚本入口元信息：`script_entry`、`script_api_version`（用于脚本运行时装载与一致性校验）。
+- 指纹已纳入依赖、内容定义与脚本元信息，支持联机一致性校验。
 
 ## 4. 输入映射（调试）
 

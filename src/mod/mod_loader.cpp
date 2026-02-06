@@ -161,7 +161,10 @@ std::string ModLoader::BuildManifestFingerprint(const std::vector<ModManifest>& 
         std::sort(normalized_npcs.begin(), normalized_npcs.end());
 
         std::string canonical_entry =
-            manifest.name + "|" + manifest.version + "|" + manifest.description + "|deps=";
+            manifest.name + "|" + manifest.version + "|" + manifest.description +
+            "|script_entry=" + manifest.script_entry +
+            "|script_api_version=" + manifest.script_api_version +
+            "|deps=";
         for (std::size_t dependency_index = 0;
              dependency_index < normalized_dependencies.size();
              ++dependency_index) {
@@ -514,6 +517,22 @@ bool ModLoader::ParseManifestFile(
         if (key == "dependencies") {
             if (!ParseQuotedStringArray(value, out_manifest.dependencies)) {
                 out_error = "dependencies must be quoted string array";
+                return false;
+            }
+            continue;
+        }
+
+        if (key == "script_entry") {
+            if (!ParseQuotedString(value, out_manifest.script_entry)) {
+                out_error = "script_entry must be quoted string";
+                return false;
+            }
+            continue;
+        }
+
+        if (key == "script_api_version") {
+            if (!ParseQuotedString(value, out_manifest.script_api_version)) {
+                out_error = "script_api_version must be quoted string";
                 return false;
             }
             continue;
