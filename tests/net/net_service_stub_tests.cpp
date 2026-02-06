@@ -37,10 +37,29 @@ int main() {
         "Dropped remote payload count should start at zero.");
     passed &= Expect(net_service.ConnectRequestCount() == 0, "Connect request count should start at zero.");
     passed &= Expect(net_service.TimeoutDisconnectCount() == 0, "Timeout disconnect count should start at zero.");
+    passed &= Expect(net_service.SessionTransitionCount() == 0, "Session transition count should start at zero.");
+    passed &= Expect(
+        net_service.ConnectedTransitionCount() == 0,
+        "Connected transition count should start at zero.");
+    passed &= Expect(net_service.ManualDisconnectCount() == 0, "Manual disconnect count should start at zero.");
+    passed &= Expect(net_service.IgnoredHeartbeatCount() == 0, "Ignored heartbeat count should start at zero.");
+    passed &= Expect(
+        net_service.DroppedCommandDisconnectedCount() == 0,
+        "Dropped disconnected command count should start at zero.");
+    passed &= Expect(
+        net_service.DroppedCommandQueueFullCount() == 0,
+        "Dropped queue-full command count should start at zero.");
+    passed &= Expect(
+        net_service.DroppedRemoteChunkPayloadDisconnectedCount() == 0,
+        "Dropped disconnected remote payload count should start at zero.");
+    passed &= Expect(
+        net_service.DroppedRemoteChunkPayloadQueueFullCount() == 0,
+        "Dropped queue-full remote payload count should start at zero.");
     passed &= Expect(
         net_service.LastPublishedSnapshotTick() == std::numeric_limits<std::uint64_t>::max(),
         "Last snapshot tick should be sentinel before first publish.");
 
+    net_service.NotifyHeartbeatReceived(0);
     net_service.SubmitLocalCommand({.player_id = 1, .command_type = "offline", .payload = ""});
     net_service.EnqueueRemoteChunkPayload("offline_payload");
     passed &= Expect(
@@ -55,12 +74,20 @@ int main() {
     passed &= Expect(
         net_service.DroppedRemoteChunkPayloadCount() == 1,
         "Disconnected payload enqueue should increase dropped remote payload count.");
+    passed &= Expect(net_service.IgnoredHeartbeatCount() == 1, "Disconnected heartbeat should be counted as ignored.");
+    passed &= Expect(
+        net_service.DroppedCommandDisconnectedCount() == 1,
+        "Disconnected command drop reason counter should increase.");
+    passed &= Expect(
+        net_service.DroppedRemoteChunkPayloadDisconnectedCount() == 1,
+        "Disconnected remote payload drop reason counter should increase.");
 
     net_service.RequestConnect();
     passed &= Expect(
         net_service.SessionState() == novaria::net::NetSessionState::Connecting,
         "RequestConnect should move session to connecting state.");
     passed &= Expect(net_service.ConnectRequestCount() == 1, "Connect request count should increment.");
+    passed &= Expect(net_service.SessionTransitionCount() == 1, "Session transition count should track connect request.");
 
     net_service.SubmitLocalCommand({.player_id = 7, .command_type = "move", .payload = "right"});
     net_service.SubmitLocalCommand({.player_id = 8, .command_type = "jump", .payload = ""});
@@ -71,6 +98,9 @@ int main() {
         net_service.SessionState() == novaria::net::NetSessionState::Connected,
         "Tick should advance connecting session to connected.");
     passed &= Expect(net_service.LastHeartbeatTick() == 1, "Connected tick should set heartbeat baseline.");
+    passed &= Expect(
+        net_service.ConnectedTransitionCount() == 1,
+        "Connected transition count should increment after connect completion.");
     passed &= Expect(net_service.PendingCommandCount() == 0, "Queue should be drained after tick.");
     passed &= Expect(net_service.TotalProcessedCommandCount() == 2, "Processed command count should increase.");
 
@@ -103,6 +133,9 @@ int main() {
         net_service.SessionState() == novaria::net::NetSessionState::Disconnected,
         "Session should disconnect after heartbeat timeout.");
     passed &= Expect(net_service.TimeoutDisconnectCount() == 1, "Heartbeat timeout should increment counter.");
+    passed &= Expect(
+        net_service.SessionTransitionCount() == 3,
+        "Session transition count should include connect and timeout transitions.");
 
     net_service.RequestConnect();
     passed &= Expect(
@@ -124,6 +157,10 @@ int main() {
     passed &= Expect(
         net_service.SessionState() == novaria::net::NetSessionState::Disconnected,
         "RequestDisconnect should move session to disconnected state.");
+    passed &= Expect(net_service.ManualDisconnectCount() == 1, "Manual disconnect count should increment.");
+    passed &= Expect(
+        net_service.SessionTransitionCount() == 6,
+        "Session transition count should include reconnect and manual disconnect transitions.");
     net_service.EnqueueRemoteChunkPayload("after_disconnect_payload");
     passed &= Expect(
         net_service.PendingRemoteChunkPayloadCount() == 0,
@@ -136,6 +173,11 @@ int main() {
         "Commands submitted after shutdown should be ignored.");
 
     passed &= Expect(net_service.Initialize(error), "Reinitialize should succeed.");
+    passed &= Expect(net_service.SessionTransitionCount() == 0, "Reinitialize should reset transition count.");
+    passed &= Expect(net_service.DroppedCommandCount() == 0, "Reinitialize should reset dropped command count.");
+    passed &= Expect(
+        net_service.DroppedRemoteChunkPayloadCount() == 0,
+        "Reinitialize should reset dropped remote payload count.");
     net_service.RequestConnect();
     net_service.Tick({.tick_index = 1, .fixed_delta_seconds = 1.0 / 60.0});
     for (std::size_t index = 0; index < novaria::net::NetServiceStub::kMaxPendingCommands + 8; ++index) {
@@ -145,6 +187,9 @@ int main() {
         net_service.PendingCommandCount() == novaria::net::NetServiceStub::kMaxPendingCommands,
         "Pending commands should be clamped to max capacity.");
     passed &= Expect(net_service.DroppedCommandCount() == 8, "Dropped command count should track overflow.");
+    passed &= Expect(
+        net_service.DroppedCommandQueueFullCount() == 8,
+        "Queue-full command drop reason counter should track overflow.");
 
     for (std::size_t index = 0;
          index < novaria::net::NetServiceStub::kMaxPendingRemoteChunkPayloads + 5;
@@ -158,6 +203,9 @@ int main() {
     passed &= Expect(
         net_service.DroppedRemoteChunkPayloadCount() == 5,
         "Dropped remote payload count should track overflow.");
+    passed &= Expect(
+        net_service.DroppedRemoteChunkPayloadQueueFullCount() == 5,
+        "Queue-full remote payload drop reason counter should track overflow.");
 
     auto remote_payloads = net_service.ConsumeRemoteChunkPayloads();
     passed &= Expect(

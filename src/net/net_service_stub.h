@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <string_view>
 #include <vector>
 
 namespace novaria::net {
@@ -37,6 +38,14 @@ public:
     std::uint64_t ConnectRequestCount() const;
     std::uint64_t TimeoutDisconnectCount() const;
     std::uint64_t LastHeartbeatTick() const;
+    std::uint64_t SessionTransitionCount() const;
+    std::uint64_t ConnectedTransitionCount() const;
+    std::uint64_t ManualDisconnectCount() const;
+    std::uint64_t IgnoredHeartbeatCount() const;
+    std::size_t DroppedCommandDisconnectedCount() const;
+    std::size_t DroppedCommandQueueFullCount() const;
+    std::size_t DroppedRemoteChunkPayloadDisconnectedCount() const;
+    std::size_t DroppedRemoteChunkPayloadQueueFullCount() const;
     std::uint64_t LastPublishedSnapshotTick() const;
     std::size_t LastPublishedDirtyChunkCount() const;
     std::uint64_t SnapshotPublishCount() const;
@@ -44,6 +53,7 @@ public:
 
 private:
     static constexpr std::uint64_t kInvalidTick = std::numeric_limits<std::uint64_t>::max();
+    void TransitionSessionState(NetSessionState next_state, std::string_view reason);
 
     bool initialized_ = false;
     NetSessionState session_state_ = NetSessionState::Disconnected;
@@ -52,8 +62,16 @@ private:
     std::size_t total_processed_command_count_ = 0;
     std::size_t dropped_command_count_ = 0;
     std::size_t dropped_remote_chunk_payload_count_ = 0;
+    std::size_t dropped_command_disconnected_count_ = 0;
+    std::size_t dropped_command_queue_full_count_ = 0;
+    std::size_t dropped_remote_chunk_payload_disconnected_count_ = 0;
+    std::size_t dropped_remote_chunk_payload_queue_full_count_ = 0;
     std::uint64_t connect_request_count_ = 0;
     std::uint64_t timeout_disconnect_count_ = 0;
+    std::uint64_t session_transition_count_ = 0;
+    std::uint64_t connected_transition_count_ = 0;
+    std::uint64_t manual_disconnect_count_ = 0;
+    std::uint64_t ignored_heartbeat_count_ = 0;
     std::uint64_t last_heartbeat_tick_ = kInvalidTick;
     std::uint64_t last_published_snapshot_tick_ = std::numeric_limits<std::uint64_t>::max();
     std::size_t last_published_dirty_chunk_count_ = 0;

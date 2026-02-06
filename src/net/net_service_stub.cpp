@@ -2,9 +2,48 @@
 
 #include "core/logger.h"
 
+#include <string>
 #include <utility>
 
 namespace novaria::net {
+namespace {
+
+const char* SessionStateName(NetSessionState state) {
+    switch (state) {
+        case NetSessionState::Disconnected:
+            return "disconnected";
+        case NetSessionState::Connecting:
+            return "connecting";
+        case NetSessionState::Connected:
+            return "connected";
+    }
+
+    return "unknown";
+}
+
+}  // namespace
+
+void NetServiceStub::TransitionSessionState(
+    NetSessionState next_state,
+    std::string_view reason) {
+    if (session_state_ == next_state) {
+        return;
+    }
+
+    const NetSessionState previous_state = session_state_;
+    session_state_ = next_state;
+    ++session_transition_count_;
+    if (next_state == NetSessionState::Connected) {
+        ++connected_transition_count_;
+    }
+
+    core::Logger::Info(
+        "net",
+        "Session transition: " +
+            std::string(SessionStateName(previous_state)) +
+            " -> " + std::string(SessionStateName(next_state)) +
+            " (" + std::string(reason) + ").");
+}
 
 bool NetServiceStub::Initialize(std::string& out_error) {
     session_state_ = NetSessionState::Disconnected;
@@ -13,8 +52,16 @@ bool NetServiceStub::Initialize(std::string& out_error) {
     total_processed_command_count_ = 0;
     dropped_command_count_ = 0;
     dropped_remote_chunk_payload_count_ = 0;
+    dropped_command_disconnected_count_ = 0;
+    dropped_command_queue_full_count_ = 0;
+    dropped_remote_chunk_payload_disconnected_count_ = 0;
+    dropped_remote_chunk_payload_queue_full_count_ = 0;
     connect_request_count_ = 0;
     timeout_disconnect_count_ = 0;
+    session_transition_count_ = 0;
+    connected_transition_count_ = 0;
+    manual_disconnect_count_ = 0;
+    ignored_heartbeat_count_ = 0;
     last_heartbeat_tick_ = kInvalidTick;
     last_published_snapshot_tick_ = std::numeric_limits<std::uint64_t>::max();
     last_published_dirty_chunk_count_ = 0;
@@ -31,7 +78,7 @@ void NetServiceStub::Shutdown() {
         return;
     }
 
-    session_state_ = NetSessionState::Disconnected;
+    TransitionSessionState(NetSessionState::Disconnected, "shutdown");
     pending_commands_.clear();
     pending_remote_chunk_payloads_.clear();
     last_published_encoded_chunks_.clear();
@@ -49,7 +96,7 @@ void NetServiceStub::RequestConnect() {
         return;
     }
 
-    session_state_ = NetSessionState::Connecting;
+    TransitionSessionState(NetSessionState::Connecting, "request_connect");
     ++connect_request_count_;
 }
 
@@ -62,7 +109,8 @@ void NetServiceStub::RequestDisconnect() {
         return;
     }
 
-    session_state_ = NetSessionState::Disconnected;
+    ++manual_disconnect_count_;
+    TransitionSessionState(NetSessionState::Disconnected, "request_disconnect");
     pending_commands_.clear();
     pending_remote_chunk_payloads_.clear();
     last_heartbeat_tick_ = kInvalidTick;
@@ -74,6 +122,7 @@ void NetServiceStub::NotifyHeartbeatReceived(std::uint64_t tick_index) {
     }
 
     if (session_state_ != NetSessionState::Connected) {
+        ++ignored_heartbeat_count_;
         return;
     }
 
@@ -90,12 +139,12 @@ void NetServiceStub::Tick(const sim::TickContext& tick_context) {
     }
 
     if (session_state_ == NetSessionState::Connecting) {
-        session_state_ = NetSessionState::Connected;
+        TransitionSessionState(NetSessionState::Connected, "tick_connect_complete");
         last_heartbeat_tick_ = tick_context.tick_index;
     } else if (session_state_ == NetSessionState::Connected &&
                last_heartbeat_tick_ != kInvalidTick &&
                tick_context.tick_index > last_heartbeat_tick_ + kHeartbeatTimeoutTicks) {
-        session_state_ = NetSessionState::Disconnected;
+        TransitionSessionState(NetSessionState::Disconnected, "heartbeat_timeout");
         pending_commands_.clear();
         pending_remote_chunk_payloads_.clear();
         last_heartbeat_tick_ = kInvalidTick;
@@ -113,11 +162,13 @@ void NetServiceStub::SubmitLocalCommand(const PlayerCommand& command) {
 
     if (session_state_ == NetSessionState::Disconnected) {
         ++dropped_command_count_;
+        ++dropped_command_disconnected_count_;
         return;
     }
 
     if (pending_commands_.size() >= kMaxPendingCommands) {
         ++dropped_command_count_;
+        ++dropped_command_queue_full_count_;
         return;
     }
 
@@ -156,11 +207,13 @@ void NetServiceStub::EnqueueRemoteChunkPayload(std::string payload) {
     }
     if (session_state_ != NetSessionState::Connected) {
         ++dropped_remote_chunk_payload_count_;
+        ++dropped_remote_chunk_payload_disconnected_count_;
         return;
     }
 
     if (pending_remote_chunk_payloads_.size() >= kMaxPendingRemoteChunkPayloads) {
         ++dropped_remote_chunk_payload_count_;
+        ++dropped_remote_chunk_payload_queue_full_count_;
         return;
     }
 
@@ -197,6 +250,38 @@ std::uint64_t NetServiceStub::TimeoutDisconnectCount() const {
 
 std::uint64_t NetServiceStub::LastHeartbeatTick() const {
     return last_heartbeat_tick_;
+}
+
+std::uint64_t NetServiceStub::SessionTransitionCount() const {
+    return session_transition_count_;
+}
+
+std::uint64_t NetServiceStub::ConnectedTransitionCount() const {
+    return connected_transition_count_;
+}
+
+std::uint64_t NetServiceStub::ManualDisconnectCount() const {
+    return manual_disconnect_count_;
+}
+
+std::uint64_t NetServiceStub::IgnoredHeartbeatCount() const {
+    return ignored_heartbeat_count_;
+}
+
+std::size_t NetServiceStub::DroppedCommandDisconnectedCount() const {
+    return dropped_command_disconnected_count_;
+}
+
+std::size_t NetServiceStub::DroppedCommandQueueFullCount() const {
+    return dropped_command_queue_full_count_;
+}
+
+std::size_t NetServiceStub::DroppedRemoteChunkPayloadDisconnectedCount() const {
+    return dropped_remote_chunk_payload_disconnected_count_;
+}
+
+std::size_t NetServiceStub::DroppedRemoteChunkPayloadQueueFullCount() const {
+    return dropped_remote_chunk_payload_queue_full_count_;
 }
 
 std::uint64_t NetServiceStub::LastPublishedSnapshotTick() const {
