@@ -16,6 +16,7 @@ class SimulationKernel final {
 public:
     static constexpr std::size_t kMaxPendingLocalCommands = 1024;
     static constexpr std::uint64_t kAutoReconnectRetryIntervalTicks = 120;
+    static constexpr std::uint64_t kSessionStateEventMinIntervalTicks = 15;
 
     SimulationKernel(
         world::IWorldService& world_service,
@@ -32,7 +33,18 @@ public:
     void Update(double fixed_delta_seconds);
 
 private:
+    struct PendingNetSessionEvent {
+        bool has_value = false;
+        net::NetSessionState session_state = net::NetSessionState::Disconnected;
+        std::uint64_t transition_tick = 0;
+        std::string transition_reason;
+    };
+
     void ExecuteWorldCommandIfMatched(const net::PlayerCommand& command);
+    void QueueNetSessionChangedEvent(
+        net::NetSessionState session_state,
+        std::string_view transition_reason);
+    void TryDispatchPendingNetSessionEvent();
 
     bool initialized_ = false;
     std::uint64_t tick_index_ = 0;
@@ -43,6 +55,8 @@ private:
     std::size_t dropped_local_command_count_ = 0;
     net::NetSessionState last_observed_net_session_state_ = net::NetSessionState::Disconnected;
     std::uint64_t next_auto_reconnect_tick_ = 0;
+    std::uint64_t next_net_session_event_dispatch_tick_ = 0;
+    PendingNetSessionEvent pending_net_session_event_{};
 };
 
 }  // namespace novaria::sim

@@ -69,6 +69,8 @@ bool SimulationKernel::Initialize(std::string& out_error) {
     net_service_.RequestConnect();
     last_observed_net_session_state_ = net_service_.SessionState();
     next_auto_reconnect_tick_ = 0;
+    next_net_session_event_dispatch_tick_ = 0;
+    pending_net_session_event_ = {};
     tick_index_ = 0;
     pending_local_commands_.clear();
     dropped_local_command_count_ = 0;
@@ -88,6 +90,8 @@ void SimulationKernel::Shutdown() {
     pending_local_commands_.clear();
     last_observed_net_session_state_ = net::NetSessionState::Disconnected;
     next_auto_reconnect_tick_ = 0;
+    next_net_session_event_dispatch_tick_ = 0;
+    pending_net_session_event_ = {};
     initialized_ = false;
 }
 
@@ -130,6 +134,34 @@ std::size_t SimulationKernel::PendingLocalCommandCount() const {
 
 std::size_t SimulationKernel::DroppedLocalCommandCount() const {
     return dropped_local_command_count_;
+}
+
+void SimulationKernel::QueueNetSessionChangedEvent(
+    net::NetSessionState session_state,
+    std::string_view transition_reason) {
+    pending_net_session_event_.has_value = true;
+    pending_net_session_event_.session_state = session_state;
+    pending_net_session_event_.transition_tick = tick_index_;
+    pending_net_session_event_.transition_reason.assign(transition_reason);
+}
+
+void SimulationKernel::TryDispatchPendingNetSessionEvent() {
+    if (!pending_net_session_event_.has_value ||
+        tick_index_ < next_net_session_event_dispatch_tick_) {
+        return;
+    }
+
+    script_host_.DispatchEvent(script::ScriptEvent{
+        .event_name = "net.session_state_changed",
+        .payload = BuildSessionStateChangedPayload(
+            pending_net_session_event_.session_state,
+            pending_net_session_event_.transition_tick,
+            pending_net_session_event_.transition_reason),
+    });
+
+    pending_net_session_event_ = {};
+    next_net_session_event_dispatch_tick_ =
+        tick_index_ + kSessionStateEventMinIntervalTicks;
 }
 
 void SimulationKernel::ExecuteWorldCommandIfMatched(const net::PlayerCommand& command) {
@@ -201,13 +233,9 @@ void SimulationKernel::Update(double fixed_delta_seconds) {
     const net::NetDiagnosticsSnapshot net_diagnostics = net_service_.DiagnosticsSnapshot();
     const net::NetSessionState current_session_state = net_diagnostics.session_state;
     if (current_session_state != last_observed_net_session_state_) {
-        script_host_.DispatchEvent(script::ScriptEvent{
-            .event_name = "net.session_state_changed",
-            .payload = BuildSessionStateChangedPayload(
-                current_session_state,
-                tick_index_,
-                net_diagnostics.last_session_transition_reason),
-        });
+        QueueNetSessionChangedEvent(
+            current_session_state,
+            net_diagnostics.last_session_transition_reason);
 
         if (current_session_state == net::NetSessionState::Disconnected) {
             next_auto_reconnect_tick_ = tick_index_ + kAutoReconnectRetryIntervalTicks;
@@ -215,6 +243,7 @@ void SimulationKernel::Update(double fixed_delta_seconds) {
 
         last_observed_net_session_state_ = current_session_state;
     }
+    TryDispatchPendingNetSessionEvent();
 
     const bool net_connected = current_session_state == net::NetSessionState::Connected;
     if (net_connected) {

@@ -599,8 +599,18 @@ bool TestNetSessionStateChangeDispatchesScriptEvent() {
     net.session_state = novaria::net::NetSessionState::Disconnected;
     kernel.Update(1.0 / 60.0);
     passed &= Expect(
+        script.dispatched_events.size() == 1,
+        "Reconnect transition should be throttled during session-event cooldown.");
+
+    const std::uint64_t reconnect_event_tick =
+        1 + novaria::sim::SimulationKernel::kSessionStateEventMinIntervalTicks;
+    while (kernel.CurrentTick() <= reconnect_event_tick) {
+        kernel.Update(1.0 / 60.0);
+    }
+
+    passed &= Expect(
         script.dispatched_events.size() == 2,
-        "Reconnect transition to connecting should dispatch one more script event.");
+        "Reconnect transition should dispatch after session-event cooldown.");
     if (script.dispatched_events.size() == 2) {
         SessionStateChangedPayload payload{};
         passed &= Expect(
@@ -610,6 +620,62 @@ bool TestNetSessionStateChangeDispatchesScriptEvent() {
             payload.state == "connecting" && payload.tick_index == 2 &&
                 payload.reason == "request_connect",
             "Reconnect transition payload fields should match.");
+    }
+
+    kernel.Shutdown();
+    return passed;
+}
+
+bool TestNetSessionStateEventsAreCoalescedWithinCooldown() {
+    bool passed = true;
+
+    FakeWorldService world;
+    FakeNetService net;
+    FakeScriptHost script;
+    net.auto_progress_connection = false;
+    novaria::sim::SimulationKernel kernel(world, net, script);
+
+    std::string error;
+    passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
+
+    kernel.Update(1.0 / 60.0);
+    net.auto_progress_connection = true;
+    kernel.Update(1.0 / 60.0);
+    passed &= Expect(
+        script.dispatched_events.size() == 1,
+        "Connected transition should dispatch immediately.");
+
+    net.auto_progress_connection = false;
+    net.session_state = novaria::net::NetSessionState::Disconnected;
+    kernel.Update(1.0 / 60.0);
+    passed &= Expect(
+        script.dispatched_events.size() == 1,
+        "Connecting transition should remain pending within cooldown.");
+
+    net.auto_progress_connection = true;
+    kernel.Update(1.0 / 60.0);
+    passed &= Expect(
+        script.dispatched_events.size() == 1,
+        "Latest transition should still be queued within cooldown.");
+
+    const std::uint64_t coalesced_event_tick =
+        1 + novaria::sim::SimulationKernel::kSessionStateEventMinIntervalTicks;
+    while (kernel.CurrentTick() <= coalesced_event_tick) {
+        kernel.Update(1.0 / 60.0);
+    }
+
+    passed &= Expect(
+        script.dispatched_events.size() == 2,
+        "Cooldown boundary should flush one coalesced transition event.");
+    if (script.dispatched_events.size() == 2) {
+        SessionStateChangedPayload payload{};
+        passed &= Expect(
+            TryParseSessionStateChangedPayload(script.dispatched_events[1].payload, payload),
+            "Coalesced transition payload should be parseable.");
+        passed &= Expect(
+            payload.state == "connected" && payload.tick_index == 3 &&
+                payload.reason == "tick_connect_complete",
+            "Coalesced transition should keep the latest state change.");
     }
 
     kernel.Shutdown();
@@ -891,6 +957,7 @@ int main() {
     passed &= TestUpdateRequestsReconnectWhenNetDisconnected();
     passed &= TestReconnectRequestsAreRateLimitedByTickInterval();
     passed &= TestNetSessionStateChangeDispatchesScriptEvent();
+    passed &= TestNetSessionStateEventsAreCoalescedWithinCooldown();
     passed &= TestSubmitCommandIgnoredBeforeInitialize();
     passed &= TestLocalCommandQueueCapAndDroppedCount();
     passed &= TestApplyRemoteChunkPayload();

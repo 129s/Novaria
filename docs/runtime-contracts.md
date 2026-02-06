@@ -21,6 +21,7 @@
 - `sim::SimulationKernel` 初始化会请求 `net` 建连，运行时检测到断线会自动请求重连。
 - 自动重连请求带 Tick 级节流（`kAutoReconnectRetryIntervalTicks`）以避免重连风暴。
 - `sim::SimulationKernel` 检测到 `net` 会话状态变化时，会向脚本层派发 `net.session_state_changed` 事件（payload: `state=...;tick=...;reason=...`）。
+- 会话状态事件带 Tick 级限流（`kSessionStateEventMinIntervalTicks`）并在窗口内合并为最新一次状态变化，避免脚本事件风暴。
 
 ## `world`
 
