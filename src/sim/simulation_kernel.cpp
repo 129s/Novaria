@@ -4,69 +4,12 @@
 #include "world/snapshot_codec.h"
 
 #include <cstdint>
-#include <limits>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 namespace novaria::sim {
-namespace {
-
-std::vector<std::string> SplitByComma(std::string_view payload) {
-    std::vector<std::string> tokens;
-    std::string current;
-    current.reserve(payload.size());
-
-    for (const char ch : payload) {
-        if (ch == ',') {
-            tokens.push_back(current);
-            current.clear();
-            continue;
-        }
-        current.push_back(ch);
-    }
-
-    tokens.push_back(current);
-    return tokens;
-}
-
-bool ParseSignedInt(const std::string& token, int& out_value) {
-    try {
-        size_t consumed = 0;
-        const long long parsed = std::stoll(token, &consumed);
-        if (consumed != token.size()) {
-            return false;
-        }
-        if (parsed < std::numeric_limits<int>::min() ||
-            parsed > std::numeric_limits<int>::max()) {
-            return false;
-        }
-        out_value = static_cast<int>(parsed);
-        return true;
-    } catch (...) {
-        return false;
-    }
-}
-
-bool ParseMaterialId(const std::string& token, std::uint16_t& out_material_id) {
-    try {
-        size_t consumed = 0;
-        const unsigned long long parsed = std::stoull(token, &consumed);
-        if (consumed != token.size()) {
-            return false;
-        }
-        if (parsed > std::numeric_limits<std::uint16_t>::max()) {
-            return false;
-        }
-        out_material_id = static_cast<std::uint16_t>(parsed);
-        return true;
-    } catch (...) {
-        return false;
-    }
-}
-
-}  // namespace
 
 SimulationKernel::SimulationKernel(
     world::IWorldService& world_service,
@@ -155,78 +98,46 @@ std::size_t SimulationKernel::DroppedLocalCommandCount() const {
     return dropped_local_command_count_;
 }
 
-bool SimulationKernel::TryParseWorldSetTileCommand(
-    const net::PlayerCommand& command,
-    world::TileMutation& out_mutation) {
-    if (command.command_type != command::kWorldSetTile) {
-        return false;
-    }
-
-    const auto tokens = SplitByComma(command.payload);
-    if (tokens.size() != 3) {
-        return false;
-    }
-
-    int tile_x = 0;
-    int tile_y = 0;
-    std::uint16_t material_id = 0;
-    if (!ParseSignedInt(tokens[0], tile_x) ||
-        !ParseSignedInt(tokens[1], tile_y) ||
-        !ParseMaterialId(tokens[2], material_id)) {
-        return false;
-    }
-
-    out_mutation = world::TileMutation{
-        .tile_x = tile_x,
-        .tile_y = tile_y,
-        .material_id = material_id,
-    };
-    return true;
-}
-
-bool SimulationKernel::TryParseWorldChunkCommand(
-    const net::PlayerCommand& command,
-    std::string_view expected_command_type,
-    world::ChunkCoord& out_chunk_coord) {
-    if (command.command_type != expected_command_type) {
-        return false;
-    }
-
-    const auto tokens = SplitByComma(command.payload);
-    if (tokens.size() != 2) {
-        return false;
-    }
-
-    int chunk_x = 0;
-    int chunk_y = 0;
-    if (!ParseSignedInt(tokens[0], chunk_x) ||
-        !ParseSignedInt(tokens[1], chunk_y)) {
-        return false;
-    }
-
-    out_chunk_coord = world::ChunkCoord{
-        .x = chunk_x,
-        .y = chunk_y,
-    };
-    return true;
-}
-
 void SimulationKernel::ExecuteWorldCommandIfMatched(const net::PlayerCommand& command) {
-    world::TileMutation mutation{};
-    if (TryParseWorldSetTileCommand(command, mutation)) {
+    if (command.command_type == command::kWorldSetTile) {
+        command::WorldSetTilePayload payload{};
+        if (!command::TryParseWorldSetTilePayload(command.payload, payload)) {
+            return;
+        }
+
+        const world::TileMutation mutation{
+            .tile_x = payload.tile_x,
+            .tile_y = payload.tile_y,
+            .material_id = payload.material_id,
+        };
         std::string apply_error;
         (void)world_service_.ApplyTileMutation(mutation, apply_error);
         return;
     }
 
-    world::ChunkCoord chunk_coord{};
-    if (TryParseWorldChunkCommand(command, command::kWorldLoadChunk, chunk_coord)) {
-        world_service_.LoadChunk(chunk_coord);
+    if (command.command_type == command::kWorldLoadChunk) {
+        command::WorldChunkPayload payload{};
+        if (!command::TryParseWorldChunkPayload(command.payload, payload)) {
+            return;
+        }
+
+        world_service_.LoadChunk(world::ChunkCoord{
+            .x = payload.chunk_x,
+            .y = payload.chunk_y,
+        });
         return;
     }
 
-    if (TryParseWorldChunkCommand(command, command::kWorldUnloadChunk, chunk_coord)) {
-        world_service_.UnloadChunk(chunk_coord);
+    if (command.command_type == command::kWorldUnloadChunk) {
+        command::WorldChunkPayload payload{};
+        if (!command::TryParseWorldChunkPayload(command.payload, payload)) {
+            return;
+        }
+
+        world_service_.UnloadChunk(world::ChunkCoord{
+            .x = payload.chunk_x,
+            .y = payload.chunk_y,
+        });
     }
 }
 

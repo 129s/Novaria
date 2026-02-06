@@ -176,6 +176,52 @@ public:
     }
 };
 
+bool TestCommandSchemaPayloadParsing() {
+    bool passed = true;
+
+    novaria::sim::command::WorldSetTilePayload set_tile_payload{};
+    passed &= Expect(
+        novaria::sim::command::TryParseWorldSetTilePayload(
+            novaria::sim::command::BuildWorldSetTilePayload(-12, 34, 7),
+            set_tile_payload),
+        "World set_tile payload parser should accept valid payload.");
+    passed &= Expect(
+        set_tile_payload.tile_x == -12 &&
+            set_tile_payload.tile_y == 34 &&
+            set_tile_payload.material_id == 7,
+        "Parsed set_tile payload fields should match.");
+    passed &= Expect(
+        !novaria::sim::command::TryParseWorldSetTilePayload("1,2", set_tile_payload),
+        "Set_tile payload parser should reject missing tokens.");
+    passed &= Expect(
+        !novaria::sim::command::TryParseWorldSetTilePayload("1,2,3,4", set_tile_payload),
+        "Set_tile payload parser should reject extra tokens.");
+    passed &= Expect(
+        !novaria::sim::command::TryParseWorldSetTilePayload("1,2,70000", set_tile_payload),
+        "Set_tile payload parser should reject material_id overflow.");
+
+    novaria::sim::command::WorldChunkPayload chunk_payload{};
+    passed &= Expect(
+        novaria::sim::command::TryParseWorldChunkPayload(
+            novaria::sim::command::BuildWorldChunkPayload(5, -9),
+            chunk_payload),
+        "World chunk payload parser should accept valid payload.");
+    passed &= Expect(
+        chunk_payload.chunk_x == 5 && chunk_payload.chunk_y == -9,
+        "Parsed chunk payload fields should match.");
+    passed &= Expect(
+        !novaria::sim::command::TryParseWorldChunkPayload("8", chunk_payload),
+        "Chunk payload parser should reject missing tokens.");
+    passed &= Expect(
+        !novaria::sim::command::TryParseWorldChunkPayload("8,9,10", chunk_payload),
+        "Chunk payload parser should reject extra tokens.");
+    passed &= Expect(
+        !novaria::sim::command::TryParseWorldChunkPayload("8,NaN", chunk_payload),
+        "Chunk payload parser should reject non-number tokens.");
+
+    return passed;
+}
+
 bool TestUpdatePublishesDirtyChunkCount() {
     bool passed = true;
 
@@ -507,6 +553,7 @@ bool TestWorldCommandExecutionFromLocalQueue() {
 
 int main() {
     bool passed = true;
+    passed &= TestCommandSchemaPayloadParsing();
     passed &= TestUpdatePublishesDirtyChunkCount();
     passed &= TestInitializeRollbackOnNetFailure();
     passed &= TestInitializeRollbackOnScriptFailure();
