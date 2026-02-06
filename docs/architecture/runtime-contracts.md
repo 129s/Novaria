@@ -2,7 +2,7 @@
 
 - `status`: authoritative
 - `owner`: @novaria-core
-- `last_verified_commit`: cf3b9e2
+- `last_verified_commit`: 5cba165
 - `updated`: 2026-02-06
 
 ## 1. 目标
@@ -77,8 +77,7 @@
 
 **当前实现**
 
-- `NetServiceRuntime`：支持 `stub/udp_loopback/auto` 后端偏好。
-- `stub` 后端：`NetServiceStub`（`Disconnected -> Connecting -> Connected` 状态机）。
+- `NetServiceRuntime`：固定走 `udp_loopback` 后端（无 stub/无自动回退）。
 - `udp_loopback` 后端：`NetServiceUdpLoopback`（支持本地端口绑定与对端端点配置，可做同机双进程互通验证）。
 - `udp_loopback` 已引入最小握手与心跳控制报文（`SYN/ACK/HEARTBEAT`）。
 - 心跳超时断线：`kHeartbeatTimeoutTicks`。
@@ -97,8 +96,7 @@
 
 **当前实现**
 
-- `ScriptHostRuntime`：支持 `auto/stub/luajit` 后端偏好。
-- `auto` 模式下优先尝试 `LuaJitScriptHost`，失败回退到 `ScriptHostStub`。
+- `ScriptHostRuntime`：固定走 `luajit` 后端（无 stub/无自动回退）。
 - `LuaJitScriptHost` 已完成 VM 生命周期与事件回调骨架（`novaria_on_tick` / `novaria_on_event`）。
 - `IScriptHost::RuntimeDescriptor` 已统一暴露 `backend/api_version/sandbox` 元信息（当前 API 版本 `0.1.0`）。
 - 当前仍未完成生产级脚本沙箱策略与内容脚本正式装载链路。

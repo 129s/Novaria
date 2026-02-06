@@ -21,44 +21,29 @@ int main() {
     novaria::script::ScriptHostRuntime runtime;
     std::string error;
 
-    runtime.SetBackendPreference(novaria::script::ScriptBackendPreference::Auto);
-    passed &= Expect(runtime.Initialize(error), "Auto backend initialization should succeed.");
-    passed &= Expect(error.empty(), "Auto backend init should not return error.");
-    passed &= Expect(
-        runtime.ActiveBackend() != novaria::script::ScriptBackendKind::None,
-        "Runtime should choose an active backend.");
-    const novaria::script::ScriptRuntimeDescriptor auto_descriptor = runtime.RuntimeDescriptor();
-    passed &= Expect(!auto_descriptor.backend_name.empty(), "Runtime descriptor should expose backend.");
-    passed &= Expect(
-        auto_descriptor.api_version == novaria::script::kScriptApiVersion,
-        "Runtime descriptor should expose expected API version.");
-    runtime.DispatchEvent({.event_name = "runtime.auto.test", .payload = "payload"});
-    runtime.Tick({.tick_index = 1, .fixed_delta_seconds = 1.0 / 60.0});
-    runtime.Shutdown();
-
-    runtime.SetBackendPreference(novaria::script::ScriptBackendPreference::Stub);
-    passed &= Expect(runtime.Initialize(error), "Stub backend initialization should succeed.");
-    passed &= Expect(
-        runtime.ActiveBackend() == novaria::script::ScriptBackendKind::Stub,
-        "Stub preference should select stub backend.");
-    runtime.DispatchEvent({.event_name = "runtime.stub.test", .payload = "payload"});
-    runtime.Tick({.tick_index = 2, .fixed_delta_seconds = 1.0 / 60.0});
-    runtime.Shutdown();
-
     runtime.SetBackendPreference(novaria::script::ScriptBackendPreference::LuaJit);
     const bool luajit_init_ok = runtime.Initialize(error);
+#if defined(NOVARIA_WITH_LUAJIT)
+    passed &= Expect(luajit_init_ok, "LuaJIT backend should initialize when LuaJIT is available.");
     if (luajit_init_ok) {
         passed &= Expect(
             runtime.ActiveBackend() == novaria::script::ScriptBackendKind::LuaJit,
-            "LuaJIT preference should select LuaJIT backend when available.");
+            "LuaJIT preference should select LuaJIT backend.");
+        const novaria::script::ScriptRuntimeDescriptor descriptor = runtime.RuntimeDescriptor();
+        passed &= Expect(descriptor.backend_name == "luajit", "Runtime descriptor should expose luajit.");
+        passed &= Expect(
+            descriptor.api_version == novaria::script::kScriptApiVersion,
+            "Runtime descriptor should expose expected API version.");
         runtime.DispatchEvent({.event_name = "runtime.luajit.test", .payload = "payload"});
         runtime.Tick({.tick_index = 3, .fixed_delta_seconds = 1.0 / 60.0});
         runtime.Shutdown();
-    } else {
-        passed &= Expect(
-            !error.empty(),
-            "LuaJIT backend failure should return a readable error.");
     }
+#else
+    passed &= Expect(!luajit_init_ok, "LuaJIT backend should fail-fast when LuaJIT is unavailable.");
+    passed &= Expect(
+        !error.empty(),
+        "LuaJIT backend failure should return a readable error.");
+#endif
 
     if (!passed) {
         return 1;

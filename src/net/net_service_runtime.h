@@ -1,7 +1,6 @@
 #pragma once
 
 #include "net/net_service.h"
-#include "net/net_service_stub.h"
 #include "net/net_service_udp_loopback.h"
 
 #include <string>
@@ -9,14 +8,11 @@
 namespace novaria::net {
 
 enum class NetBackendPreference {
-    Auto,
-    Stub,
     UdpLoopback,
 };
 
 enum class NetBackendKind {
     None,
-    Stub,
     UdpLoopback,
 };
 
@@ -46,16 +42,14 @@ public:
         const std::vector<std::string>& encoded_dirty_chunks) override;
 
 private:
-    bool InitializeWithStub(std::string& out_error);
     bool InitializeWithUdpLoopback(std::string& out_error);
 
-    NetBackendPreference backend_preference_ = NetBackendPreference::Stub;
+    NetBackendPreference backend_preference_ = NetBackendPreference::UdpLoopback;
     NetBackendKind active_backend_ = NetBackendKind::None;
     INetService* active_host_ = nullptr;
     std::string last_backend_error_;
     std::uint16_t udp_bind_port_ = 0;
     UdpEndpoint udp_remote_endpoint_{};
-    NetServiceStub stub_host_;
     NetServiceUdpLoopback udp_loopback_host_;
 };
 

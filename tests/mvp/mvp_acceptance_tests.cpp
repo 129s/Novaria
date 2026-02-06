@@ -1,7 +1,7 @@
 #include "mod/mod_loader.h"
-#include "net/net_service_stub.h"
+#include "net/net_service_runtime.h"
 #include "save/save_repository.h"
-#include "script/script_host_stub.h"
+#include "script/script_host.h"
 #include "sim/command_schema.h"
 #include "sim/simulation_kernel.h"
 #include "world/world_service_basic.h"
@@ -38,6 +38,35 @@ bool WriteTextFile(const std::filesystem::path& file_path, const std::string& co
     file << content;
     return true;
 }
+
+class AcceptanceScriptHost final : public novaria::script::IScriptHost {
+public:
+    bool Initialize(std::string& out_error) override {
+        out_error.clear();
+        return true;
+    }
+
+    void Shutdown() override {}
+
+    void Tick(const novaria::sim::TickContext& tick_context) override {
+        (void)tick_context;
+    }
+
+    void DispatchEvent(const novaria::script::ScriptEvent& event_data) override {
+        received_events_.push_back(event_data);
+    }
+
+    novaria::script::ScriptRuntimeDescriptor RuntimeDescriptor() const override {
+        return novaria::script::ScriptRuntimeDescriptor{
+            .backend_name = "acceptance_fake",
+            .api_version = novaria::script::kScriptApiVersion,
+            .sandbox_enabled = false,
+        };
+    }
+
+private:
+    std::vector<novaria::script::ScriptEvent> received_events_;
+};
 
 void SubmitPlayableLoopCommands(
     novaria::sim::SimulationKernel& kernel,
@@ -89,8 +118,10 @@ bool TestPlayableLoopAndSaveReload() {
     std::filesystem::remove_all(save_root, ec);
 
     novaria::world::WorldServiceBasic world;
-    novaria::net::NetServiceStub net;
-    novaria::script::ScriptHostStub script;
+    novaria::net::NetServiceRuntime net;
+    net.SetBackendPreference(novaria::net::NetBackendPreference::UdpLoopback);
+    net.ConfigureUdpBackend(0, {.host = "127.0.0.1", .port = 0});
+    AcceptanceScriptHost script;
     novaria::sim::SimulationKernel kernel(world, net, script);
 
     std::string error;
@@ -145,8 +176,10 @@ bool TestFourPlayerThirtyMinuteSimulationStability() {
     bool passed = true;
 
     novaria::world::WorldServiceBasic world;
-    novaria::net::NetServiceStub net;
-    novaria::script::ScriptHostStub script;
+    novaria::net::NetServiceRuntime net;
+    net.SetBackendPreference(novaria::net::NetBackendPreference::UdpLoopback);
+    net.ConfigureUdpBackend(0, {.host = "127.0.0.1", .port = 0});
+    AcceptanceScriptHost script;
     novaria::sim::SimulationKernel kernel(world, net, script);
 
     std::string error;
@@ -251,8 +284,10 @@ bool TestTickP95PerformanceBudget() {
     bool passed = true;
 
     novaria::world::WorldServiceBasic world;
-    novaria::net::NetServiceStub net;
-    novaria::script::ScriptHostStub script;
+    novaria::net::NetServiceRuntime net;
+    net.SetBackendPreference(novaria::net::NetBackendPreference::UdpLoopback);
+    net.ConfigureUdpBackend(0, {.host = "127.0.0.1", .port = 0});
+    AcceptanceScriptHost script;
     novaria::sim::SimulationKernel kernel(world, net, script);
 
     std::string error;

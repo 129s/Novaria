@@ -1,7 +1,7 @@
 #include "sim/simulation_kernel.h"
 #include "sim/command_schema.h"
 #include "save/save_repository.h"
-#include "net/net_service_stub.h"
+#include "net/net_service_udp_loopback.h"
 #include "world/snapshot_codec.h"
 
 #include <charconv>
@@ -775,14 +775,21 @@ bool TestReconnectHeartbeatAndSaveDiagnosticsEndToEnd() {
     std::filesystem::remove_all(test_dir, ec);
 
     FakeWorldService world;
-    novaria::net::NetServiceStub net;
+    novaria::net::NetServiceUdpLoopback net;
+    net.SetBindPort(0);
+    net.SetRemoteEndpoint({.host = "127.0.0.1", .port = 0});
     FakeScriptHost script;
     novaria::sim::SimulationKernel kernel(world, net, script);
 
     std::string error;
     passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
 
-    kernel.Update(1.0 / 60.0);
+    for (std::uint64_t tick = 0; tick < 20; ++tick) {
+        kernel.Update(1.0 / 60.0);
+        if (!script.dispatched_events.empty()) {
+            break;
+        }
+    }
     passed &= Expect(
         script.dispatched_events.size() == 1,
         "Initial connect transition should dispatch one script event.");
@@ -794,15 +801,19 @@ bool TestReconnectHeartbeatAndSaveDiagnosticsEndToEnd() {
                 initial_connect_payload),
             "Initial connect payload should be parseable.");
         passed &= Expect(
-            initial_connect_payload.state == "connected" && initial_connect_payload.tick_index == 0 &&
-                initial_connect_payload.reason == "tick_connect_complete",
+            initial_connect_payload.state == "connected" &&
+                initial_connect_payload.reason == "udp_handshake_ack",
             "Initial connect payload fields should match expected transition.");
     }
 
-    const std::uint64_t disconnect_tick = novaria::net::NetServiceStub::kHeartbeatTimeoutTicks + 1;
-    while (kernel.CurrentTick() <= disconnect_tick) {
+    const std::uint16_t local_port = net.LocalPort();
+    const std::uint16_t dead_port = local_port == 65535 ? 65534 : static_cast<std::uint16_t>(local_port + 1);
+    net.SetRemoteEndpoint({.host = "127.0.0.1", .port = dead_port});
+
+    while (net.DiagnosticsSnapshot().timeout_disconnect_count == 0 && kernel.CurrentTick() < 2000) {
         kernel.Update(1.0 / 60.0);
     }
+    passed &= Expect(net.DiagnosticsSnapshot().timeout_disconnect_count == 1, "Heartbeat timeout should occur.");
 
     passed &= Expect(
         script.dispatched_events.size() >= 2,
@@ -814,31 +825,40 @@ bool TestReconnectHeartbeatAndSaveDiagnosticsEndToEnd() {
             "Disconnect payload should be parseable.");
         passed &= Expect(
             disconnect_payload.state == "disconnected" &&
-                disconnect_payload.tick_index == disconnect_tick &&
                 disconnect_payload.reason == "heartbeat_timeout",
             "Disconnect payload fields should match heartbeat timeout transition.");
     }
 
-    const std::uint64_t reconnect_tick =
-        disconnect_tick + novaria::sim::SimulationKernel::kAutoReconnectRetryIntervalTicks;
-    while (kernel.CurrentTick() <= reconnect_tick) {
+    net.SetRemoteEndpoint({.host = "127.0.0.1", .port = local_port});
+
+    while (net.DiagnosticsSnapshot().connected_transition_count < 2 && kernel.CurrentTick() < 10000) {
+        kernel.Update(1.0 / 60.0);
+    }
+    passed &= Expect(
+        net.DiagnosticsSnapshot().connected_transition_count >= 2,
+        "Auto reconnect should eventually restore connected state.");
+    for (std::uint64_t tick = 0; tick < novaria::sim::SimulationKernel::kSessionStateEventMinIntervalTicks + 2;
+         ++tick) {
         kernel.Update(1.0 / 60.0);
     }
 
     passed &= Expect(
         script.dispatched_events.size() >= 3,
         "Auto reconnect should dispatch connected event.");
-    SessionStateChangedPayload reconnect_payload{};
-    if (script.dispatched_events.size() >= 3) {
-        passed &= Expect(
-            TryParseSessionStateChangedPayload(script.dispatched_events[2].payload, reconnect_payload),
-            "Reconnect payload should be parseable.");
-        passed &= Expect(
-            reconnect_payload.state == "connected" &&
-                reconnect_payload.tick_index == reconnect_tick &&
-                reconnect_payload.reason == "tick_connect_complete",
-            "Reconnect payload fields should match transition after reconnect.");
+    bool found_reconnect_event = false;
+    for (std::size_t event_index = 2; event_index < script.dispatched_events.size(); ++event_index) {
+        SessionStateChangedPayload reconnect_payload{};
+        if (!TryParseSessionStateChangedPayload(
+                script.dispatched_events[event_index].payload,
+                reconnect_payload)) {
+            continue;
+        }
+        if (reconnect_payload.state == "connected") {
+            found_reconnect_event = true;
+            break;
+        }
     }
+    passed &= Expect(found_reconnect_event, "Reconnect flow should include a connected session event.");
 
     const std::uint64_t heartbeat_recovery_tick = kernel.CurrentTick();
     net.NotifyHeartbeatReceived(heartbeat_recovery_tick);
@@ -893,11 +913,9 @@ bool TestReconnectHeartbeatAndSaveDiagnosticsEndToEnd() {
         loaded_save_state.debug_net_last_heartbeat_tick == heartbeat_recovery_tick,
         "Loaded last heartbeat tick should match recovered heartbeat.");
     passed &= Expect(
-        loaded_save_state.debug_net_last_transition_reason == reconnect_payload.reason,
-        "Loaded last transition reason should align with last script session event.");
-    passed &= Expect(
-        loaded_save_state.debug_net_last_transition_reason == "tick_connect_complete",
-        "Loaded last transition reason should match reconnect completion.");
+        loaded_save_state.debug_net_last_transition_reason == diagnostics.last_session_transition_reason,
+        "Loaded last transition reason should align with diagnostics snapshot.");
+    passed &= Expect(!loaded_save_state.debug_net_last_transition_reason.empty(), "Last transition reason should persist.");
 
     save_repository.Shutdown();
     kernel.Shutdown();

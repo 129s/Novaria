@@ -2,7 +2,7 @@
 
 - `status`: authoritative
 - `owner`: @novaria-core
-- `last_verified_commit`: 1937135
+- `last_verified_commit`: 5cba165
 - `updated`: 2026-02-06
 
 ## 1. 目标
@@ -18,7 +18,7 @@ Novaria 的 MVP 目标是验证三条闭环，而不是追求内容体量：
 - 目标平台：Windows（MVP 阶段仅此平台）。
 - 语言：C++20。
 - 底层框架：SDL3。
-- 脚本定位：LuaJIT（规划目标），当前工程仍以 `ScriptHostStub` 为主。
+- 脚本定位：LuaJIT（MVP 强约束，失败即显式暴露）。
 
 ## 3. 完成定义（DoD）
 

@@ -1,5 +1,6 @@
 #include "net/net_service_runtime.h"
 
+#include <cstdint>
 #include <iostream>
 #include <string>
 
@@ -20,40 +21,28 @@ int main() {
     std::string error;
 
     novaria::net::NetServiceRuntime runtime;
-
-    runtime.SetBackendPreference(novaria::net::NetBackendPreference::Auto);
-    passed &= Expect(runtime.Initialize(error), "Auto backend init should succeed.");
-    passed &= Expect(
-        runtime.ActiveBackend() != novaria::net::NetBackendKind::None,
-        "Auto backend should choose an active backend.");
-    runtime.RequestConnect();
-    runtime.Tick({.tick_index = 1, .fixed_delta_seconds = 1.0 / 60.0});
-    runtime.Shutdown();
-
-    runtime.SetBackendPreference(novaria::net::NetBackendPreference::Stub);
-    passed &= Expect(runtime.Initialize(error), "Stub backend init should succeed.");
-    passed &= Expect(
-        runtime.ActiveBackend() == novaria::net::NetBackendKind::Stub,
-        "Stub preference should select stub backend.");
-    runtime.Shutdown();
-
     runtime.SetBackendPreference(novaria::net::NetBackendPreference::UdpLoopback);
     runtime.ConfigureUdpBackend(0, {.host = "127.0.0.1", .port = 0});
-    const bool udp_init_ok = runtime.Initialize(error);
-    if (udp_init_ok) {
-        passed &= Expect(
-            runtime.ActiveBackend() == novaria::net::NetBackendKind::UdpLoopback,
-            "UDP loopback preference should select UDP loopback backend.");
-        runtime.RequestConnect();
-        runtime.Tick({.tick_index = 1, .fixed_delta_seconds = 1.0 / 60.0});
-        runtime.PublishWorldSnapshot(2, {"payload"});
-        runtime.Tick({.tick_index = 3, .fixed_delta_seconds = 1.0 / 60.0});
-        runtime.Shutdown();
-    } else {
-        passed &= Expect(
-            !error.empty(),
-            "UDP loopback backend init failure should return readable error.");
+    passed &= Expect(runtime.Initialize(error), "UDP loopback backend init should succeed.");
+    passed &= Expect(error.empty(), "UDP loopback backend init should not return error.");
+    passed &= Expect(
+        runtime.ActiveBackend() == novaria::net::NetBackendKind::UdpLoopback,
+        "Runtime should use UDP loopback backend.");
+    runtime.RequestConnect();
+    for (std::uint64_t tick = 1; tick <= 20; ++tick) {
+        runtime.Tick({.tick_index = tick, .fixed_delta_seconds = 1.0 / 60.0});
+        if (runtime.SessionState() == novaria::net::NetSessionState::Connected) {
+            break;
+        }
     }
+    passed &= Expect(
+        runtime.SessionState() == novaria::net::NetSessionState::Connected,
+        "Runtime should connect through UDP handshake.");
+    runtime.PublishWorldSnapshot(21, {"payload"});
+    runtime.Tick({.tick_index = 22, .fixed_delta_seconds = 1.0 / 60.0});
+    const auto payloads = runtime.ConsumeRemoteChunkPayloads();
+    passed &= Expect(payloads.size() == 1 && payloads.front() == "payload", "Runtime should loopback payload.");
+    runtime.Shutdown();
 
     if (!passed) {
         return 1;

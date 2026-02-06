@@ -2,7 +2,7 @@
 
 - `status`: active
 - `owner`: @novaria-core
-- `last_verified_commit`: 64cca05
+- `last_verified_commit`: 5cba165
 - `updated`: 2026-02-06
 
 ## 1. 总结论
@@ -28,7 +28,7 @@
 
 - 状态：已覆盖（等效 Tick 仿真）。
 - 证据：`tests/mvp/mvp_acceptance_tests.cpp` 的 `TestFourPlayerThirtyMinuteSimulationStability`。
-- 备注：当前为 `NetServiceStub` + `NetServiceUdpLoopback` 验证，不是跨进程/跨主机实网端到端压力测试。
+- 备注：当前为 `NetServiceUdpLoopback` 验证，不是跨进程/跨主机实网端到端压力测试。
 
 ### DoD#4：第三方 Mod 扩展与一致性
 

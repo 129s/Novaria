@@ -8,8 +8,6 @@ const char* ScriptBackendKindName(ScriptBackendKind backend_kind) {
     switch (backend_kind) {
         case ScriptBackendKind::None:
             return "none";
-        case ScriptBackendKind::Stub:
-            return "stub";
         case ScriptBackendKind::LuaJit:
             return "luajit";
     }
@@ -19,10 +17,6 @@ const char* ScriptBackendKindName(ScriptBackendKind backend_kind) {
 
 const char* ScriptBackendPreferenceName(ScriptBackendPreference preference) {
     switch (preference) {
-        case ScriptBackendPreference::Auto:
-            return "auto";
-        case ScriptBackendPreference::Stub:
-            return "stub";
         case ScriptBackendPreference::LuaJit:
             return "luajit";
     }
@@ -55,26 +49,8 @@ bool ScriptHostRuntime::Initialize(std::string& out_error) {
     Shutdown();
     last_backend_error_.clear();
 
-    if (backend_preference_ == ScriptBackendPreference::Stub) {
-        return InitializeWithStub(out_error);
-    }
-
-    if (backend_preference_ == ScriptBackendPreference::LuaJit) {
-        return InitializeWithLuaJit(out_error);
-    }
-
-    std::string lua_error;
-    if (InitializeWithLuaJit(lua_error)) {
-        out_error.clear();
-        return true;
-    }
-
-    last_backend_error_ = lua_error;
-    core::Logger::Warn(
-        "script",
-        "LuaJIT unavailable, fallback to stub backend: " + lua_error);
-
-    if (!InitializeWithStub(out_error)) {
+    if (!InitializeWithLuaJit(out_error)) {
+        last_backend_error_ = out_error;
         return false;
     }
 
@@ -114,23 +90,10 @@ ScriptRuntimeDescriptor ScriptHostRuntime::RuntimeDescriptor() const {
     }
 
     return ScriptRuntimeDescriptor{
-        .backend_name = ScriptBackendKindName(active_backend_),
+        .backend_name = ScriptBackendPreferenceName(backend_preference_),
         .api_version = kScriptApiVersion,
         .sandbox_enabled = false,
     };
-}
-
-bool ScriptHostRuntime::InitializeWithStub(std::string& out_error) {
-    if (!stub_host_.Initialize(out_error)) {
-        active_host_ = nullptr;
-        active_backend_ = ScriptBackendKind::None;
-        return false;
-    }
-
-    active_host_ = &stub_host_;
-    active_backend_ = ScriptBackendKind::Stub;
-    core::Logger::Info("script", "Script runtime backend: stub.");
-    return true;
 }
 
 bool ScriptHostRuntime::InitializeWithLuaJit(std::string& out_error) {

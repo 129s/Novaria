@@ -2,21 +2,17 @@
 
 #include "script/lua_jit_script_host.h"
 #include "script/script_host.h"
-#include "script/script_host_stub.h"
 
 #include <string>
 
 namespace novaria::script {
 
 enum class ScriptBackendPreference {
-    Auto,
-    Stub,
     LuaJit,
 };
 
 enum class ScriptBackendKind {
     None,
-    Stub,
     LuaJit,
 };
 
@@ -37,14 +33,12 @@ public:
     ScriptRuntimeDescriptor RuntimeDescriptor() const override;
 
 private:
-    bool InitializeWithStub(std::string& out_error);
     bool InitializeWithLuaJit(std::string& out_error);
 
-    ScriptBackendPreference backend_preference_ = ScriptBackendPreference::Auto;
+    ScriptBackendPreference backend_preference_ = ScriptBackendPreference::LuaJit;
     ScriptBackendKind active_backend_ = ScriptBackendKind::None;
     IScriptHost* active_host_ = nullptr;
     std::string last_backend_error_;
-    ScriptHostStub stub_host_;
     LuaJitScriptHost lua_jit_host_;
 };
 

@@ -24,28 +24,20 @@ const char* NetSessionStateName(net::NetSessionState state) {
 
 script::ScriptBackendPreference ToScriptBackendPreference(core::ScriptBackendMode mode) {
     switch (mode) {
-        case core::ScriptBackendMode::Auto:
-            return script::ScriptBackendPreference::Auto;
-        case core::ScriptBackendMode::Stub:
-            return script::ScriptBackendPreference::Stub;
         case core::ScriptBackendMode::LuaJit:
             return script::ScriptBackendPreference::LuaJit;
     }
 
-    return script::ScriptBackendPreference::Auto;
+    return script::ScriptBackendPreference::LuaJit;
 }
 
 net::NetBackendPreference ToNetBackendPreference(core::NetBackendMode mode) {
     switch (mode) {
-        case core::NetBackendMode::Auto:
-            return net::NetBackendPreference::Auto;
-        case core::NetBackendMode::Stub:
-            return net::NetBackendPreference::Stub;
         case core::NetBackendMode::UdpLoopback:
             return net::NetBackendPreference::UdpLoopback;
     }
 
-    return net::NetBackendPreference::Stub;
+    return net::NetBackendPreference::UdpLoopback;
 }
 
 }  // namespace

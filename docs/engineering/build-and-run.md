@@ -2,7 +2,7 @@
 
 - `status`: authoritative
 - `owner`: @novaria-core
-- `last_verified_commit`: 2fc8b1d
+- `last_verified_commit`: 5cba165
 - `updated`: 2026-02-06
 
 ## 1. 前置条件
@@ -56,22 +56,18 @@ cmake -S . -B build -DNOVARIA_FETCH_SDL3=ON
 cmake -S . -B build -DNOVARIA_ENABLE_LUAJIT=ON
 ```
 
-禁用 LuaJIT 并固定走 stub：
-
-```powershell
-cmake -S . -B build -DNOVARIA_ENABLE_LUAJIT=OFF
-```
+说明：若未找到 LuaJIT，脚本运行时会在初始化阶段 fail-fast，不再回退到 stub。
 
 运行时脚本后端配置（`config/game.toml`）：
 
 ```toml
-script_backend = "auto"   # auto | stub | luajit
+script_backend = "luajit"
 ```
 
 运行时网络后端配置（`config/game.toml`）：
 
 ```toml
-net_backend = "stub"      # auto | stub | udp_loopback
+net_backend = "udp_loopback"
 net_udp_local_port = 0
 net_udp_remote_host = "127.0.0.1"
 net_udp_remote_port = 0

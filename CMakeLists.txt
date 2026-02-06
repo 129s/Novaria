@@ -63,7 +63,7 @@ if(NOVARIA_ENABLE_LUAJIT)
         set(NOVARIA_LUAJIT_FOUND ON)
         message(STATUS "LuaJIT found: ${NOVARIA_LUAJIT_LIBRARY}")
     else()
-        message(STATUS "LuaJIT not found, runtime will fallback to stub backend.")
+        message(STATUS "LuaJIT not found, script runtime will fail-fast at initialization.")
     endif()
 endif()
 
@@ -85,12 +85,10 @@ add_executable(
     src/world/world_service_basic.cpp
     src/world/snapshot_codec.cpp
     src/net/net_service_runtime.cpp
-    src/net/net_service_stub.cpp
     src/net/net_service_udp_loopback.cpp
     src/net/udp_transport.cpp
     src/script/script_host_runtime.cpp
     src/script/lua_jit_script_host.cpp
-    src/script/script_host_stub.cpp
     src/mod/mod_loader.cpp
     src/save/save_repository.cpp
     src/core/logger.cpp
@@ -138,14 +136,6 @@ if(NOVARIA_BUILD_TESTS)
     target_include_directories(novaria_config_tests PRIVATE src)
 
     add_executable(
-        novaria_net_service_stub_tests
-        tests/net/net_service_stub_tests.cpp
-        src/net/net_service_stub.cpp
-        src/core/logger.cpp
-    )
-    target_include_directories(novaria_net_service_stub_tests PRIVATE src)
-
-    add_executable(
         novaria_net_service_udp_loopback_tests
         tests/net/net_service_udp_loopback_tests.cpp
         src/net/net_service_udp_loopback.cpp
@@ -161,7 +151,6 @@ if(NOVARIA_BUILD_TESTS)
         novaria_net_service_runtime_tests
         tests/net/net_service_runtime_tests.cpp
         src/net/net_service_runtime.cpp
-        src/net/net_service_stub.cpp
         src/net/net_service_udp_loopback.cpp
         src/net/udp_transport.cpp
         src/core/logger.cpp
@@ -190,19 +179,10 @@ if(NOVARIA_BUILD_TESTS)
     target_include_directories(novaria_world_service_tests PRIVATE src)
 
     add_executable(
-        novaria_script_host_stub_tests
-        tests/script/script_host_stub_tests.cpp
-        src/script/script_host_stub.cpp
-        src/core/logger.cpp
-    )
-    target_include_directories(novaria_script_host_stub_tests PRIVATE src)
-
-    add_executable(
         novaria_script_host_runtime_tests
         tests/script/script_host_runtime_tests.cpp
         src/script/script_host_runtime.cpp
         src/script/lua_jit_script_host.cpp
-        src/script/script_host_stub.cpp
         src/core/logger.cpp
     )
     target_include_directories(novaria_script_host_runtime_tests PRIVATE src)
@@ -213,11 +193,16 @@ if(NOVARIA_BUILD_TESTS)
         tests/sim/simulation_kernel_tests.cpp
         src/sim/simulation_kernel.cpp
         src/world/snapshot_codec.cpp
-        src/net/net_service_stub.cpp
+        src/net/net_service_runtime.cpp
+        src/net/net_service_udp_loopback.cpp
+        src/net/udp_transport.cpp
         src/save/save_repository.cpp
         src/core/logger.cpp
     )
     target_include_directories(novaria_simulation_kernel_tests PRIVATE src)
+    if(WIN32)
+        target_link_libraries(novaria_simulation_kernel_tests PRIVATE ws2_32)
+    endif()
 
     add_executable(
         novaria_save_repository_tests
@@ -256,22 +241,24 @@ if(NOVARIA_BUILD_TESTS)
         src/sim/simulation_kernel.cpp
         src/world/world_service_basic.cpp
         src/world/snapshot_codec.cpp
-        src/net/net_service_stub.cpp
-        src/script/script_host_stub.cpp
+        src/net/net_service_runtime.cpp
+        src/net/net_service_udp_loopback.cpp
+        src/net/udp_transport.cpp
         src/save/save_repository.cpp
         src/mod/mod_loader.cpp
         src/core/logger.cpp
     )
     target_include_directories(novaria_mvp_acceptance_tests PRIVATE src)
+    if(WIN32)
+        target_link_libraries(novaria_mvp_acceptance_tests PRIVATE ws2_32)
+    endif()
 
     if(MSVC)
         target_compile_options(novaria_config_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
-        target_compile_options(novaria_net_service_stub_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_net_service_udp_loopback_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_net_service_runtime_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_udp_transport_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_world_service_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
-        target_compile_options(novaria_script_host_stub_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_script_host_runtime_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_simulation_kernel_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_save_repository_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
@@ -281,12 +268,10 @@ if(NOVARIA_BUILD_TESTS)
         target_compile_options(novaria_mvp_acceptance_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         if(NOVARIA_WARNINGS_AS_ERRORS)
             target_compile_options(novaria_config_tests PRIVATE /WX)
-            target_compile_options(novaria_net_service_stub_tests PRIVATE /WX)
             target_compile_options(novaria_net_service_udp_loopback_tests PRIVATE /WX)
             target_compile_options(novaria_net_service_runtime_tests PRIVATE /WX)
             target_compile_options(novaria_udp_transport_tests PRIVATE /WX)
             target_compile_options(novaria_world_service_tests PRIVATE /WX)
-            target_compile_options(novaria_script_host_stub_tests PRIVATE /WX)
             target_compile_options(novaria_script_host_runtime_tests PRIVATE /WX)
             target_compile_options(novaria_simulation_kernel_tests PRIVATE /WX)
             target_compile_options(novaria_save_repository_tests PRIVATE /WX)
@@ -297,12 +282,10 @@ if(NOVARIA_BUILD_TESTS)
         endif()
     else()
         target_compile_options(novaria_config_tests PRIVATE -Wall -Wextra -Wpedantic)
-        target_compile_options(novaria_net_service_stub_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_net_service_udp_loopback_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_net_service_runtime_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_udp_transport_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_world_service_tests PRIVATE -Wall -Wextra -Wpedantic)
-        target_compile_options(novaria_script_host_stub_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_script_host_runtime_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_simulation_kernel_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_save_repository_tests PRIVATE -Wall -Wextra -Wpedantic)
@@ -312,12 +295,10 @@ if(NOVARIA_BUILD_TESTS)
         target_compile_options(novaria_mvp_acceptance_tests PRIVATE -Wall -Wextra -Wpedantic)
         if(NOVARIA_WARNINGS_AS_ERRORS)
             target_compile_options(novaria_config_tests PRIVATE -Werror)
-            target_compile_options(novaria_net_service_stub_tests PRIVATE -Werror)
             target_compile_options(novaria_net_service_udp_loopback_tests PRIVATE -Werror)
             target_compile_options(novaria_net_service_runtime_tests PRIVATE -Werror)
             target_compile_options(novaria_udp_transport_tests PRIVATE -Werror)
             target_compile_options(novaria_world_service_tests PRIVATE -Werror)
-            target_compile_options(novaria_script_host_stub_tests PRIVATE -Werror)
             target_compile_options(novaria_script_host_runtime_tests PRIVATE -Werror)
             target_compile_options(novaria_simulation_kernel_tests PRIVATE -Werror)
             target_compile_options(novaria_save_repository_tests PRIVATE -Werror)
@@ -329,12 +310,10 @@ if(NOVARIA_BUILD_TESTS)
     endif()
 
     add_test(NAME novaria_config_tests COMMAND novaria_config_tests)
-    add_test(NAME novaria_net_service_stub_tests COMMAND novaria_net_service_stub_tests)
     add_test(NAME novaria_net_service_udp_loopback_tests COMMAND novaria_net_service_udp_loopback_tests)
     add_test(NAME novaria_net_service_runtime_tests COMMAND novaria_net_service_runtime_tests)
     add_test(NAME novaria_udp_transport_tests COMMAND novaria_udp_transport_tests)
     add_test(NAME novaria_world_service_tests COMMAND novaria_world_service_tests)
-    add_test(NAME novaria_script_host_stub_tests COMMAND novaria_script_host_stub_tests)
     add_test(NAME novaria_script_host_runtime_tests COMMAND novaria_script_host_runtime_tests)
     add_test(NAME novaria_simulation_kernel_tests COMMAND novaria_simulation_kernel_tests)
     add_test(NAME novaria_save_repository_tests COMMAND novaria_save_repository_tests)

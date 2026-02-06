@@ -10,8 +10,6 @@ const char* NetBackendKindName(NetBackendKind backend_kind) {
     switch (backend_kind) {
         case NetBackendKind::None:
             return "none";
-        case NetBackendKind::Stub:
-            return "stub";
         case NetBackendKind::UdpLoopback:
             return "udp_loopback";
     }
@@ -21,10 +19,6 @@ const char* NetBackendKindName(NetBackendKind backend_kind) {
 
 const char* NetBackendPreferenceName(NetBackendPreference preference) {
     switch (preference) {
-        case NetBackendPreference::Auto:
-            return "auto";
-        case NetBackendPreference::Stub:
-            return "stub";
         case NetBackendPreference::UdpLoopback:
             return "udp_loopback";
     }
@@ -62,26 +56,8 @@ bool NetServiceRuntime::Initialize(std::string& out_error) {
     Shutdown();
     last_backend_error_.clear();
 
-    if (backend_preference_ == NetBackendPreference::Stub) {
-        return InitializeWithStub(out_error);
-    }
-
-    if (backend_preference_ == NetBackendPreference::UdpLoopback) {
-        return InitializeWithUdpLoopback(out_error);
-    }
-
-    std::string udp_error;
-    if (InitializeWithUdpLoopback(udp_error)) {
-        out_error.clear();
-        return true;
-    }
-
-    last_backend_error_ = udp_error;
-    core::Logger::Warn(
-        "net",
-        "UDP loopback backend unavailable, fallback to stub backend: " + udp_error);
-
-    if (!InitializeWithStub(out_error)) {
+    if (!InitializeWithUdpLoopback(out_error)) {
+        last_backend_error_ = out_error;
         return false;
     }
 
@@ -171,19 +147,6 @@ void NetServiceRuntime::PublishWorldSnapshot(
     }
 
     active_host_->PublishWorldSnapshot(tick_index, encoded_dirty_chunks);
-}
-
-bool NetServiceRuntime::InitializeWithStub(std::string& out_error) {
-    if (!stub_host_.Initialize(out_error)) {
-        active_host_ = nullptr;
-        active_backend_ = NetBackendKind::None;
-        return false;
-    }
-
-    active_host_ = &stub_host_;
-    active_backend_ = NetBackendKind::Stub;
-    core::Logger::Info("net", "Net runtime backend: stub.");
-    return true;
 }
 
 bool NetServiceRuntime::InitializeWithUdpLoopback(std::string& out_error) {

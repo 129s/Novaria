@@ -69,16 +69,6 @@ bool ParseScriptBackendMode(const std::string& value, ScriptBackendMode& out_mod
         return false;
     }
 
-    if (parsed == "auto") {
-        out_mode = ScriptBackendMode::Auto;
-        return true;
-    }
-
-    if (parsed == "stub") {
-        out_mode = ScriptBackendMode::Stub;
-        return true;
-    }
-
     if (parsed == "luajit") {
         out_mode = ScriptBackendMode::LuaJit;
         return true;
@@ -91,16 +81,6 @@ bool ParseNetBackendMode(const std::string& value, NetBackendMode& out_mode) {
     std::string parsed;
     if (!ParseString(value, parsed)) {
         return false;
-    }
-
-    if (parsed == "auto") {
-        out_mode = NetBackendMode::Auto;
-        return true;
-    }
-
-    if (parsed == "stub") {
-        out_mode = NetBackendMode::Stub;
-        return true;
     }
 
     if (parsed == "udp_loopback") {
@@ -195,7 +175,7 @@ bool ConfigLoader::Load(
         if (key == "script_backend") {
             if (!ParseScriptBackendMode(value, out_config.script_backend_mode)) {
                 out_error =
-                    "script_backend expects one of \"auto\"|\"stub\"|\"luajit\": line " +
+                    "script_backend expects \"luajit\": line " +
                     std::to_string(line_number);
                 return false;
             }
@@ -205,7 +185,7 @@ bool ConfigLoader::Load(
         if (key == "net_backend") {
             if (!ParseNetBackendMode(value, out_config.net_backend_mode)) {
                 out_error =
-                    "net_backend expects one of \"auto\"|\"stub\"|\"udp_loopback\": line " +
+                    "net_backend expects \"udp_loopback\": line " +
                     std::to_string(line_number);
                 return false;
             }
@@ -250,10 +230,6 @@ bool ConfigLoader::Load(
 
 const char* ScriptBackendModeName(ScriptBackendMode mode) {
     switch (mode) {
-        case ScriptBackendMode::Auto:
-            return "auto";
-        case ScriptBackendMode::Stub:
-            return "stub";
         case ScriptBackendMode::LuaJit:
             return "luajit";
     }
@@ -263,10 +239,6 @@ const char* ScriptBackendModeName(ScriptBackendMode mode) {
 
 const char* NetBackendModeName(NetBackendMode mode) {
     switch (mode) {
-        case NetBackendMode::Auto:
-            return "auto";
-        case NetBackendMode::Stub:
-            return "stub";
         case NetBackendMode::UdpLoopback:
             return "udp_loopback";
     }
