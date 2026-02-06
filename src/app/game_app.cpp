@@ -7,6 +7,22 @@
 #include <string>
 
 namespace novaria::app {
+namespace {
+
+const char* NetSessionStateName(net::NetSessionState state) {
+    switch (state) {
+        case net::NetSessionState::Disconnected:
+            return "disconnected";
+        case net::NetSessionState::Connecting:
+            return "connecting";
+        case net::NetSessionState::Connected:
+            return "connected";
+    }
+
+    return "unknown";
+}
+
+}  // namespace
 
 GameApp::GameApp()
     : simulation_kernel_(world_service_, net_service_, script_host_) {}
@@ -85,6 +101,7 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
     }
 
     initialized_ = true;
+    last_net_diagnostics_tick_ = 0;
     core::Logger::Info("app", "Novaria started.");
     return true;
 }
@@ -163,7 +180,37 @@ int GameApp::Run() {
 
             return !quit_requested_;
         },
-        [this](double fixed_delta_seconds) { simulation_kernel_.Update(fixed_delta_seconds); },
+        [this](double fixed_delta_seconds) {
+            simulation_kernel_.Update(fixed_delta_seconds);
+
+            constexpr std::uint64_t kNetDiagnosticsPeriodTicks = 300;
+            const std::uint64_t current_tick = simulation_kernel_.CurrentTick();
+            if (current_tick == 0 ||
+                current_tick % kNetDiagnosticsPeriodTicks != 0 ||
+                current_tick == last_net_diagnostics_tick_) {
+                return;
+            }
+
+            last_net_diagnostics_tick_ = current_tick;
+            core::Logger::Info(
+                "net",
+                "Diagnostics: tick=" + std::to_string(current_tick) +
+                    ", state=" + NetSessionStateName(net_service_.SessionState()) +
+                    ", transitions=" + std::to_string(net_service_.SessionTransitionCount()) +
+                    ", connected_transitions=" + std::to_string(net_service_.ConnectedTransitionCount()) +
+                    ", connect_requests=" + std::to_string(net_service_.ConnectRequestCount()) +
+                    ", timeout_disconnects=" + std::to_string(net_service_.TimeoutDisconnectCount()) +
+                    ", manual_disconnects=" + std::to_string(net_service_.ManualDisconnectCount()) +
+                    ", dropped_commands(total/disconnected/queue_full)=" +
+                    std::to_string(net_service_.DroppedCommandCount()) + "/" +
+                    std::to_string(net_service_.DroppedCommandDisconnectedCount()) + "/" +
+                    std::to_string(net_service_.DroppedCommandQueueFullCount()) +
+                    ", dropped_payloads(total/disconnected/queue_full)=" +
+                    std::to_string(net_service_.DroppedRemoteChunkPayloadCount()) + "/" +
+                    std::to_string(net_service_.DroppedRemoteChunkPayloadDisconnectedCount()) + "/" +
+                    std::to_string(net_service_.DroppedRemoteChunkPayloadQueueFullCount()) +
+                    ", ignored_heartbeats=" + std::to_string(net_service_.IgnoredHeartbeatCount()));
+        },
         [this](float interpolation_alpha) { sdl_context_.RenderFrame(interpolation_alpha); });
 
     core::Logger::Info("app", "Main loop exited.");
@@ -192,6 +239,7 @@ void GameApp::Shutdown() {
     simulation_kernel_.Shutdown();
     sdl_context_.Shutdown();
     initialized_ = false;
+    last_net_diagnostics_tick_ = 0;
     core::Logger::Info("app", "Novaria shutdown complete.");
 }
 
