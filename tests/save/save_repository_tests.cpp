@@ -114,6 +114,21 @@ int main() {
         "Future save format version should be rejected.");
     passed &= Expect(!error.empty(), "Future save rejection should include reason.");
 
+    std::ofstream invalid_debug_file(test_dir / "world.sav", std::ios::trunc);
+    invalid_debug_file << "format_version=" << novaria::save::kCurrentWorldSaveFormatVersion << "\n";
+    invalid_debug_file << "tick_index=1\n";
+    invalid_debug_file << "local_player_id=1\n";
+    invalid_debug_file << "debug_net_dropped_commands=NaN\n";
+    invalid_debug_file.close();
+
+    novaria::save::WorldSaveState invalid_debug_loaded{};
+    passed &= Expect(
+        !repository.LoadWorldState(invalid_debug_loaded, error),
+        "Invalid debug_net_* value should fail save load.");
+    passed &= Expect(
+        !error.empty(),
+        "Invalid debug_net_* load failure should include reason.");
+
     repository.Shutdown();
     passed &= Expect(
         !repository.SaveWorldState(expected, error),
