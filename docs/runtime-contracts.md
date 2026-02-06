@@ -54,6 +54,7 @@
 
 - `GameApp` 已接入 `SimulationKernel` 固定更新入口。
 - 本地输入已接入命令通道：`J` 触发 `jump`，`K` 触发 `attack`，`F1` 触发 `debug.ping` 事件。
+- 启停流程已接入文件存档仓库：启动尝试读取 `saves/world.sav`，退出写回当前 Tick 与本地玩家编号。
 - `world` 已从 Stub 升级为最小可运行实现。
 - 已接入 `CTest` 与 `world_service_basic` 单元测试入口。
 - 已补 `SimulationKernel` 编排与回滚测试。

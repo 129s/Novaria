@@ -56,6 +56,7 @@ add_executable(
     src/world/world_service_basic.cpp
     src/net/net_service_stub.cpp
     src/script/script_host_stub.cpp
+    src/save/save_repository.cpp
     src/core/logger.cpp
     src/core/config.cpp
 )
@@ -120,27 +121,39 @@ if(NOVARIA_BUILD_TESTS)
     )
     target_include_directories(novaria_simulation_kernel_tests PRIVATE src)
 
+    add_executable(
+        novaria_save_repository_tests
+        tests/save/save_repository_tests.cpp
+        src/save/save_repository.cpp
+        src/core/logger.cpp
+    )
+    target_include_directories(novaria_save_repository_tests PRIVATE src)
+
     if(MSVC)
         target_compile_options(novaria_net_service_stub_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_world_service_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_script_host_stub_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_simulation_kernel_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
+        target_compile_options(novaria_save_repository_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         if(NOVARIA_WARNINGS_AS_ERRORS)
             target_compile_options(novaria_net_service_stub_tests PRIVATE /WX)
             target_compile_options(novaria_world_service_tests PRIVATE /WX)
             target_compile_options(novaria_script_host_stub_tests PRIVATE /WX)
             target_compile_options(novaria_simulation_kernel_tests PRIVATE /WX)
+            target_compile_options(novaria_save_repository_tests PRIVATE /WX)
         endif()
     else()
         target_compile_options(novaria_net_service_stub_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_world_service_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_script_host_stub_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_simulation_kernel_tests PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(novaria_save_repository_tests PRIVATE -Wall -Wextra -Wpedantic)
         if(NOVARIA_WARNINGS_AS_ERRORS)
             target_compile_options(novaria_net_service_stub_tests PRIVATE -Werror)
             target_compile_options(novaria_world_service_tests PRIVATE -Werror)
             target_compile_options(novaria_script_host_stub_tests PRIVATE -Werror)
             target_compile_options(novaria_simulation_kernel_tests PRIVATE -Werror)
+            target_compile_options(novaria_save_repository_tests PRIVATE -Werror)
         endif()
     endif()
 
@@ -148,4 +161,5 @@ if(NOVARIA_BUILD_TESTS)
     add_test(NAME novaria_world_service_tests COMMAND novaria_world_service_tests)
     add_test(NAME novaria_script_host_stub_tests COMMAND novaria_script_host_stub_tests)
     add_test(NAME novaria_simulation_kernel_tests COMMAND novaria_simulation_kernel_tests)
+    add_test(NAME novaria_save_repository_tests COMMAND novaria_save_repository_tests)
 endif()

@@ -20,6 +20,7 @@ public:
     bool Initialize(std::string& out_error);
     void Shutdown();
     void SubmitLocalCommand(const net::PlayerCommand& command);
+    std::uint64_t CurrentTick() const;
     void Update(double fixed_delta_seconds);
 
 private:

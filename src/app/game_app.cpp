@@ -30,6 +30,22 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
         return false;
     }
 
+    std::string save_error;
+    if (!save_repository_.Initialize(save_root_, save_error)) {
+        core::Logger::Warn("save", "Save repository initialize failed: " + save_error);
+    } else {
+        save::WorldSaveState save_state{};
+        if (save_repository_.LoadWorldState(save_state, save_error)) {
+            local_player_id_ = save_state.local_player_id == 0 ? 1 : save_state.local_player_id;
+            core::Logger::Info(
+                "save",
+                "Loaded world save: tick=" + std::to_string(save_state.tick_index) +
+                    ", player=" + std::to_string(local_player_id_));
+        } else {
+            core::Logger::Warn("save", "World save load skipped: " + save_error);
+        }
+    }
+
     initialized_ = true;
     core::Logger::Info("app", "Novaria started.");
     return true;
@@ -87,6 +103,16 @@ void GameApp::Shutdown() {
         return;
     }
 
+    std::string save_error;
+    const save::WorldSaveState save_state{
+        .tick_index = simulation_kernel_.CurrentTick(),
+        .local_player_id = local_player_id_,
+    };
+    if (!save_repository_.SaveWorldState(save_state, save_error)) {
+        core::Logger::Warn("save", "World save write failed: " + save_error);
+    }
+
+    save_repository_.Shutdown();
     simulation_kernel_.Shutdown();
     sdl_context_.Shutdown();
     initialized_ = false;

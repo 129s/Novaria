@@ -2,6 +2,7 @@
 
 #include "core/config.h"
 #include "platform/sdl_context.h"
+#include "save/save_repository.h"
 #include "sim/simulation_kernel.h"
 #include "net/net_service_stub.h"
 #include "script/script_host_stub.h"
@@ -25,6 +26,8 @@ private:
     bool quit_requested_ = false;
     core::GameConfig config_;
     platform::SdlContext sdl_context_;
+    save::FileSaveRepository save_repository_;
+    std::filesystem::path save_root_ = "saves";
     platform::InputActions frame_actions_;
     std::uint32_t local_player_id_ = 1;
     std::uint64_t script_ping_counter_ = 0;

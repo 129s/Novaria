@@ -55,6 +55,10 @@ void SimulationKernel::SubmitLocalCommand(const net::PlayerCommand& command) {
     pending_local_commands_.push_back(command);
 }
 
+std::uint64_t SimulationKernel::CurrentTick() const {
+    return tick_index_;
+}
+
 void SimulationKernel::Update(double fixed_delta_seconds) {
     if (!initialized_) {
         return;
