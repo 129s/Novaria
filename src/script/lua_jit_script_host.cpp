@@ -36,6 +36,8 @@ end
 )lua";
 
 #if defined(NOVARIA_WITH_LUAJIT)
+constexpr int kInstructionBudgetPerCall = 200000;
+
 std::string ReadLuaError(lua_State* lua_state) {
     const char* error_message = lua_tostring(lua_state, -1);
     std::string output = error_message != nullptr ? error_message : "unknown LuaJIT error";
@@ -46,6 +48,27 @@ std::string ReadLuaError(lua_State* lua_state) {
 void ClearGlobal(lua_State* lua_state, const char* global_name) {
     lua_pushnil(lua_state);
     lua_setglobal(lua_state, global_name);
+}
+
+void InstructionBudgetHook(lua_State* lua_state, lua_Debug* debug) {
+    (void)debug;
+    luaL_error(lua_state, "instruction budget exceeded");
+}
+
+bool RunProtectedLuaCall(
+    lua_State* lua_state,
+    int argument_count,
+    std::string& out_error) {
+    lua_sethook(lua_state, InstructionBudgetHook, LUA_MASKCOUNT, kInstructionBudgetPerCall);
+    const int run_status = lua_pcall(lua_state, argument_count, 0, 0);
+    lua_sethook(lua_state, nullptr, 0, 0);
+    if (run_status != LUA_OK) {
+        out_error = ReadLuaError(lua_state);
+        return false;
+    }
+
+    out_error.clear();
+    return true;
 }
 #endif
 
@@ -241,9 +264,8 @@ bool LuaJitScriptHost::LoadBootstrapScript(std::string& out_error) {
         return false;
     }
 
-    const int run_status = lua_pcall(lua_state_, 0, 0, 0);
-    if (run_status != LUA_OK) {
-        out_error = "Failed to run bootstrap script: " + ReadLuaError(lua_state_);
+    if (!RunProtectedLuaCall(lua_state_, 0, out_error)) {
+        out_error = "Failed to run bootstrap script: " + out_error;
         return false;
     }
 
@@ -278,11 +300,9 @@ bool LuaJitScriptHost::LoadModuleScript(
         return false;
     }
 
-    const int run_status = lua_pcall(lua_state_, 0, 0, 0);
-    if (run_status != LUA_OK) {
+    if (!RunProtectedLuaCall(lua_state_, 0, out_error)) {
         out_error =
-            "Failed to run module '" + module_source.module_name + "': " +
-            ReadLuaError(lua_state_);
+            "Failed to run module '" + module_source.module_name + "': " + out_error;
         return false;
     }
 
@@ -310,8 +330,7 @@ bool LuaJitScriptHost::InvokeTickHandler(const sim::TickContext& tick_context, s
 
     lua_pushinteger(lua_state_, static_cast<lua_Integer>(tick_context.tick_index));
     lua_pushnumber(lua_state_, static_cast<lua_Number>(tick_context.fixed_delta_seconds));
-    if (lua_pcall(lua_state_, 2, 0, 0) != LUA_OK) {
-        out_error = ReadLuaError(lua_state_);
+    if (!RunProtectedLuaCall(lua_state_, 2, out_error)) {
         return false;
     }
 
@@ -339,8 +358,7 @@ bool LuaJitScriptHost::InvokeEventHandler(const ScriptEvent& event_data, std::st
 
     lua_pushstring(lua_state_, event_data.event_name.c_str());
     lua_pushstring(lua_state_, event_data.payload.c_str());
-    if (lua_pcall(lua_state_, 2, 0, 0) != LUA_OK) {
-        out_error = ReadLuaError(lua_state_);
+    if (!RunProtectedLuaCall(lua_state_, 2, out_error)) {
         return false;
     }
 

@@ -115,6 +115,23 @@ int main() {
     passed &= Expect(
         !error.empty(),
         "Broken script syntax failure should return readable error.");
+
+    novaria::script::ScriptHostRuntime runaway_module_runtime;
+    passed &= Expect(
+        runaway_module_runtime.SetScriptModules(
+            {{
+                .module_name = "mod_runaway_script",
+                .api_version = novaria::script::kScriptApiVersion,
+                .source_code = "while true do end",
+            }},
+            error),
+        "Runaway script should be accepted during staging.");
+    passed &= Expect(
+        !runaway_module_runtime.Initialize(error),
+        "Runaway script should fail runtime initialization by instruction budget.");
+    passed &= Expect(
+        error.find("instruction budget exceeded") != std::string::npos,
+        "Runaway script failure should include instruction budget reason.");
 #else
     passed &= Expect(!luajit_init_ok, "LuaJIT backend should fail-fast when LuaJIT is unavailable.");
     passed &= Expect(
