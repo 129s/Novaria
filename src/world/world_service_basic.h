@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace novaria::world {
@@ -61,6 +62,7 @@ private:
 
     bool initialized_ = false;
     std::unordered_map<ChunkKey, ChunkData, ChunkKeyHasher> chunks_;
+    std::unordered_set<ChunkKey, ChunkKeyHasher> dirty_chunk_keys_;
 };
 
 }  // namespace novaria::world

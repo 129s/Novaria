@@ -33,6 +33,7 @@
   - 内存 Chunk 容器
   - 基础地表生成
   - 负坐标 Tile 写入
+  - 增量脏块集合追踪（`ConsumeDirtyChunks` 不扫描全量 Chunk）
 
 ## `net`
 

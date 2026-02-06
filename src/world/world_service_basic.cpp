@@ -14,6 +14,7 @@ std::size_t WorldServiceBasic::ChunkKeyHasher::operator()(const ChunkKey& key) c
 
 bool WorldServiceBasic::Initialize(std::string& out_error) {
     chunks_.clear();
+    dirty_chunk_keys_.clear();
     initialized_ = true;
     out_error.clear();
     core::Logger::Info("world", "WorldServiceBasic initialized.");
@@ -26,6 +27,7 @@ void WorldServiceBasic::Shutdown() {
     }
 
     chunks_.clear();
+    dirty_chunk_keys_.clear();
     initialized_ = false;
     core::Logger::Info("world", "WorldServiceBasic shutdown.");
 }
@@ -47,7 +49,9 @@ void WorldServiceBasic::UnloadChunk(const ChunkCoord& chunk_coord) {
         return;
     }
 
-    chunks_.erase(ToChunkKey(chunk_coord));
+    const ChunkKey chunk_key = ToChunkKey(chunk_coord);
+    chunks_.erase(chunk_key);
+    dirty_chunk_keys_.erase(chunk_key);
 }
 
 bool WorldServiceBasic::ApplyTileMutation(const TileMutation& mutation, std::string& out_error) {
@@ -57,6 +61,7 @@ bool WorldServiceBasic::ApplyTileMutation(const TileMutation& mutation, std::str
     }
 
     const ChunkCoord chunk_coord = WorldToChunkCoord(mutation.tile_x, mutation.tile_y);
+    const ChunkKey chunk_key = ToChunkKey(chunk_coord);
     ChunkData& chunk_data = EnsureChunk(chunk_coord);
 
     const int local_x = PositiveMod(mutation.tile_x, kChunkSize);
@@ -64,7 +69,10 @@ bool WorldServiceBasic::ApplyTileMutation(const TileMutation& mutation, std::str
     const std::size_t local_index = LocalIndex(local_x, local_y);
 
     chunk_data.tiles[local_index] = mutation.material_id;
-    chunk_data.dirty = true;
+    if (!chunk_data.dirty) {
+        chunk_data.dirty = true;
+        dirty_chunk_keys_.insert(chunk_key);
+    }
 
     out_error.clear();
     return true;
@@ -106,6 +114,7 @@ bool WorldServiceBasic::ApplyChunkSnapshot(const ChunkSnapshot& snapshot, std::s
     ChunkData& chunk_data = EnsureChunk(snapshot.chunk_coord);
     chunk_data.tiles = snapshot.tiles;
     chunk_data.dirty = false;
+    dirty_chunk_keys_.erase(ToChunkKey(snapshot.chunk_coord));
     out_error.clear();
     return true;
 }
@@ -116,17 +125,20 @@ std::vector<ChunkCoord> WorldServiceBasic::ConsumeDirtyChunks() {
         return dirty_chunks;
     }
 
-    for (auto& [chunk_key, chunk_data] : chunks_) {
-        if (!chunk_data.dirty) {
+    dirty_chunks.reserve(dirty_chunk_keys_.size());
+    for (const ChunkKey& chunk_key : dirty_chunk_keys_) {
+        auto chunk_iter = chunks_.find(chunk_key);
+        if (chunk_iter == chunks_.end()) {
             continue;
         }
 
+        chunk_iter->second.dirty = false;
         dirty_chunks.push_back(ChunkCoord{
             .x = chunk_key.x,
             .y = chunk_key.y,
         });
-        chunk_data.dirty = false;
     }
+    dirty_chunk_keys_.clear();
 
     return dirty_chunks;
 }

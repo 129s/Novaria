@@ -72,12 +72,17 @@ int main() {
     passed &= Expect(
         world_service.ApplyTileMutation({.tile_x = 0, .tile_y = 0, .material_id = 99}, error),
         "Tile mutation at (0,0) should succeed.");
+    passed &= Expect(
+        world_service.ApplyTileMutation({.tile_x = 1, .tile_y = 1, .material_id = 100}, error),
+        "Second mutation in same chunk should also succeed.");
     passed &= Expect(error.empty(), "Mutation at (0,0) should not report error.");
     passed &= Expect(world_service.TryReadTile(0, 0, material_id), "Tile (0,0) should still be readable.");
     passed &= Expect(material_id == 99, "Tile (0,0) should be overwritten by mutation.");
     {
         const auto dirty_chunks = world_service.ConsumeDirtyChunks();
-        passed &= Expect(dirty_chunks.size() == 1, "One dirty chunk should be reported after first mutation.");
+        passed &= Expect(
+            dirty_chunks.size() == 1,
+            "Multiple mutations in same chunk should still report one dirty chunk.");
         passed &= Expect(ContainsChunk(dirty_chunks, {.x = 0, .y = 0}), "Dirty chunk should contain (0,0).");
         passed &= Expect(
             world_service.ConsumeDirtyChunks().empty(),
