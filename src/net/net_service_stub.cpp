@@ -11,6 +11,7 @@ bool NetServiceStub::Initialize(std::string& out_error) {
     pending_remote_chunk_payloads_.clear();
     total_processed_command_count_ = 0;
     dropped_command_count_ = 0;
+    dropped_remote_chunk_payload_count_ = 0;
     last_published_snapshot_tick_ = std::numeric_limits<std::uint64_t>::max();
     last_published_dirty_chunk_count_ = 0;
     last_published_encoded_chunks_.clear();
@@ -84,11 +85,20 @@ void NetServiceStub::EnqueueRemoteChunkPayload(std::string payload) {
         return;
     }
 
+    if (pending_remote_chunk_payloads_.size() >= kMaxPendingRemoteChunkPayloads) {
+        ++dropped_remote_chunk_payload_count_;
+        return;
+    }
+
     pending_remote_chunk_payloads_.push_back(std::move(payload));
 }
 
 std::size_t NetServiceStub::PendingCommandCount() const {
     return pending_commands_.size();
+}
+
+std::size_t NetServiceStub::PendingRemoteChunkPayloadCount() const {
+    return pending_remote_chunk_payloads_.size();
 }
 
 std::size_t NetServiceStub::TotalProcessedCommandCount() const {
@@ -97,6 +107,10 @@ std::size_t NetServiceStub::TotalProcessedCommandCount() const {
 
 std::size_t NetServiceStub::DroppedCommandCount() const {
     return dropped_command_count_;
+}
+
+std::size_t NetServiceStub::DroppedRemoteChunkPayloadCount() const {
+    return dropped_remote_chunk_payload_count_;
 }
 
 std::uint64_t NetServiceStub::LastPublishedSnapshotTick() const {

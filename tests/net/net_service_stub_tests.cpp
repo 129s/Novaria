@@ -24,8 +24,14 @@ int main() {
     passed &= Expect(net_service.Initialize(error), "Initialize should succeed.");
     passed &= Expect(error.empty(), "Initialize should not return error message.");
     passed &= Expect(net_service.PendingCommandCount() == 0, "Pending command count should start at zero.");
+    passed &= Expect(
+        net_service.PendingRemoteChunkPayloadCount() == 0,
+        "Pending remote payload count should start at zero.");
     passed &= Expect(net_service.TotalProcessedCommandCount() == 0, "Processed command count should start at zero.");
     passed &= Expect(net_service.DroppedCommandCount() == 0, "Dropped command count should start at zero.");
+    passed &= Expect(
+        net_service.DroppedRemoteChunkPayloadCount() == 0,
+        "Dropped remote payload count should start at zero.");
     passed &= Expect(
         net_service.LastPublishedSnapshotTick() == std::numeric_limits<std::uint64_t>::max(),
         "Last snapshot tick should be sentinel before first publish.");
@@ -66,10 +72,23 @@ int main() {
         "Pending commands should be clamped to max capacity.");
     passed &= Expect(net_service.DroppedCommandCount() == 8, "Dropped command count should track overflow.");
 
-    net_service.EnqueueRemoteChunkPayload("remote_chunk_a");
-    net_service.EnqueueRemoteChunkPayload("remote_chunk_b");
+    for (std::size_t index = 0;
+         index < novaria::net::NetServiceStub::kMaxPendingRemoteChunkPayloads + 5;
+         ++index) {
+        net_service.EnqueueRemoteChunkPayload("remote_chunk_" + std::to_string(index));
+    }
+    passed &= Expect(
+        net_service.PendingRemoteChunkPayloadCount() ==
+            novaria::net::NetServiceStub::kMaxPendingRemoteChunkPayloads,
+        "Pending remote payloads should be clamped to max capacity.");
+    passed &= Expect(
+        net_service.DroppedRemoteChunkPayloadCount() == 5,
+        "Dropped remote payload count should track overflow.");
+
     auto remote_payloads = net_service.ConsumeRemoteChunkPayloads();
-    passed &= Expect(remote_payloads.size() == 2, "Two remote payloads should be consumed.");
+    passed &= Expect(
+        remote_payloads.size() == novaria::net::NetServiceStub::kMaxPendingRemoteChunkPayloads,
+        "Remote payload consume count should match clamped capacity.");
     passed &= Expect(
         net_service.ConsumeRemoteChunkPayloads().empty(),
         "Remote payload queue should be empty after consume.");
