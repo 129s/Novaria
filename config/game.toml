@@ -4,3 +4,4 @@ window_height = 720
 vsync = true
 strict_save_mod_fingerprint = false
 script_backend = "auto"
+net_backend = "stub"

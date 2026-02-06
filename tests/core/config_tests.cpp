@@ -61,6 +61,9 @@ int main() {
     passed &= Expect(
         missing_strict_config.script_backend_mode == novaria::core::ScriptBackendMode::Auto,
         "Script backend should default to auto.");
+    passed &= Expect(
+        missing_strict_config.net_backend_mode == novaria::core::NetBackendMode::Stub,
+        "Net backend should default to stub.");
 
     passed &= Expect(
         WriteConfigFile(
@@ -70,7 +73,8 @@ int main() {
             "window_height = 720\n"
             "vsync = true\n"
             "strict_save_mod_fingerprint = true\n"
-            "script_backend = \"stub\"\n"),
+            "script_backend = \"stub\"\n"
+            "net_backend = \"udp_loopback\"\n"),
         "Strict config file write should succeed.");
 
     novaria::core::GameConfig strict_config{};
@@ -84,6 +88,9 @@ int main() {
     passed &= Expect(
         strict_config.script_backend_mode == novaria::core::ScriptBackendMode::Stub,
         "Script backend should parse as stub.");
+    passed &= Expect(
+        strict_config.net_backend_mode == novaria::core::NetBackendMode::UdpLoopback,
+        "Net backend should parse as udp_loopback.");
 
     passed &= Expect(
         WriteConfigFile(
@@ -93,7 +100,8 @@ int main() {
             "window_height = 720\n"
             "vsync = true\n"
             "strict_save_mod_fingerprint = true\n"
-            "script_backend = \"luajit\"\n"),
+            "script_backend = \"luajit\"\n"
+            "net_backend = \"auto\"\n"),
         "Invalid config file write should succeed.");
 
     novaria::core::GameConfig luajit_config{};
@@ -103,6 +111,9 @@ int main() {
     passed &= Expect(
         luajit_config.script_backend_mode == novaria::core::ScriptBackendMode::LuaJit,
         "Script backend should parse as luajit.");
+    passed &= Expect(
+        luajit_config.net_backend_mode == novaria::core::NetBackendMode::Auto,
+        "Net backend should parse as auto.");
 
     passed &= Expect(
         WriteConfigFile(
@@ -112,7 +123,8 @@ int main() {
             "window_height = 720\n"
             "vsync = true\n"
             "strict_save_mod_fingerprint = true\n"
-            "script_backend = \"invalid\"\n"),
+            "script_backend = \"invalid\"\n"
+            "net_backend = \"stub\"\n"),
         "Invalid config file write should succeed.");
 
     novaria::core::GameConfig invalid_config{};
@@ -120,6 +132,24 @@ int main() {
         !novaria::core::ConfigLoader::Load(config_path, invalid_config, error),
         "Invalid script backend value should fail config load.");
     passed &= Expect(!error.empty(), "Invalid config load should provide error.");
+
+    passed &= Expect(
+        WriteConfigFile(
+            config_path,
+            "window_title = \"CfgTestInvalidNet\"\n"
+            "window_width = 1280\n"
+            "window_height = 720\n"
+            "vsync = true\n"
+            "strict_save_mod_fingerprint = true\n"
+            "script_backend = \"auto\"\n"
+            "net_backend = \"invalid\"\n"),
+        "Invalid net backend config file write should succeed.");
+
+    novaria::core::GameConfig invalid_net_config{};
+    passed &= Expect(
+        !novaria::core::ConfigLoader::Load(config_path, invalid_net_config, error),
+        "Invalid net backend value should fail config load.");
+    passed &= Expect(!error.empty(), "Invalid net backend load should provide error.");
 
     std::filesystem::remove_all(test_dir, ec);
 

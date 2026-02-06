@@ -73,6 +73,30 @@ bool ParseScriptBackendMode(const std::string& value, ScriptBackendMode& out_mod
     return false;
 }
 
+bool ParseNetBackendMode(const std::string& value, NetBackendMode& out_mode) {
+    std::string parsed;
+    if (!ParseString(value, parsed)) {
+        return false;
+    }
+
+    if (parsed == "auto") {
+        out_mode = NetBackendMode::Auto;
+        return true;
+    }
+
+    if (parsed == "stub") {
+        out_mode = NetBackendMode::Stub;
+        return true;
+    }
+
+    if (parsed == "udp_loopback") {
+        out_mode = NetBackendMode::UdpLoopback;
+        return true;
+    }
+
+    return false;
+}
+
 }  // namespace
 
 bool ConfigLoader::Load(
@@ -163,6 +187,16 @@ bool ConfigLoader::Load(
             }
             continue;
         }
+
+        if (key == "net_backend") {
+            if (!ParseNetBackendMode(value, out_config.net_backend_mode)) {
+                out_error =
+                    "net_backend expects one of \"auto\"|\"stub\"|\"udp_loopback\": line " +
+                    std::to_string(line_number);
+                return false;
+            }
+            continue;
+        }
     }
 
     if (out_config.window_width <= 0 || out_config.window_height <= 0) {
@@ -182,6 +216,19 @@ const char* ScriptBackendModeName(ScriptBackendMode mode) {
             return "stub";
         case ScriptBackendMode::LuaJit:
             return "luajit";
+    }
+
+    return "unknown";
+}
+
+const char* NetBackendModeName(NetBackendMode mode) {
+    switch (mode) {
+        case NetBackendMode::Auto:
+            return "auto";
+        case NetBackendMode::Stub:
+            return "stub";
+        case NetBackendMode::UdpLoopback:
+            return "udp_loopback";
     }
 
     return "unknown";

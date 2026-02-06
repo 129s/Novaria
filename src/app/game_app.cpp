@@ -35,6 +35,19 @@ script::ScriptBackendPreference ToScriptBackendPreference(core::ScriptBackendMod
     return script::ScriptBackendPreference::Auto;
 }
 
+net::NetBackendPreference ToNetBackendPreference(core::NetBackendMode mode) {
+    switch (mode) {
+        case core::NetBackendMode::Auto:
+            return net::NetBackendPreference::Auto;
+        case core::NetBackendMode::Stub:
+            return net::NetBackendPreference::Stub;
+        case core::NetBackendMode::UdpLoopback:
+            return net::NetBackendPreference::UdpLoopback;
+    }
+
+    return net::NetBackendPreference::Stub;
+}
+
 }  // namespace
 
 GameApp::GameApp()
@@ -58,6 +71,11 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
         "script",
         "Configured script backend preference: " +
             std::string(core::ScriptBackendModeName(config_.script_backend_mode)));
+    net_service_.SetBackendPreference(ToNetBackendPreference(config_.net_backend_mode));
+    core::Logger::Info(
+        "net",
+        "Configured net backend preference: " +
+            std::string(core::NetBackendModeName(config_.net_backend_mode)));
 
     std::string runtime_error;
     if (!simulation_kernel_.Initialize(runtime_error)) {

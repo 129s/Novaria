@@ -2,7 +2,7 @@
 
 - `status`: authoritative
 - `owner`: @novaria-core
-- `last_verified_commit`: afd6494
+- `last_verified_commit`: 64cca05
 - `updated`: 2026-02-06
 
 ## 1. 测试分层
@@ -29,6 +29,8 @@ ctest --test-dir build -C Debug --output-on-failure -R novaria_mvp_acceptance_te
 
 - `novaria_config_tests`
 - `novaria_net_service_stub_tests`
+- `novaria_net_service_udp_loopback_tests`
+- `novaria_net_service_runtime_tests`
 - `novaria_udp_transport_tests`
 - `novaria_world_service_tests`
 - `novaria_script_host_stub_tests`
@@ -63,5 +65,5 @@ ctest --test-dir build -C Debug --output-on-failure -R novaria_mvp_acceptance_te
 
 ## 5. 当前限制
 
-- 联机稳定性验证当前基于 `NetServiceStub` 语义模型，不是实网端到端压力测试。
+- 联机稳定性验证当前基于 `NetServiceStub` + `NetServiceUdpLoopback`，仍不是跨进程/跨主机实网端到端压力测试。
 - 脚本层已接入 `ScriptHostRuntime` + `LuaJitScriptHost` 骨架，但尚未完成生产级 API 与安全策略。

@@ -2,7 +2,7 @@
 
 - `status`: authoritative
 - `owner`: @novaria-core
-- `last_verified_commit`: 0b1f5c8
+- `last_verified_commit`: 64cca05
 - `updated`: 2026-02-06
 
 ## 1. 前置条件
@@ -66,6 +66,12 @@ cmake -S . -B build -DNOVARIA_ENABLE_LUAJIT=OFF
 
 ```toml
 script_backend = "auto"   # auto | stub | luajit
+```
+
+运行时网络后端配置（`config/game.toml`）：
+
+```toml
+net_backend = "stub"      # auto | stub | udp_loopback
 ```
 
 ## 6. 调试热键（当前）
