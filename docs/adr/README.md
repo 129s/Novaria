@@ -9,10 +9,12 @@
 
 ADR（Architecture Decision Record）用于记录“为什么这么设计”，不是“怎么用系统”。
 
-## 当前 ADR
+## 索引表
 
-- `docs/adr/ADR-0001-server-authoritative.md`：网络权威模型选择。
-- `docs/adr/ADR-0002-script-runtime-boundary.md`：脚本运行时职责边界。
+| 序号 | 主题 | 文件 | 状态 | 说明 |
+| --- | --- | --- | --- | --- |
+| 1 | Server-Authoritative 网络模型 | `docs/adr/server-authoritative.md` | accepted | 定义联机权威边界与一致性策略 |
+| 2 | 脚本运行时职责边界 | `docs/adr/script-runtime-boundary.md` | accepted | 约束 LuaJIT/脚本职责，避免侵入高频核心循环 |
 
 ## 维护规范
 

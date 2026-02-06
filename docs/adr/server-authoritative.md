@@ -1,4 +1,4 @@
-# ADR-0001：采用 Server-Authoritative 网络模型
+# Server-Authoritative 网络模型
 
 - `status`: accepted
 - `owner`: @novaria-core

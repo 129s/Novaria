@@ -1,4 +1,4 @@
-# ADR-0002：脚本层只承载内容规则，不承载高频底层循环
+# 脚本运行时职责边界
 
 - `status`: accepted
 - `owner`: @novaria-core
