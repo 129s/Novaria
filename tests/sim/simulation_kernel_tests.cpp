@@ -332,6 +332,14 @@ public:
     void DispatchEvent(const novaria::script::ScriptEvent& event_data) override {
         dispatched_events.push_back(event_data);
     }
+
+    novaria::script::ScriptRuntimeDescriptor RuntimeDescriptor() const override {
+        return novaria::script::ScriptRuntimeDescriptor{
+            .backend_name = "fake",
+            .api_version = novaria::script::kScriptApiVersion,
+            .sandbox_enabled = false,
+        };
+    }
 };
 
 bool TestCommandSchemaPayloadParsing() {

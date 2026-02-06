@@ -108,6 +108,18 @@ void ScriptHostRuntime::DispatchEvent(const ScriptEvent& event_data) {
     active_host_->DispatchEvent(event_data);
 }
 
+ScriptRuntimeDescriptor ScriptHostRuntime::RuntimeDescriptor() const {
+    if (active_host_ != nullptr) {
+        return active_host_->RuntimeDescriptor();
+    }
+
+    return ScriptRuntimeDescriptor{
+        .backend_name = ScriptBackendKindName(active_backend_),
+        .api_version = kScriptApiVersion,
+        .sandbox_enabled = false,
+    };
+}
+
 bool ScriptHostRuntime::InitializeWithStub(std::string& out_error) {
     if (!stub_host_.Initialize(out_error)) {
         active_host_ = nullptr;

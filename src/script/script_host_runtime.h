@@ -34,6 +34,7 @@ public:
     void Shutdown() override;
     void Tick(const sim::TickContext& tick_context) override;
     void DispatchEvent(const ScriptEvent& event_data) override;
+    ScriptRuntimeDescriptor RuntimeDescriptor() const override;
 
 private:
     bool InitializeWithStub(std::string& out_error);

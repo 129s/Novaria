@@ -2,7 +2,7 @@
 
 - `status`: authoritative
 - `owner`: @novaria-core
-- `last_verified_commit`: 2fc8b1d
+- `last_verified_commit`: cf3b9e2
 - `updated`: 2026-02-06
 
 ## 1. 目标
@@ -100,7 +100,8 @@
 - `ScriptHostRuntime`：支持 `auto/stub/luajit` 后端偏好。
 - `auto` 模式下优先尝试 `LuaJitScriptHost`，失败回退到 `ScriptHostStub`。
 - `LuaJitScriptHost` 已完成 VM 生命周期与事件回调骨架（`novaria_on_tick` / `novaria_on_event`）。
-- 当前仍未完成脚本 API 版本化与生产级脚本沙箱策略。
+- `IScriptHost::RuntimeDescriptor` 已统一暴露 `backend/api_version/sandbox` 元信息（当前 API 版本 `0.1.0`）。
+- 当前仍未完成生产级脚本沙箱策略与内容脚本正式装载链路。
 
 ### 3.5 `save`
 

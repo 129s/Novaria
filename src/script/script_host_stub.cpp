@@ -47,6 +47,14 @@ void ScriptHostStub::DispatchEvent(const ScriptEvent& event_data) {
     pending_events_.push_back(event_data);
 }
 
+ScriptRuntimeDescriptor ScriptHostStub::RuntimeDescriptor() const {
+    return ScriptRuntimeDescriptor{
+        .backend_name = "stub",
+        .api_version = kScriptApiVersion,
+        .sandbox_enabled = false,
+    };
+}
+
 std::size_t ScriptHostStub::PendingEventCount() const {
     return pending_events_.size();
 }

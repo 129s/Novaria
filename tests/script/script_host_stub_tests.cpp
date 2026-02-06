@@ -26,6 +26,15 @@ int main() {
     passed &= Expect(script_host.PendingEventCount() == 0, "Pending event count should start at zero.");
     passed &= Expect(script_host.TotalProcessedEventCount() == 0, "Processed event count should start at zero.");
     passed &= Expect(script_host.DroppedEventCount() == 0, "Dropped event count should start at zero.");
+    {
+        const novaria::script::ScriptRuntimeDescriptor descriptor = script_host.RuntimeDescriptor();
+        passed &= Expect(
+            descriptor.backend_name == "stub",
+            "Stub runtime descriptor should expose stub backend.");
+        passed &= Expect(
+            descriptor.api_version == novaria::script::kScriptApiVersion,
+            "Stub runtime descriptor should expose script API version.");
+    }
 
     script_host.DispatchEvent({.event_name = "on_spawn", .payload = "{player_id:1}"});
     script_host.DispatchEvent({.event_name = "on_damage", .payload = "{value:10}"});

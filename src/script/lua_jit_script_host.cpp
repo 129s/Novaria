@@ -136,6 +136,14 @@ void LuaJitScriptHost::DispatchEvent(const ScriptEvent& event_data) {
     pending_events_.push_back(event_data);
 }
 
+ScriptRuntimeDescriptor LuaJitScriptHost::RuntimeDescriptor() const {
+    return ScriptRuntimeDescriptor{
+        .backend_name = "luajit",
+        .api_version = kScriptApiVersion,
+        .sandbox_enabled = false,
+    };
+}
+
 bool LuaJitScriptHost::IsVmReady() const {
     return initialized_ && lua_state_ != nullptr;
 }

@@ -92,6 +92,12 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
         sdl_context_.Shutdown();
         return false;
     }
+    const script::ScriptRuntimeDescriptor script_runtime_descriptor = script_host_.RuntimeDescriptor();
+    core::Logger::Info(
+        "script",
+        "Script runtime active: backend=" + script_runtime_descriptor.backend_name +
+            ", api_version=" + script_runtime_descriptor.api_version +
+            ", sandbox=" + (script_runtime_descriptor.sandbox_enabled ? "true" : "false"));
 
     save::WorldSaveState loaded_save_state{};
     bool has_loaded_save_state = false;

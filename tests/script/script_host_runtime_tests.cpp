@@ -27,6 +27,11 @@ int main() {
     passed &= Expect(
         runtime.ActiveBackend() != novaria::script::ScriptBackendKind::None,
         "Runtime should choose an active backend.");
+    const novaria::script::ScriptRuntimeDescriptor auto_descriptor = runtime.RuntimeDescriptor();
+    passed &= Expect(!auto_descriptor.backend_name.empty(), "Runtime descriptor should expose backend.");
+    passed &= Expect(
+        auto_descriptor.api_version == novaria::script::kScriptApiVersion,
+        "Runtime descriptor should expose expected API version.");
     runtime.DispatchEvent({.event_name = "runtime.auto.test", .payload = "payload"});
     runtime.Tick({.tick_index = 1, .fixed_delta_seconds = 1.0 / 60.0});
     runtime.Shutdown();

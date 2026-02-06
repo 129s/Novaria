@@ -15,6 +15,7 @@ public:
     void Shutdown() override;
     void Tick(const sim::TickContext& tick_context) override;
     void DispatchEvent(const ScriptEvent& event_data) override;
+    ScriptRuntimeDescriptor RuntimeDescriptor() const override;
 
     std::size_t PendingEventCount() const;
     std::size_t TotalProcessedEventCount() const;
