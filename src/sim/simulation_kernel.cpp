@@ -12,7 +12,7 @@
 namespace novaria::sim {
 namespace {
 
-const char* SessionStatePayload(net::NetSessionState state) {
+const char* SessionStateName(net::NetSessionState state) {
     switch (state) {
         case net::NetSessionState::Disconnected:
             return "disconnected";
@@ -23,6 +23,19 @@ const char* SessionStatePayload(net::NetSessionState state) {
     }
 
     return "unknown";
+}
+
+std::string BuildSessionStateChangedPayload(
+    net::NetSessionState state,
+    std::uint64_t tick_index,
+    std::string_view transition_reason) {
+    std::string payload = "state=";
+    payload += SessionStateName(state);
+    payload += ";tick=";
+    payload += std::to_string(tick_index);
+    payload += ";reason=";
+    payload += transition_reason;
+    return payload;
 }
 
 }  // namespace
@@ -190,9 +203,10 @@ void SimulationKernel::Update(double fixed_delta_seconds) {
     if (current_session_state != last_observed_net_session_state_) {
         script_host_.DispatchEvent(script::ScriptEvent{
             .event_name = "net.session_state_changed",
-            .payload = std::string(SessionStatePayload(current_session_state)) + "," +
-                std::to_string(tick_index_) + "," +
-                net_diagnostics.last_session_transition_reason,
+            .payload = BuildSessionStateChangedPayload(
+                current_session_state,
+                tick_index_,
+                net_diagnostics.last_session_transition_reason),
         });
 
         if (current_session_state == net::NetSessionState::Disconnected) {

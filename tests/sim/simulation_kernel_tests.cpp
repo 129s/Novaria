@@ -2,10 +2,12 @@
 #include "sim/command_schema.h"
 #include "world/snapshot_codec.h"
 
+#include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -16,6 +18,66 @@ bool Expect(bool condition, const char* message) {
         std::cerr << "[FAIL] " << message << '\n';
         return false;
     }
+    return true;
+}
+
+struct SessionStateChangedPayload {
+    std::string state;
+    std::uint64_t tick_index = 0;
+    std::string reason;
+};
+
+bool TryParseSessionStateChangedPayload(
+    std::string_view payload,
+    SessionStateChangedPayload& out_payload) {
+    constexpr std::string_view kStatePrefix = "state=";
+    constexpr std::string_view kTickPrefix = "tick=";
+    constexpr std::string_view kReasonPrefix = "reason=";
+
+    const std::size_t first_separator = payload.find(';');
+    if (first_separator == std::string_view::npos) {
+        return false;
+    }
+
+    const std::size_t second_separator = payload.find(';', first_separator + 1);
+    if (second_separator == std::string_view::npos) {
+        return false;
+    }
+
+    if (payload.find(';', second_separator + 1) != std::string_view::npos) {
+        return false;
+    }
+
+    const std::string_view state_token = payload.substr(0, first_separator);
+    const std::string_view tick_token =
+        payload.substr(first_separator + 1, second_separator - first_separator - 1);
+    const std::string_view reason_token = payload.substr(second_separator + 1);
+    if (state_token.rfind(kStatePrefix, 0) != 0 || tick_token.rfind(kTickPrefix, 0) != 0 ||
+        reason_token.rfind(kReasonPrefix, 0) != 0) {
+        return false;
+    }
+
+    const std::string_view state_value = state_token.substr(kStatePrefix.size());
+    const std::string_view tick_value = tick_token.substr(kTickPrefix.size());
+    const std::string_view reason_value = reason_token.substr(kReasonPrefix.size());
+    if (state_value.empty() || tick_value.empty()) {
+        return false;
+    }
+
+    std::uint64_t parsed_tick_index = 0;
+    const std::from_chars_result parse_result =
+        std::from_chars(
+            tick_value.data(),
+            tick_value.data() + tick_value.size(),
+            parsed_tick_index);
+    if (parse_result.ec != std::errc() ||
+        parse_result.ptr != tick_value.data() + tick_value.size()) {
+        return false;
+    }
+
+    out_payload.state.assign(state_value);
+    out_payload.tick_index = parsed_tick_index;
+    out_payload.reason.assign(reason_value);
     return true;
 }
 
@@ -262,6 +324,36 @@ bool TestCommandSchemaPayloadParsing() {
     return passed;
 }
 
+bool TestSessionStateChangedPayloadParser() {
+    bool passed = true;
+
+    SessionStateChangedPayload payload{};
+    passed &= Expect(
+        TryParseSessionStateChangedPayload(
+            "state=connected;tick=17;reason=tick_connect_complete",
+            payload),
+        "Session state payload parser should accept valid payload.");
+    passed &= Expect(
+        payload.state == "connected" && payload.tick_index == 17 &&
+            payload.reason == "tick_connect_complete",
+        "Session state payload parser should return structured fields.");
+    passed &= Expect(
+        !TryParseSessionStateChangedPayload("connected,17,tick_connect_complete", payload),
+        "Session state payload parser should reject legacy CSV payload.");
+    passed &= Expect(
+        !TryParseSessionStateChangedPayload(
+            "state=connected;tick=nan;reason=tick_connect_complete",
+            payload),
+        "Session state payload parser should reject non-numeric tick.");
+    passed &= Expect(
+        !TryParseSessionStateChangedPayload(
+            "state=connected;tick=17",
+            payload),
+        "Session state payload parser should reject missing reason token.");
+
+    return passed;
+}
+
 bool TestUpdatePublishesDirtyChunkCount() {
     bool passed = true;
 
@@ -490,12 +582,17 @@ bool TestNetSessionStateChangeDispatchesScriptEvent() {
         script.dispatched_events.size() == 1,
         "Session change to connected should dispatch one script event.");
     if (script.dispatched_events.size() == 1) {
+        SessionStateChangedPayload payload{};
         passed &= Expect(
             script.dispatched_events[0].event_name == "net.session_state_changed",
             "Session change event name should match contract.");
         passed &= Expect(
-            script.dispatched_events[0].payload == "connected,1,tick_connect_complete",
-            "Session change event payload should include state, tick, and transition reason.");
+            TryParseSessionStateChangedPayload(script.dispatched_events[0].payload, payload),
+            "Session change event payload should be parseable in KV format.");
+        passed &= Expect(
+            payload.state == "connected" && payload.tick_index == 1 &&
+                payload.reason == "tick_connect_complete",
+            "Connected transition payload fields should match.");
     }
 
     net.auto_progress_connection = false;
@@ -505,9 +602,14 @@ bool TestNetSessionStateChangeDispatchesScriptEvent() {
         script.dispatched_events.size() == 2,
         "Reconnect transition to connecting should dispatch one more script event.");
     if (script.dispatched_events.size() == 2) {
+        SessionStateChangedPayload payload{};
         passed &= Expect(
-            script.dispatched_events[1].payload == "connecting,2,request_connect",
-            "Reconnect transition payload should include state, tick, and transition reason.");
+            TryParseSessionStateChangedPayload(script.dispatched_events[1].payload, payload),
+            "Reconnect transition payload should be parseable in KV format.");
+        passed &= Expect(
+            payload.state == "connecting" && payload.tick_index == 2 &&
+                payload.reason == "request_connect",
+            "Reconnect transition payload fields should match.");
     }
 
     kernel.Shutdown();
@@ -781,6 +883,7 @@ bool TestWorldCommandExecutionFromLocalQueue() {
 int main() {
     bool passed = true;
     passed &= TestCommandSchemaPayloadParsing();
+    passed &= TestSessionStateChangedPayloadParser();
     passed &= TestUpdatePublishesDirtyChunkCount();
     passed &= TestInitializeRollbackOnNetFailure();
     passed &= TestInitializeRollbackOnScriptFailure();
