@@ -45,6 +45,7 @@ int main() {
         .debug_net_session_transitions = 7,
         .debug_net_timeout_disconnects = 2,
         .debug_net_manual_disconnects = 3,
+        .debug_net_last_heartbeat_tick = 4096,
         .debug_net_dropped_commands = 11,
         .debug_net_dropped_remote_payloads = 5,
         .debug_net_last_transition_reason = "heartbeat_timeout",
@@ -75,6 +76,9 @@ int main() {
         actual.debug_net_manual_disconnects == expected.debug_net_manual_disconnects,
         "Loaded debug net manual disconnects should match saved value.");
     passed &= Expect(
+        actual.debug_net_last_heartbeat_tick == expected.debug_net_last_heartbeat_tick,
+        "Loaded debug net last heartbeat tick should match saved value.");
+    passed &= Expect(
         actual.debug_net_dropped_commands == expected.debug_net_dropped_commands,
         "Loaded debug net dropped commands should match saved value.");
     passed &= Expect(
@@ -102,6 +106,7 @@ int main() {
         legacy_loaded.debug_net_session_transitions == 0 &&
             legacy_loaded.debug_net_timeout_disconnects == 0 &&
             legacy_loaded.debug_net_manual_disconnects == 0 &&
+            legacy_loaded.debug_net_last_heartbeat_tick == 0 &&
             legacy_loaded.debug_net_dropped_commands == 0 &&
             legacy_loaded.debug_net_dropped_remote_payloads == 0 &&
             legacy_loaded.debug_net_last_transition_reason.empty(),

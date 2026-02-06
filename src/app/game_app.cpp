@@ -70,6 +70,8 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
                     std::to_string(loaded_save_state.debug_net_timeout_disconnects) +
                     ", manual_disconnects=" +
                     std::to_string(loaded_save_state.debug_net_manual_disconnects) +
+                    ", last_heartbeat_tick=" +
+                    std::to_string(loaded_save_state.debug_net_last_heartbeat_tick) +
                     ", dropped_commands=" +
                     std::to_string(loaded_save_state.debug_net_dropped_commands) +
                     ", dropped_payloads=" +
@@ -212,6 +214,7 @@ int GameApp::Run() {
                 "Diagnostics: tick=" + std::to_string(current_tick) +
                     ", state=" + NetSessionStateName(diagnostics.session_state) +
                     ", last_transition_reason=" + diagnostics.last_session_transition_reason +
+                    ", last_heartbeat_tick=" + std::to_string(diagnostics.last_heartbeat_tick) +
                     ", transitions=" + std::to_string(diagnostics.session_transition_count) +
                     ", connected_transitions=" + std::to_string(diagnostics.connected_transition_count) +
                     ", connect_requests=" + std::to_string(diagnostics.connect_request_count) +
@@ -247,6 +250,7 @@ void GameApp::Shutdown() {
         .debug_net_session_transitions = diagnostics.session_transition_count,
         .debug_net_timeout_disconnects = diagnostics.timeout_disconnect_count,
         .debug_net_manual_disconnects = diagnostics.manual_disconnect_count,
+        .debug_net_last_heartbeat_tick = diagnostics.last_heartbeat_tick,
         .debug_net_dropped_commands = diagnostics.dropped_command_count,
         .debug_net_dropped_remote_payloads = diagnostics.dropped_remote_chunk_payload_count,
         .debug_net_last_transition_reason = diagnostics.last_session_transition_reason,

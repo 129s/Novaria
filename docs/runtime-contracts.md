@@ -53,6 +53,7 @@
 - 当前实现：`net::NetServiceStub`
   - 会话状态机：`Disconnected -> Connecting -> Connected`
   - 会话可观测：状态迁移会输出日志，并提供迁移计数/连接计数/断线原因计数与最近迁移原因
+  - 诊断快照含 `last_heartbeat_tick`，用于判定心跳新鲜度
   - 心跳超时：超过 `kHeartbeatTimeoutTicks` 未更新心跳将断线
   - 断线恢复入口：`RequestConnect` 重新发起连接
   - 断线拒收：`Disconnected` 状态下拒绝本地命令与远端 payload 入队
@@ -84,7 +85,7 @@
   - 启动读取 `saves/world.sav`
   - 存档字段包含 `format_version`，支持旧档（缺失版本字段）兼容与前向版本拒绝
   - 退出写回当前 Tick、本地玩家编号与模组清单指纹
-  - 调试快照头：持久化 `debug_net_*` 计数与最近迁移原因用于联机问题复盘
+  - 调试快照头：持久化 `debug_net_*` 计数、最近迁移原因与最近心跳 Tick 用于联机问题复盘
   - 配置 `strict_save_mod_fingerprint=true` 时，读档指纹不一致将拒绝启动
 
 ## `mod`

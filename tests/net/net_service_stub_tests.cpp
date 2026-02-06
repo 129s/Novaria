@@ -67,6 +67,9 @@ int main() {
             snapshot.last_session_transition_reason == "initialize",
             "Diagnostics snapshot should expose initial transition reason.");
         passed &= Expect(
+            snapshot.last_heartbeat_tick == std::numeric_limits<std::uint64_t>::max(),
+            "Diagnostics snapshot should expose invalid last heartbeat tick before connection.");
+        passed &= Expect(
             snapshot.connect_request_count == 0 &&
                 snapshot.timeout_disconnect_count == 0 &&
                 snapshot.dropped_command_count == 0 &&
@@ -122,6 +125,9 @@ int main() {
     passed &= Expect(
         net_service.DiagnosticsSnapshot().last_session_transition_reason == "tick_connect_complete",
         "Diagnostics snapshot should record connect completion transition reason.");
+    passed &= Expect(
+        net_service.DiagnosticsSnapshot().last_heartbeat_tick == 1,
+        "Diagnostics snapshot should expose last heartbeat tick after connect completion.");
     passed &= Expect(net_service.PendingCommandCount() == 0, "Queue should be drained after tick.");
     passed &= Expect(net_service.TotalProcessedCommandCount() == 2, "Processed command count should increase.");
 

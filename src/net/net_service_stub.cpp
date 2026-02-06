@@ -139,6 +139,7 @@ NetDiagnosticsSnapshot NetServiceStub::DiagnosticsSnapshot() const {
     return NetDiagnosticsSnapshot{
         .session_state = session_state_,
         .last_session_transition_reason = last_session_transition_reason_,
+        .last_heartbeat_tick = last_heartbeat_tick_,
         .session_transition_count = session_transition_count_,
         .connected_transition_count = connected_transition_count_,
         .connect_request_count = connect_request_count_,

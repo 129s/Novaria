@@ -71,6 +71,7 @@ bool FileSaveRepository::SaveWorldState(const WorldSaveState& state, std::string
     file << "debug_net_session_transitions=" << state.debug_net_session_transitions << '\n';
     file << "debug_net_timeout_disconnects=" << state.debug_net_timeout_disconnects << '\n';
     file << "debug_net_manual_disconnects=" << state.debug_net_manual_disconnects << '\n';
+    file << "debug_net_last_heartbeat_tick=" << state.debug_net_last_heartbeat_tick << '\n';
     file << "debug_net_dropped_commands=" << state.debug_net_dropped_commands << '\n';
     file << "debug_net_dropped_remote_payloads=" << state.debug_net_dropped_remote_payloads << '\n';
     file << "debug_net_last_transition_reason=" << state.debug_net_last_transition_reason << '\n';
@@ -173,6 +174,16 @@ bool FileSaveRepository::LoadWorldState(WorldSaveState& out_state, std::string& 
                 return false;
             }
             parsed_state.debug_net_manual_disconnects = parsed;
+            continue;
+        }
+
+        if (key == "debug_net_last_heartbeat_tick") {
+            std::uint64_t parsed = 0;
+            if (!ParseUnsignedInteger(value, parsed)) {
+                out_error = "Invalid debug_net_last_heartbeat_tick value in world save file.";
+                return false;
+            }
+            parsed_state.debug_net_last_heartbeat_tick = parsed;
             continue;
         }
 
