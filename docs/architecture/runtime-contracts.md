@@ -80,9 +80,11 @@
 - `NetServiceRuntime`：固定走 `udp_loopback` 后端（无 stub/无自动回退）。
 - `udp_loopback` 后端：`NetServiceUdpLoopback`（支持本地端口绑定与对端端点配置，可做同机双进程互通验证）。
 - `udp_loopback` 已引入最小握手与心跳控制报文（`SYN/ACK/HEARTBEAT`）。
+- 已引入连接探测指数退避（`kConnectProbeIntervalTicks` -> `kMaxConnectProbeIntervalTicks`）并提供探测诊断计数。
+- 已引入对端来源校验与动态对端采纳（配置 `remote_port=0` 时可由 `SYN` 建立 peer）。
 - 心跳超时断线：`kHeartbeatTimeoutTicks`。
 - 断线态拒收本地命令与远端 payload。
-- 提供可观测诊断：迁移计数、丢弃计数、最近迁移原因、最后心跳 Tick。
+- 提供可观测诊断：迁移计数、探测计数、来源过滤计数、丢弃计数、最近迁移原因、最后心跳 Tick。
 - `UdpTransport` 已提供可绑定端口、非阻塞收发、Loopback 自测能力（基础传输层骨架）。
 
 ### 3.4 `script`

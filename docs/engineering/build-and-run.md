@@ -82,6 +82,8 @@ net_udp_remote_host = "127.0.0.1"
 net_udp_remote_port = 0
 ```
 
+说明：`net_udp_remote_port = 0` 时运行时允许通过首个 `SYN` 采纳动态 peer（同机默认仍可自环）。
+
 同机双进程联调示例：
 
 - 进程 A：`net_backend = "udp_loopback"`，`net_udp_local_port = 25000`，`net_udp_remote_port = 25001`

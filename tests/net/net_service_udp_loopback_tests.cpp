@@ -1,4 +1,5 @@
 #include "net/net_service_udp_loopback.h"
+#include "net/udp_transport.h"
 
 #include <iostream>
 #include <string>
@@ -112,8 +113,69 @@ int main() {
         host_a_payloads.size() == 1 && host_a_payloads.front() == "cross_process_payload_back",
         "Host A should receive payload published by Host B.");
 
+    novaria::net::UdpTransport rogue_transport;
+    passed &= Expect(rogue_transport.Open(0, error), "Rogue sender transport open should succeed.");
+    passed &= Expect(
+        rogue_transport.SendTo(
+            {.host = "127.0.0.1", .port = host_b.LocalPort()},
+            "DATA|rogue_payload",
+            error),
+        "Rogue sender datagram send should succeed.");
+    host_b.Tick({.tick_index = 4, .fixed_delta_seconds = 1.0 / 60.0});
+    const auto filtered_payloads = host_b.ConsumeRemoteChunkPayloads();
+    passed &= Expect(
+        filtered_payloads.empty(),
+        "Unexpected sender payload should be ignored.");
+    passed &= Expect(
+        host_b.DiagnosticsSnapshot().ignored_unexpected_sender_count >= 1,
+        "Unexpected sender payload should update diagnostics.");
+    rogue_transport.Close();
+
     host_a.Shutdown();
     host_b.Shutdown();
+
+    novaria::net::NetServiceUdpLoopback listener;
+    novaria::net::NetServiceUdpLoopback connector;
+    passed &= Expect(listener.Initialize(error), "Listener init should succeed.");
+    passed &= Expect(connector.Initialize(error), "Connector init should succeed.");
+    connector.SetRemoteEndpoint({.host = "127.0.0.1", .port = listener.LocalPort()});
+    connector.RequestConnect();
+    for (std::uint64_t tick = 1; tick <= 40; ++tick) {
+        connector.Tick({.tick_index = tick, .fixed_delta_seconds = 1.0 / 60.0});
+        listener.Tick({.tick_index = tick, .fixed_delta_seconds = 1.0 / 60.0});
+        if (connector.SessionState() == novaria::net::NetSessionState::Connected &&
+            listener.SessionState() == novaria::net::NetSessionState::Connected) {
+            break;
+        }
+    }
+    passed &= Expect(
+        connector.SessionState() == novaria::net::NetSessionState::Connected &&
+            listener.SessionState() == novaria::net::NetSessionState::Connected,
+        "Listener should adopt dynamic peer endpoint from SYN.");
+    connector.Shutdown();
+    listener.Shutdown();
+
+    novaria::net::NetServiceUdpLoopback timeout_host;
+    passed &= Expect(timeout_host.Initialize(error), "Timeout host init should succeed.");
+    timeout_host.SetRemoteEndpoint({.host = "127.0.0.1", .port = 65534});
+    timeout_host.RequestConnect();
+    for (std::uint64_t tick = 1;
+         tick <= novaria::net::NetServiceUdpLoopback::kConnectTimeoutTicks + 2;
+         ++tick) {
+        timeout_host.Tick({.tick_index = tick, .fixed_delta_seconds = 1.0 / 60.0});
+    }
+    const novaria::net::NetDiagnosticsSnapshot timeout_diagnostics = timeout_host.DiagnosticsSnapshot();
+    passed &= Expect(
+        timeout_host.SessionState() == novaria::net::NetSessionState::Disconnected,
+        "Timeout host should end in disconnected state.");
+    passed &= Expect(
+        timeout_diagnostics.timeout_disconnect_count == 1,
+        "Connect timeout should increment timeout disconnect diagnostics.");
+    passed &= Expect(
+        timeout_diagnostics.connect_probe_send_count > 0 &&
+            timeout_diagnostics.connect_probe_send_count < 12,
+        "Connect probe exponential backoff should reduce probe count.");
+    timeout_host.Shutdown();
 
     if (!passed) {
         return 1;

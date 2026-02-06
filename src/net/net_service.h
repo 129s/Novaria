@@ -28,9 +28,12 @@ struct NetDiagnosticsSnapshot final {
     std::uint64_t session_transition_count = 0;
     std::uint64_t connected_transition_count = 0;
     std::uint64_t connect_request_count = 0;
+    std::uint64_t connect_probe_send_count = 0;
+    std::uint64_t connect_probe_send_failure_count = 0;
     std::uint64_t timeout_disconnect_count = 0;
     std::uint64_t manual_disconnect_count = 0;
     std::uint64_t ignored_heartbeat_count = 0;
+    std::uint64_t ignored_unexpected_sender_count = 0;
     std::size_t dropped_command_count = 0;
     std::size_t dropped_command_disconnected_count = 0;
     std::size_t dropped_command_queue_full_count = 0;

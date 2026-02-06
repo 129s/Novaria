@@ -18,6 +18,7 @@ public:
     static constexpr std::size_t kMaxPendingRemoteChunkPayloads = 1024;
     static constexpr std::uint64_t kHeartbeatTimeoutTicks = 180;
     static constexpr std::uint64_t kConnectProbeIntervalTicks = 30;
+    static constexpr std::uint64_t kMaxConnectProbeIntervalTicks = 240;
     static constexpr std::uint64_t kConnectTimeoutTicks = 600;
     static constexpr std::uint64_t kHeartbeatSendIntervalTicks = 30;
 
@@ -43,8 +44,14 @@ public:
 private:
     static constexpr std::uint64_t kInvalidTick = std::numeric_limits<std::uint64_t>::max();
     void TransitionSessionState(NetSessionState next_state, std::string_view reason);
+    bool IsExpectedSender(const UdpEndpoint& sender) const;
+    bool TryAdoptDynamicPeerFromSyn(const UdpEndpoint& sender);
     void EnqueueRemoteChunkPayload(std::string payload);
     void DrainInboundDatagrams(std::uint64_t tick_index);
+    bool SendControlDatagramTo(
+        const UdpEndpoint& endpoint,
+        const std::string& type,
+        std::string& out_error);
     bool SendControlDatagram(const std::string& type, std::string& out_error);
     bool SendPayloadDatagram(const std::string& payload, std::string& out_error);
 
@@ -60,11 +67,14 @@ private:
     std::size_t dropped_remote_chunk_payload_disconnected_count_ = 0;
     std::size_t dropped_remote_chunk_payload_queue_full_count_ = 0;
     std::uint64_t connect_request_count_ = 0;
+    std::uint64_t connect_probe_send_count_ = 0;
+    std::uint64_t connect_probe_send_failure_count_ = 0;
     std::uint64_t timeout_disconnect_count_ = 0;
     std::uint64_t session_transition_count_ = 0;
     std::uint64_t connected_transition_count_ = 0;
     std::uint64_t manual_disconnect_count_ = 0;
     std::uint64_t ignored_heartbeat_count_ = 0;
+    std::uint64_t ignored_unexpected_sender_count_ = 0;
     std::string last_session_transition_reason_ = "initialize";
     std::uint64_t last_heartbeat_tick_ = kInvalidTick;
     std::uint64_t last_published_snapshot_tick_ = std::numeric_limits<std::uint64_t>::max();
@@ -74,6 +84,7 @@ private:
     std::uint16_t bind_port_ = 0;
     std::uint64_t connect_started_tick_ = kInvalidTick;
     std::uint64_t next_connect_probe_tick_ = kInvalidTick;
+    std::uint64_t connect_probe_interval_ticks_ = kConnectProbeIntervalTicks;
     std::uint64_t last_sent_heartbeat_tick_ = kInvalidTick;
     bool handshake_ack_received_ = false;
     std::uint16_t remote_endpoint_config_port_ = 0;

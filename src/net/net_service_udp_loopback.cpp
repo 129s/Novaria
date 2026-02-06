@@ -79,11 +79,14 @@ bool NetServiceUdpLoopback::Initialize(std::string& out_error) {
     dropped_remote_chunk_payload_disconnected_count_ = 0;
     dropped_remote_chunk_payload_queue_full_count_ = 0;
     connect_request_count_ = 0;
+    connect_probe_send_count_ = 0;
+    connect_probe_send_failure_count_ = 0;
     timeout_disconnect_count_ = 0;
     session_transition_count_ = 0;
     connected_transition_count_ = 0;
     manual_disconnect_count_ = 0;
     ignored_heartbeat_count_ = 0;
+    ignored_unexpected_sender_count_ = 0;
     last_session_transition_reason_ = "initialize";
     last_heartbeat_tick_ = kInvalidTick;
     last_published_snapshot_tick_ = std::numeric_limits<std::uint64_t>::max();
@@ -92,6 +95,7 @@ bool NetServiceUdpLoopback::Initialize(std::string& out_error) {
     snapshot_publish_count_ = 0;
     connect_started_tick_ = kInvalidTick;
     next_connect_probe_tick_ = kInvalidTick;
+    connect_probe_interval_ticks_ = kConnectProbeIntervalTicks;
     last_sent_heartbeat_tick_ = kInvalidTick;
     handshake_ack_received_ = false;
 
@@ -129,6 +133,7 @@ void NetServiceUdpLoopback::Shutdown() {
     last_heartbeat_tick_ = kInvalidTick;
     connect_started_tick_ = kInvalidTick;
     next_connect_probe_tick_ = kInvalidTick;
+    connect_probe_interval_ticks_ = kConnectProbeIntervalTicks;
     last_sent_heartbeat_tick_ = kInvalidTick;
     handshake_ack_received_ = false;
     transport_.Close();
@@ -149,6 +154,7 @@ void NetServiceUdpLoopback::RequestConnect() {
     TransitionSessionState(NetSessionState::Connecting, "request_connect");
     connect_started_tick_ = kInvalidTick;
     next_connect_probe_tick_ = kInvalidTick;
+    connect_probe_interval_ticks_ = kConnectProbeIntervalTicks;
     handshake_ack_received_ = false;
     ++connect_request_count_;
 }
@@ -169,6 +175,7 @@ void NetServiceUdpLoopback::RequestDisconnect() {
     last_heartbeat_tick_ = kInvalidTick;
     connect_started_tick_ = kInvalidTick;
     next_connect_probe_tick_ = kInvalidTick;
+    connect_probe_interval_ticks_ = kConnectProbeIntervalTicks;
     last_sent_heartbeat_tick_ = kInvalidTick;
     handshake_ack_received_ = false;
 }
@@ -198,9 +205,12 @@ NetDiagnosticsSnapshot NetServiceUdpLoopback::DiagnosticsSnapshot() const {
         .session_transition_count = session_transition_count_,
         .connected_transition_count = connected_transition_count_,
         .connect_request_count = connect_request_count_,
+        .connect_probe_send_count = connect_probe_send_count_,
+        .connect_probe_send_failure_count = connect_probe_send_failure_count_,
         .timeout_disconnect_count = timeout_disconnect_count_,
         .manual_disconnect_count = manual_disconnect_count_,
         .ignored_heartbeat_count = ignored_heartbeat_count_,
+        .ignored_unexpected_sender_count = ignored_unexpected_sender_count_,
         .dropped_command_count = dropped_command_count_,
         .dropped_command_disconnected_count = dropped_command_disconnected_count_,
         .dropped_command_queue_full_count = dropped_command_queue_full_count_,
@@ -217,10 +227,7 @@ void NetServiceUdpLoopback::Tick(const sim::TickContext& tick_context) {
         return;
     }
 
-    if (session_state_ == NetSessionState::Connecting ||
-        session_state_ == NetSessionState::Connected) {
-        DrainInboundDatagrams(tick_context.tick_index);
-    }
+    DrainInboundDatagrams(tick_context.tick_index);
 
     if (session_state_ == NetSessionState::Connecting) {
         if (connect_started_tick_ == kInvalidTick) {
@@ -230,17 +237,23 @@ void NetServiceUdpLoopback::Tick(const sim::TickContext& tick_context) {
 
         if (next_connect_probe_tick_ == kInvalidTick ||
             tick_context.tick_index >= next_connect_probe_tick_) {
+            ++connect_probe_send_count_;
             std::string send_error;
             if (!SendControlDatagram(std::string(kControlSyn), send_error)) {
                 core::Logger::Warn("net", "UDP connect probe failed: " + send_error);
+                ++connect_probe_send_failure_count_;
             }
-            next_connect_probe_tick_ = tick_context.tick_index + kConnectProbeIntervalTicks;
+            next_connect_probe_tick_ = tick_context.tick_index + connect_probe_interval_ticks_;
+            connect_probe_interval_ticks_ = std::min(
+                connect_probe_interval_ticks_ * 2,
+                kMaxConnectProbeIntervalTicks);
         }
 
         if (handshake_ack_received_) {
             TransitionSessionState(NetSessionState::Connected, "udp_handshake_ack");
             last_heartbeat_tick_ = tick_context.tick_index;
             last_sent_heartbeat_tick_ = tick_context.tick_index;
+            connect_probe_interval_ticks_ = kConnectProbeIntervalTicks;
             handshake_ack_received_ = false;
         } else if (connect_started_tick_ != kInvalidTick &&
                    tick_context.tick_index > connect_started_tick_ + kConnectTimeoutTicks) {
@@ -250,6 +263,7 @@ void NetServiceUdpLoopback::Tick(const sim::TickContext& tick_context) {
             last_heartbeat_tick_ = kInvalidTick;
             connect_started_tick_ = kInvalidTick;
             next_connect_probe_tick_ = kInvalidTick;
+            connect_probe_interval_ticks_ = kConnectProbeIntervalTicks;
             ++timeout_disconnect_count_;
         }
     }
@@ -263,6 +277,7 @@ void NetServiceUdpLoopback::Tick(const sim::TickContext& tick_context) {
         last_heartbeat_tick_ = kInvalidTick;
         connect_started_tick_ = kInvalidTick;
         next_connect_probe_tick_ = kInvalidTick;
+        connect_probe_interval_ticks_ = kConnectProbeIntervalTicks;
         last_sent_heartbeat_tick_ = kInvalidTick;
         ++timeout_disconnect_count_;
     }
@@ -364,6 +379,31 @@ std::uint16_t NetServiceUdpLoopback::LocalPort() const {
     return transport_.LocalPort();
 }
 
+bool NetServiceUdpLoopback::IsExpectedSender(const UdpEndpoint& sender) const {
+    if (sender.port == 0 || remote_endpoint_.port == 0) {
+        return false;
+    }
+
+    return sender.host == remote_endpoint_.host &&
+        sender.port == remote_endpoint_.port;
+}
+
+bool NetServiceUdpLoopback::TryAdoptDynamicPeerFromSyn(const UdpEndpoint& sender) {
+    if (remote_endpoint_config_port_ != 0 ||
+        session_state_ == NetSessionState::Connected ||
+        sender.port == 0) {
+        return false;
+    }
+
+    remote_endpoint_ = sender;
+    core::Logger::Info(
+        "net",
+        "Adopted dynamic UDP peer endpoint: " +
+            remote_endpoint_.host +
+            ":" + std::to_string(remote_endpoint_.port) + ".");
+    return true;
+}
+
 void NetServiceUdpLoopback::EnqueueRemoteChunkPayload(std::string payload) {
     if (session_state_ != NetSessionState::Connected) {
         ++dropped_remote_chunk_payload_count_;
@@ -386,11 +426,23 @@ void NetServiceUdpLoopback::DrainInboundDatagrams(std::uint64_t tick_index) {
     std::string receive_error;
     while (transport_.Receive(payload, sender, receive_error)) {
         std::string_view payload_view(payload);
-        if (StartsWith(payload_view, kControlPrefix)) {
-            const std::string_view control_type = payload_view.substr(kControlPrefix.size());
+        std::string_view control_type;
+        const bool is_control_datagram = StartsWith(payload_view, kControlPrefix);
+        if (is_control_datagram) {
+            control_type = payload_view.substr(kControlPrefix.size());
+        }
+
+        if (!IsExpectedSender(sender) &&
+            !(is_control_datagram && control_type == kControlSyn && TryAdoptDynamicPeerFromSyn(sender))) {
+            ++ignored_unexpected_sender_count_;
+            payload.clear();
+            continue;
+        }
+
+        if (is_control_datagram) {
             if (control_type == kControlSyn) {
                 std::string ack_error;
-                if (!SendControlDatagram(std::string(kControlAck), ack_error)) {
+                if (!SendControlDatagramTo(sender, std::string(kControlAck), ack_error)) {
                     core::Logger::Warn("net", "UDP ack send failed: " + ack_error);
                 }
                 if (session_state_ == NetSessionState::Disconnected) {
@@ -429,7 +481,14 @@ void NetServiceUdpLoopback::DrainInboundDatagrams(std::uint64_t tick_index) {
 bool NetServiceUdpLoopback::SendControlDatagram(
     const std::string& type,
     std::string& out_error) {
-    return transport_.SendTo(remote_endpoint_, BuildControlDatagram(type), out_error);
+    return SendControlDatagramTo(remote_endpoint_, type, out_error);
+}
+
+bool NetServiceUdpLoopback::SendControlDatagramTo(
+    const UdpEndpoint& endpoint,
+    const std::string& type,
+    std::string& out_error) {
+    return transport_.SendTo(endpoint, BuildControlDatagram(type), out_error);
 }
 
 bool NetServiceUdpLoopback::SendPayloadDatagram(

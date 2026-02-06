@@ -456,8 +456,13 @@ int GameApp::Run() {
                     ", transitions=" + std::to_string(diagnostics.session_transition_count) +
                     ", connected_transitions=" + std::to_string(diagnostics.connected_transition_count) +
                     ", connect_requests=" + std::to_string(diagnostics.connect_request_count) +
+                    ", connect_probes(sent/failed)=" +
+                    std::to_string(diagnostics.connect_probe_send_count) + "/" +
+                    std::to_string(diagnostics.connect_probe_send_failure_count) +
                     ", timeout_disconnects=" + std::to_string(diagnostics.timeout_disconnect_count) +
                     ", manual_disconnects=" + std::to_string(diagnostics.manual_disconnect_count) +
+                    ", ignored_senders=" +
+                    std::to_string(diagnostics.ignored_unexpected_sender_count) +
                     ", dropped_commands(total/disconnected/queue_full)=" +
                     std::to_string(diagnostics.dropped_command_count) + "/" +
                     std::to_string(diagnostics.dropped_command_disconnected_count) + "/" +
