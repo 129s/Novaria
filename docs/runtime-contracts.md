@@ -33,6 +33,9 @@
   - `SubmitLocalCommand`
   - `PublishWorldSnapshot`
 - 当前实现：`net::NetServiceStub`
+  - 本地命令入队
+  - Tick 内批处理命令
+  - 快照发布计数与最后 Tick 记录
 
 ## `script`
 
@@ -41,6 +44,9 @@
   - `Tick`
   - `DispatchEvent`
 - 当前实现：`script::ScriptHostStub`
+  - 事件入队
+  - Tick 内批处理事件
+  - 事件处理计数
 
 ## 当前状态
 

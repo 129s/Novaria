@@ -90,6 +90,14 @@ if(NOVARIA_BUILD_TESTS)
     enable_testing()
 
     add_executable(
+        novaria_net_service_stub_tests
+        tests/net/net_service_stub_tests.cpp
+        src/net/net_service_stub.cpp
+        src/core/logger.cpp
+    )
+    target_include_directories(novaria_net_service_stub_tests PRIVATE src)
+
+    add_executable(
         novaria_world_service_tests
         tests/world/world_service_basic_tests.cpp
         src/world/world_service_basic.cpp
@@ -97,17 +105,35 @@ if(NOVARIA_BUILD_TESTS)
     )
     target_include_directories(novaria_world_service_tests PRIVATE src)
 
+    add_executable(
+        novaria_script_host_stub_tests
+        tests/script/script_host_stub_tests.cpp
+        src/script/script_host_stub.cpp
+        src/core/logger.cpp
+    )
+    target_include_directories(novaria_script_host_stub_tests PRIVATE src)
+
     if(MSVC)
+        target_compile_options(novaria_net_service_stub_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_world_service_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
+        target_compile_options(novaria_script_host_stub_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         if(NOVARIA_WARNINGS_AS_ERRORS)
+            target_compile_options(novaria_net_service_stub_tests PRIVATE /WX)
             target_compile_options(novaria_world_service_tests PRIVATE /WX)
+            target_compile_options(novaria_script_host_stub_tests PRIVATE /WX)
         endif()
     else()
+        target_compile_options(novaria_net_service_stub_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_world_service_tests PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(novaria_script_host_stub_tests PRIVATE -Wall -Wextra -Wpedantic)
         if(NOVARIA_WARNINGS_AS_ERRORS)
+            target_compile_options(novaria_net_service_stub_tests PRIVATE -Werror)
             target_compile_options(novaria_world_service_tests PRIVATE -Werror)
+            target_compile_options(novaria_script_host_stub_tests PRIVATE -Werror)
         endif()
     endif()
 
+    add_test(NAME novaria_net_service_stub_tests COMMAND novaria_net_service_stub_tests)
     add_test(NAME novaria_world_service_tests COMMAND novaria_world_service_tests)
+    add_test(NAME novaria_script_host_stub_tests COMMAND novaria_script_host_stub_tests)
 endif()
