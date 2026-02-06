@@ -2,7 +2,7 @@
 
 - `status`: authoritative
 - `owner`: @novaria-core
-- `last_verified_commit`: 23daedb
+- `last_verified_commit`: 3528b4e
 - `updated`: 2026-02-06
 
 ## 1. 前置条件
