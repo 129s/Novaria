@@ -111,6 +111,11 @@ void NetServiceStub::SubmitLocalCommand(const PlayerCommand& command) {
         return;
     }
 
+    if (session_state_ == NetSessionState::Disconnected) {
+        ++dropped_command_count_;
+        return;
+    }
+
     if (pending_commands_.size() >= kMaxPendingCommands) {
         ++dropped_command_count_;
         return;
@@ -123,6 +128,9 @@ std::vector<std::string> NetServiceStub::ConsumeRemoteChunkPayloads() {
     if (!initialized_) {
         return {};
     }
+    if (session_state_ != NetSessionState::Connected) {
+        return {};
+    }
 
     std::vector<std::string> payloads = std::move(pending_remote_chunk_payloads_);
     pending_remote_chunk_payloads_.clear();
@@ -132,7 +140,7 @@ std::vector<std::string> NetServiceStub::ConsumeRemoteChunkPayloads() {
 void NetServiceStub::PublishWorldSnapshot(
     std::uint64_t tick_index,
     const std::vector<std::string>& encoded_dirty_chunks) {
-    if (!initialized_) {
+    if (!initialized_ || session_state_ != NetSessionState::Connected) {
         return;
     }
 
@@ -144,6 +152,10 @@ void NetServiceStub::PublishWorldSnapshot(
 
 void NetServiceStub::EnqueueRemoteChunkPayload(std::string payload) {
     if (!initialized_) {
+        return;
+    }
+    if (session_state_ != NetSessionState::Connected) {
+        ++dropped_remote_chunk_payload_count_;
         return;
     }
 

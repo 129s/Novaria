@@ -41,6 +41,21 @@ int main() {
         net_service.LastPublishedSnapshotTick() == std::numeric_limits<std::uint64_t>::max(),
         "Last snapshot tick should be sentinel before first publish.");
 
+    net_service.SubmitLocalCommand({.player_id = 1, .command_type = "offline", .payload = ""});
+    net_service.EnqueueRemoteChunkPayload("offline_payload");
+    passed &= Expect(
+        net_service.PendingCommandCount() == 0,
+        "Commands should be rejected while session is disconnected.");
+    passed &= Expect(
+        net_service.PendingRemoteChunkPayloadCount() == 0,
+        "Remote payloads should be rejected while session is disconnected.");
+    passed &= Expect(
+        net_service.DroppedCommandCount() == 1,
+        "Disconnected command submit should increase dropped command count.");
+    passed &= Expect(
+        net_service.DroppedRemoteChunkPayloadCount() == 1,
+        "Disconnected payload enqueue should increase dropped remote payload count.");
+
     net_service.RequestConnect();
     passed &= Expect(
         net_service.SessionState() == novaria::net::NetSessionState::Connecting,
@@ -109,6 +124,10 @@ int main() {
     passed &= Expect(
         net_service.SessionState() == novaria::net::NetSessionState::Disconnected,
         "RequestDisconnect should move session to disconnected state.");
+    net_service.EnqueueRemoteChunkPayload("after_disconnect_payload");
+    passed &= Expect(
+        net_service.PendingRemoteChunkPayloadCount() == 0,
+        "Remote payload should still be rejected after explicit disconnect.");
 
     net_service.Shutdown();
     net_service.SubmitLocalCommand({.player_id = 9, .command_type = "attack", .payload = ""});

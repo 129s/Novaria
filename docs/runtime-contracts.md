@@ -51,6 +51,7 @@
   - 会话状态机：`Disconnected -> Connecting -> Connected`
   - 心跳超时：超过 `kHeartbeatTimeoutTicks` 未更新心跳将断线
   - 断线恢复入口：`RequestConnect` 重新发起连接
+  - 断线拒收：`Disconnected` 状态下拒绝本地命令与远端 payload 入队
   - 本地命令入队
   - 队列上限与丢弃计数（防输入风暴）
   - 远端快照 payload 入队与消费（含队列上限与丢弃计数）
