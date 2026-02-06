@@ -185,12 +185,14 @@ void SimulationKernel::Update(double fixed_delta_seconds) {
     pending_local_commands_.clear();
 
     net_service_.Tick(tick_context);
-    const net::NetSessionState current_session_state = net_service_.SessionState();
+    const net::NetDiagnosticsSnapshot net_diagnostics = net_service_.DiagnosticsSnapshot();
+    const net::NetSessionState current_session_state = net_diagnostics.session_state;
     if (current_session_state != last_observed_net_session_state_) {
         script_host_.DispatchEvent(script::ScriptEvent{
             .event_name = "net.session_state_changed",
             .payload = std::string(SessionStatePayload(current_session_state)) + "," +
-                std::to_string(tick_index_),
+                std::to_string(tick_index_) + "," +
+                net_diagnostics.last_session_transition_reason,
         });
 
         if (current_session_state == net::NetSessionState::Disconnected) {

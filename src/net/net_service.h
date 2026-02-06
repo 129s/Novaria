@@ -23,6 +23,7 @@ struct PlayerCommand final {
 
 struct NetDiagnosticsSnapshot final {
     NetSessionState session_state = NetSessionState::Disconnected;
+    std::string last_session_transition_reason;
     std::uint64_t session_transition_count = 0;
     std::uint64_t connected_transition_count = 0;
     std::uint64_t connect_request_count = 0;

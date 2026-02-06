@@ -209,6 +209,7 @@ int GameApp::Run() {
                 "net",
                 "Diagnostics: tick=" + std::to_string(current_tick) +
                     ", state=" + NetSessionStateName(diagnostics.session_state) +
+                    ", last_transition_reason=" + diagnostics.last_session_transition_reason +
                     ", transitions=" + std::to_string(diagnostics.session_transition_count) +
                     ", connected_transitions=" + std::to_string(diagnostics.connected_transition_count) +
                     ", connect_requests=" + std::to_string(diagnostics.connect_request_count) +

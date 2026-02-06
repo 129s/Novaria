@@ -64,6 +64,9 @@ int main() {
             snapshot.session_state == novaria::net::NetSessionState::Disconnected,
             "Diagnostics snapshot should expose disconnected initial session state.");
         passed &= Expect(
+            snapshot.last_session_transition_reason == "initialize",
+            "Diagnostics snapshot should expose initial transition reason.");
+        passed &= Expect(
             snapshot.connect_request_count == 0 &&
                 snapshot.timeout_disconnect_count == 0 &&
                 snapshot.dropped_command_count == 0 &&
@@ -100,6 +103,9 @@ int main() {
         "RequestConnect should move session to connecting state.");
     passed &= Expect(net_service.ConnectRequestCount() == 1, "Connect request count should increment.");
     passed &= Expect(net_service.SessionTransitionCount() == 1, "Session transition count should track connect request.");
+    passed &= Expect(
+        net_service.DiagnosticsSnapshot().last_session_transition_reason == "request_connect",
+        "Diagnostics snapshot should record connect request transition reason.");
 
     net_service.SubmitLocalCommand({.player_id = 7, .command_type = "move", .payload = "right"});
     net_service.SubmitLocalCommand({.player_id = 8, .command_type = "jump", .payload = ""});
@@ -113,6 +119,9 @@ int main() {
     passed &= Expect(
         net_service.ConnectedTransitionCount() == 1,
         "Connected transition count should increment after connect completion.");
+    passed &= Expect(
+        net_service.DiagnosticsSnapshot().last_session_transition_reason == "tick_connect_complete",
+        "Diagnostics snapshot should record connect completion transition reason.");
     passed &= Expect(net_service.PendingCommandCount() == 0, "Queue should be drained after tick.");
     passed &= Expect(net_service.TotalProcessedCommandCount() == 2, "Processed command count should increase.");
 
@@ -146,6 +155,9 @@ int main() {
         "Session should disconnect after heartbeat timeout.");
     passed &= Expect(net_service.TimeoutDisconnectCount() == 1, "Heartbeat timeout should increment counter.");
     passed &= Expect(
+        net_service.DiagnosticsSnapshot().last_session_transition_reason == "heartbeat_timeout",
+        "Diagnostics snapshot should record timeout transition reason.");
+    passed &= Expect(
         net_service.SessionTransitionCount() == 3,
         "Session transition count should include connect and timeout transitions.");
 
@@ -170,6 +182,9 @@ int main() {
         net_service.SessionState() == novaria::net::NetSessionState::Disconnected,
         "RequestDisconnect should move session to disconnected state.");
     passed &= Expect(net_service.ManualDisconnectCount() == 1, "Manual disconnect count should increment.");
+    passed &= Expect(
+        net_service.DiagnosticsSnapshot().last_session_transition_reason == "request_disconnect",
+        "Diagnostics snapshot should record manual disconnect transition reason.");
     passed &= Expect(
         net_service.SessionTransitionCount() == 6,
         "Session transition count should include reconnect and manual disconnect transitions.");

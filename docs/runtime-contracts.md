@@ -20,7 +20,7 @@
 - `sim::SimulationKernel` 本地命令队列提供上限保护：超出 `kMaxPendingLocalCommands` 的输入会被丢弃并计数。
 - `sim::SimulationKernel` 初始化会请求 `net` 建连，运行时检测到断线会自动请求重连。
 - 自动重连请求带 Tick 级节流（`kAutoReconnectRetryIntervalTicks`）以避免重连风暴。
-- `sim::SimulationKernel` 检测到 `net` 会话状态变化时，会向脚本层派发 `net.session_state_changed` 事件。
+- `sim::SimulationKernel` 检测到 `net` 会话状态变化时，会向脚本层派发 `net.session_state_changed` 事件（payload: `state,tick,reason`）。
 
 ## `world`
 
@@ -52,7 +52,7 @@
   - `PublishWorldSnapshot(tick_index, encoded_dirty_chunks)`
 - 当前实现：`net::NetServiceStub`
   - 会话状态机：`Disconnected -> Connecting -> Connected`
-  - 会话可观测：状态迁移会输出日志，并提供迁移计数/连接计数/断线原因计数
+  - 会话可观测：状态迁移会输出日志，并提供迁移计数/连接计数/断线原因计数与最近迁移原因
   - 心跳超时：超过 `kHeartbeatTimeoutTicks` 未更新心跳将断线
   - 断线恢复入口：`RequestConnect` 重新发起连接
   - 断线拒收：`Disconnected` 状态下拒绝本地命令与远端 payload 入队

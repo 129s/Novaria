@@ -106,6 +106,7 @@ public:
     int tick_count = 0;
     int connect_request_count = 0;
     int disconnect_request_count = 0;
+    std::string last_transition_reason = "initialize";
     std::vector<novaria::net::PlayerCommand> submitted_commands;
     std::vector<std::pair<std::uint64_t, std::size_t>> published_snapshots;
     std::vector<std::vector<std::string>> published_snapshot_payloads;
@@ -130,12 +131,14 @@ public:
         ++connect_request_count;
         if (session_state == novaria::net::NetSessionState::Disconnected) {
             session_state = novaria::net::NetSessionState::Connecting;
+            last_transition_reason = "request_connect";
         }
     }
 
     void RequestDisconnect() override {
         ++disconnect_request_count;
         session_state = novaria::net::NetSessionState::Disconnected;
+        last_transition_reason = "request_disconnect";
     }
 
     void NotifyHeartbeatReceived(std::uint64_t tick_index) override {
@@ -149,6 +152,7 @@ public:
     novaria::net::NetDiagnosticsSnapshot DiagnosticsSnapshot() const override {
         return novaria::net::NetDiagnosticsSnapshot{
             .session_state = session_state,
+            .last_session_transition_reason = last_transition_reason,
         };
     }
 
@@ -157,6 +161,7 @@ public:
         if (session_state == novaria::net::NetSessionState::Connecting &&
             auto_progress_connection) {
             session_state = novaria::net::NetSessionState::Connected;
+            last_transition_reason = "tick_connect_complete";
         }
         ++tick_count;
     }
@@ -489,8 +494,8 @@ bool TestNetSessionStateChangeDispatchesScriptEvent() {
             script.dispatched_events[0].event_name == "net.session_state_changed",
             "Session change event name should match contract.");
         passed &= Expect(
-            script.dispatched_events[0].payload == "connected,1",
-            "Session change event payload should include state and tick.");
+            script.dispatched_events[0].payload == "connected,1,tick_connect_complete",
+            "Session change event payload should include state, tick, and transition reason.");
     }
 
     net.auto_progress_connection = false;
@@ -501,8 +506,8 @@ bool TestNetSessionStateChangeDispatchesScriptEvent() {
         "Reconnect transition to connecting should dispatch one more script event.");
     if (script.dispatched_events.size() == 2) {
         passed &= Expect(
-            script.dispatched_events[1].payload == "connecting,2",
-            "Reconnect transition payload should include connecting state and tick.");
+            script.dispatched_events[1].payload == "connecting,2,request_connect",
+            "Reconnect transition payload should include state, tick, and transition reason.");
     }
 
     kernel.Shutdown();

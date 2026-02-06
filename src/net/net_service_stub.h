@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -73,6 +74,7 @@ private:
     std::uint64_t connected_transition_count_ = 0;
     std::uint64_t manual_disconnect_count_ = 0;
     std::uint64_t ignored_heartbeat_count_ = 0;
+    std::string last_session_transition_reason_ = "initialize";
     std::uint64_t last_heartbeat_tick_ = kInvalidTick;
     std::uint64_t last_published_snapshot_tick_ = std::numeric_limits<std::uint64_t>::max();
     std::size_t last_published_dirty_chunk_count_ = 0;

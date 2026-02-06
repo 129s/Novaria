@@ -32,6 +32,7 @@ void NetServiceStub::TransitionSessionState(
 
     const NetSessionState previous_state = session_state_;
     session_state_ = next_state;
+    last_session_transition_reason_ = std::string(reason);
     ++session_transition_count_;
     if (next_state == NetSessionState::Connected) {
         ++connected_transition_count_;
@@ -62,6 +63,7 @@ bool NetServiceStub::Initialize(std::string& out_error) {
     connected_transition_count_ = 0;
     manual_disconnect_count_ = 0;
     ignored_heartbeat_count_ = 0;
+    last_session_transition_reason_ = "initialize";
     last_heartbeat_tick_ = kInvalidTick;
     last_published_snapshot_tick_ = std::numeric_limits<std::uint64_t>::max();
     last_published_dirty_chunk_count_ = 0;
@@ -136,6 +138,7 @@ NetSessionState NetServiceStub::SessionState() const {
 NetDiagnosticsSnapshot NetServiceStub::DiagnosticsSnapshot() const {
     return NetDiagnosticsSnapshot{
         .session_state = session_state_,
+        .last_session_transition_reason = last_session_transition_reason_,
         .session_transition_count = session_transition_count_,
         .connected_transition_count = connected_transition_count_,
         .connect_request_count = connect_request_count_,
