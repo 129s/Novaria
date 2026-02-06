@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <string>
 #include <vector>
 
 namespace novaria::app {
@@ -33,6 +34,7 @@ private:
     mod::ModLoader mod_loader_;
     std::filesystem::path mod_root_ = "mods";
     std::vector<mod::ModManifest> loaded_mods_;
+    std::string mod_manifest_fingerprint_;
     platform::InputActions frame_actions_;
     std::uint32_t local_player_id_ = 1;
     std::uint64_t script_ping_counter_ = 0;

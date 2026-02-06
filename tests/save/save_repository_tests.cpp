@@ -1,6 +1,7 @@
 #include "save/save_repository.h"
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 
@@ -39,6 +40,7 @@ int main() {
     const novaria::save::WorldSaveState expected{
         .tick_index = 12345,
         .local_player_id = 9,
+        .mod_manifest_fingerprint = "mods:v1:abc123",
     };
     passed &= Expect(repository.SaveWorldState(expected, error), "Save should succeed.");
     passed &= Expect(error.empty(), "Save should not return error.");
@@ -50,6 +52,23 @@ int main() {
     passed &= Expect(
         actual.local_player_id == expected.local_player_id,
         "Loaded local player id should match saved value.");
+    passed &= Expect(
+        actual.mod_manifest_fingerprint == expected.mod_manifest_fingerprint,
+        "Loaded mod manifest fingerprint should match saved value.");
+
+    std::ofstream legacy_file(test_dir / "world.sav", std::ios::trunc);
+    legacy_file << "tick_index=77\n";
+    legacy_file << "local_player_id=5\n";
+    legacy_file.close();
+
+    novaria::save::WorldSaveState legacy_loaded{};
+    passed &= Expect(repository.LoadWorldState(legacy_loaded, error), "Legacy save format should still load.");
+    passed &= Expect(error.empty(), "Legacy save load should not return error.");
+    passed &= Expect(legacy_loaded.tick_index == 77, "Legacy loaded tick should match.");
+    passed &= Expect(legacy_loaded.local_player_id == 5, "Legacy loaded player id should match.");
+    passed &= Expect(
+        legacy_loaded.mod_manifest_fingerprint.empty(),
+        "Legacy save without fingerprint should default to empty fingerprint.");
 
     repository.Shutdown();
     passed &= Expect(

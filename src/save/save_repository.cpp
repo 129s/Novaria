@@ -66,6 +66,7 @@ bool FileSaveRepository::SaveWorldState(const WorldSaveState& state, std::string
 
     file << "tick_index=" << state.tick_index << '\n';
     file << "local_player_id=" << state.local_player_id << '\n';
+    file << "mod_manifest_fingerprint=" << state.mod_manifest_fingerprint << '\n';
     file.close();
 
     out_error.clear();
@@ -118,6 +119,11 @@ bool FileSaveRepository::LoadWorldState(WorldSaveState& out_state, std::string& 
                 return false;
             }
             parsed_state.local_player_id = static_cast<std::uint32_t>(parsed);
+            continue;
+        }
+
+        if (key == "mod_manifest_fingerprint") {
+            parsed_state.mod_manifest_fingerprint = value;
             continue;
         }
     }

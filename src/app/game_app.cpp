@@ -31,16 +31,19 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
         return false;
     }
 
+    save::WorldSaveState loaded_save_state{};
+    bool has_loaded_save_state = false;
+
     std::string save_error;
     if (!save_repository_.Initialize(save_root_, save_error)) {
         core::Logger::Warn("save", "Save repository initialize failed: " + save_error);
     } else {
-        save::WorldSaveState save_state{};
-        if (save_repository_.LoadWorldState(save_state, save_error)) {
-            local_player_id_ = save_state.local_player_id == 0 ? 1 : save_state.local_player_id;
+        if (save_repository_.LoadWorldState(loaded_save_state, save_error)) {
+            has_loaded_save_state = true;
+            local_player_id_ = loaded_save_state.local_player_id == 0 ? 1 : loaded_save_state.local_player_id;
             core::Logger::Info(
                 "save",
-                "Loaded world save: tick=" + std::to_string(save_state.tick_index) +
+                "Loaded world save: tick=" + std::to_string(loaded_save_state.tick_index) +
                     ", player=" + std::to_string(local_player_id_));
         } else {
             core::Logger::Warn("save", "World save load skipped: " + save_error);
@@ -48,15 +51,26 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
     }
 
     std::string mod_error;
+    mod_manifest_fingerprint_.clear();
     loaded_mods_.clear();
     if (!mod_loader_.Initialize(mod_root_, mod_error)) {
         core::Logger::Warn("mod", "Mod loader initialize failed: " + mod_error);
     } else if (!mod_loader_.LoadAll(loaded_mods_, mod_error)) {
         core::Logger::Warn("mod", "Mod loading failed: " + mod_error);
     } else {
-        const std::string fingerprint = mod::ModLoader::BuildManifestFingerprint(loaded_mods_);
+        mod_manifest_fingerprint_ = mod::ModLoader::BuildManifestFingerprint(loaded_mods_);
         core::Logger::Info("mod", "Loaded mods: " + std::to_string(loaded_mods_.size()));
-        core::Logger::Info("mod", "Manifest fingerprint: " + fingerprint);
+        core::Logger::Info("mod", "Manifest fingerprint: " + mod_manifest_fingerprint_);
+    }
+
+    if (has_loaded_save_state && !loaded_save_state.mod_manifest_fingerprint.empty() &&
+        !mod_manifest_fingerprint_.empty() &&
+        loaded_save_state.mod_manifest_fingerprint != mod_manifest_fingerprint_) {
+        core::Logger::Warn(
+            "save",
+            "Loaded save mod fingerprint mismatch. save=" +
+                loaded_save_state.mod_manifest_fingerprint +
+                ", runtime=" + mod_manifest_fingerprint_);
     }
 
     initialized_ = true;
@@ -136,11 +150,13 @@ void GameApp::Shutdown() {
     const save::WorldSaveState save_state{
         .tick_index = simulation_kernel_.CurrentTick(),
         .local_player_id = local_player_id_,
+        .mod_manifest_fingerprint = mod_manifest_fingerprint_,
     };
     if (!save_repository_.SaveWorldState(save_state, save_error)) {
         core::Logger::Warn("save", "World save write failed: " + save_error);
     }
 
+    mod_manifest_fingerprint_.clear();
     loaded_mods_.clear();
     mod_loader_.Shutdown();
     save_repository_.Shutdown();

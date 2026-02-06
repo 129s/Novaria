@@ -67,7 +67,7 @@
   - `SaveWorldState/LoadWorldState`
 - 当前实现：`save::FileSaveRepository`
   - 启动读取 `saves/world.sav`
-  - 退出写回当前 Tick 与本地玩家编号
+  - 退出写回当前 Tick、本地玩家编号与模组清单指纹
 
 ## `mod`
 
