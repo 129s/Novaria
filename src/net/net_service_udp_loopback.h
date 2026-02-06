@@ -32,6 +32,9 @@ public:
         std::uint64_t tick_index,
         const std::vector<std::string>& encoded_dirty_chunks) override;
 
+    void SetBindPort(std::uint16_t local_port);
+    void SetRemoteEndpoint(UdpEndpoint endpoint);
+    UdpEndpoint RemoteEndpoint() const;
     std::uint16_t LocalPort() const;
 
 private:
@@ -63,8 +66,9 @@ private:
     std::size_t last_published_dirty_chunk_count_ = 0;
     std::vector<std::string> last_published_encoded_chunks_;
     std::uint64_t snapshot_publish_count_ = 0;
+    std::uint16_t bind_port_ = 0;
     UdpTransport transport_;
-    UdpEndpoint loopback_endpoint_{};
+    UdpEndpoint remote_endpoint_{};
 };
 
 }  // namespace novaria::net

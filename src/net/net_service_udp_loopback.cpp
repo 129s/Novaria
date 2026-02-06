@@ -70,20 +70,26 @@ bool NetServiceUdpLoopback::Initialize(std::string& out_error) {
     last_published_encoded_chunks_.clear();
     snapshot_publish_count_ = 0;
 
-    if (!transport_.Open(0, out_error)) {
+    if (!transport_.Open(bind_port_, out_error)) {
         initialized_ = false;
         return false;
     }
 
-    loopback_endpoint_.host = "127.0.0.1";
-    loopback_endpoint_.port = transport_.LocalPort();
+    if (remote_endpoint_.host.empty()) {
+        remote_endpoint_.host = "127.0.0.1";
+    }
+    if (remote_endpoint_.port == 0) {
+        remote_endpoint_.port = transport_.LocalPort();
+    }
 
     initialized_ = true;
     out_error.clear();
     core::Logger::Info(
         "net",
         "UDP loopback net service initialized on port " +
-            std::to_string(transport_.LocalPort()) + ".");
+            std::to_string(transport_.LocalPort()) +
+            ", remote=" + remote_endpoint_.host +
+            ":" + std::to_string(remote_endpoint_.port) + ".");
     return true;
 }
 
@@ -98,6 +104,7 @@ void NetServiceUdpLoopback::Shutdown() {
     last_published_encoded_chunks_.clear();
     last_heartbeat_tick_ = kInvalidTick;
     transport_.Close();
+    remote_endpoint_.port = 0;
     initialized_ = false;
     core::Logger::Info("net", "UDP loopback net service shutdown.");
 }
@@ -243,11 +250,34 @@ void NetServiceUdpLoopback::PublishWorldSnapshot(
 
     std::string send_error;
     for (const auto& payload : encoded_dirty_chunks) {
-        if (!transport_.SendTo(loopback_endpoint_, payload, send_error)) {
+        if (!transport_.SendTo(remote_endpoint_, payload, send_error)) {
             core::Logger::Warn("net", "UDP snapshot publish failed: " + send_error);
             break;
         }
     }
+}
+
+void NetServiceUdpLoopback::SetBindPort(std::uint16_t local_port) {
+    if (initialized_) {
+        return;
+    }
+
+    bind_port_ = local_port;
+}
+
+void NetServiceUdpLoopback::SetRemoteEndpoint(UdpEndpoint endpoint) {
+    if (endpoint.host.empty()) {
+        endpoint.host = "127.0.0.1";
+    }
+    if (initialized_ && endpoint.port == 0) {
+        endpoint.port = transport_.LocalPort();
+    }
+
+    remote_endpoint_ = std::move(endpoint);
+}
+
+UdpEndpoint NetServiceUdpLoopback::RemoteEndpoint() const {
+    return remote_endpoint_;
 }
 
 std::uint16_t NetServiceUdpLoopback::LocalPort() const {

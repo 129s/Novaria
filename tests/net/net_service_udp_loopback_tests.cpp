@@ -69,6 +69,37 @@ int main() {
         net_service.SessionState() == novaria::net::NetSessionState::Disconnected,
         "Connect request after shutdown should be ignored.");
 
+    novaria::net::NetServiceUdpLoopback host_a;
+    novaria::net::NetServiceUdpLoopback host_b;
+    passed &= Expect(host_a.Initialize(error), "Host A init should succeed.");
+    passed &= Expect(host_b.Initialize(error), "Host B init should succeed.");
+    host_a.SetRemoteEndpoint({.host = "127.0.0.1", .port = host_b.LocalPort()});
+    host_b.SetRemoteEndpoint({.host = "127.0.0.1", .port = host_a.LocalPort()});
+
+    host_a.RequestConnect();
+    host_b.RequestConnect();
+    host_a.Tick({.tick_index = 1, .fixed_delta_seconds = 1.0 / 60.0});
+    host_b.Tick({.tick_index = 1, .fixed_delta_seconds = 1.0 / 60.0});
+
+    host_a.PublishWorldSnapshot(2, {"cross_process_payload"});
+    host_a.Tick({.tick_index = 2, .fixed_delta_seconds = 1.0 / 60.0});
+    host_b.Tick({.tick_index = 2, .fixed_delta_seconds = 1.0 / 60.0});
+    const auto host_b_payloads = host_b.ConsumeRemoteChunkPayloads();
+    passed &= Expect(
+        host_b_payloads.size() == 1 && host_b_payloads.front() == "cross_process_payload",
+        "Host B should receive payload published by Host A.");
+
+    host_b.PublishWorldSnapshot(3, {"cross_process_payload_back"});
+    host_b.Tick({.tick_index = 3, .fixed_delta_seconds = 1.0 / 60.0});
+    host_a.Tick({.tick_index = 3, .fixed_delta_seconds = 1.0 / 60.0});
+    const auto host_a_payloads = host_a.ConsumeRemoteChunkPayloads();
+    passed &= Expect(
+        host_a_payloads.size() == 1 && host_a_payloads.front() == "cross_process_payload_back",
+        "Host A should receive payload published by Host B.");
+
+    host_a.Shutdown();
+    host_b.Shutdown();
+
     if (!passed) {
         return 1;
     }

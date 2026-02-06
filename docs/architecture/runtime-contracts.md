@@ -2,7 +2,7 @@
 
 - `status`: authoritative
 - `owner`: @novaria-core
-- `last_verified_commit`: 64cca05
+- `last_verified_commit`: 6e0a7a5
 - `updated`: 2026-02-06
 
 ## 1. 目标
@@ -79,7 +79,7 @@
 
 - `NetServiceRuntime`：支持 `stub/udp_loopback/auto` 后端偏好。
 - `stub` 后端：`NetServiceStub`（`Disconnected -> Connecting -> Connected` 状态机）。
-- `udp_loopback` 后端：`NetServiceUdpLoopback`（基于 UDP 回环端口验证传输链路）。
+- `udp_loopback` 后端：`NetServiceUdpLoopback`（支持本地端口绑定与对端端点配置，可做同机双进程互通验证）。
 - 心跳超时断线：`kHeartbeatTimeoutTicks`。
 - 断线态拒收本地命令与远端 payload。
 - 提供可观测诊断：迁移计数、丢弃计数、最近迁移原因、最后心跳 Tick。

@@ -25,6 +25,7 @@ const char* NetBackendPreferenceName(NetBackendPreference preference);
 
 class NetServiceRuntime final : public INetService {
 public:
+    void ConfigureUdpBackend(std::uint16_t local_port, UdpEndpoint remote_endpoint);
     void SetBackendPreference(NetBackendPreference preference);
     NetBackendPreference BackendPreference() const;
     NetBackendKind ActiveBackend() const;
@@ -52,6 +53,8 @@ private:
     NetBackendKind active_backend_ = NetBackendKind::None;
     INetService* active_host_ = nullptr;
     std::string last_backend_error_;
+    std::uint16_t udp_bind_port_ = 0;
+    UdpEndpoint udp_remote_endpoint_{};
     NetServiceStub stub_host_;
     NetServiceUdpLoopback udp_loopback_host_;
 };

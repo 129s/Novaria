@@ -2,6 +2,8 @@
 
 #include "core/logger.h"
 
+#include <utility>
+
 namespace novaria::net {
 
 const char* NetBackendKindName(NetBackendKind backend_kind) {
@@ -28,6 +30,11 @@ const char* NetBackendPreferenceName(NetBackendPreference preference) {
     }
 
     return "unknown";
+}
+
+void NetServiceRuntime::ConfigureUdpBackend(std::uint16_t local_port, UdpEndpoint remote_endpoint) {
+    udp_bind_port_ = local_port;
+    udp_remote_endpoint_ = std::move(remote_endpoint);
 }
 
 void NetServiceRuntime::SetBackendPreference(NetBackendPreference preference) {
@@ -180,6 +187,9 @@ bool NetServiceRuntime::InitializeWithStub(std::string& out_error) {
 }
 
 bool NetServiceRuntime::InitializeWithUdpLoopback(std::string& out_error) {
+    udp_loopback_host_.SetBindPort(udp_bind_port_);
+    udp_loopback_host_.SetRemoteEndpoint(udp_remote_endpoint_);
+
     if (!udp_loopback_host_.Initialize(out_error)) {
         active_host_ = nullptr;
         active_backend_ = NetBackendKind::None;

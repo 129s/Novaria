@@ -41,6 +41,20 @@ bool ParseInt(const std::string& value, int& out_value) {
     }
 }
 
+bool ParsePort(const std::string& value, int& out_port) {
+    int parsed_port = 0;
+    if (!ParseInt(value, parsed_port)) {
+        return false;
+    }
+
+    if (parsed_port < 0 || parsed_port > 65535) {
+        return false;
+    }
+
+    out_port = parsed_port;
+    return true;
+}
+
 bool ParseString(const std::string& value, std::string& out_value) {
     if (value.size() < 2 || value.front() != '"' || value.back() != '"') {
         return false;
@@ -192,6 +206,32 @@ bool ConfigLoader::Load(
             if (!ParseNetBackendMode(value, out_config.net_backend_mode)) {
                 out_error =
                     "net_backend expects one of \"auto\"|\"stub\"|\"udp_loopback\": line " +
+                    std::to_string(line_number);
+                return false;
+            }
+            continue;
+        }
+
+        if (key == "net_udp_local_port") {
+            if (!ParsePort(value, out_config.net_udp_local_port)) {
+                out_error = "net_udp_local_port expects integer within [0,65535]: line " +
+                    std::to_string(line_number);
+                return false;
+            }
+            continue;
+        }
+
+        if (key == "net_udp_remote_host") {
+            if (!ParseString(value, out_config.net_udp_remote_host)) {
+                out_error = "net_udp_remote_host expects string: line " + std::to_string(line_number);
+                return false;
+            }
+            continue;
+        }
+
+        if (key == "net_udp_remote_port") {
+            if (!ParsePort(value, out_config.net_udp_remote_port)) {
+                out_error = "net_udp_remote_port expects integer within [0,65535]: line " +
                     std::to_string(line_number);
                 return false;
             }

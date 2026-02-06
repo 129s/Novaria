@@ -2,7 +2,7 @@
 
 - `status`: authoritative
 - `owner`: @novaria-core
-- `last_verified_commit`: 64cca05
+- `last_verified_commit`: 6e0a7a5
 - `updated`: 2026-02-06
 
 ## 1. 前置条件
@@ -72,6 +72,9 @@ script_backend = "auto"   # auto | stub | luajit
 
 ```toml
 net_backend = "stub"      # auto | stub | udp_loopback
+net_udp_local_port = 0
+net_udp_remote_host = "127.0.0.1"
+net_udp_remote_port = 0
 ```
 
 ## 6. 调试热键（当前）

@@ -72,10 +72,19 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
         "Configured script backend preference: " +
             std::string(core::ScriptBackendModeName(config_.script_backend_mode)));
     net_service_.SetBackendPreference(ToNetBackendPreference(config_.net_backend_mode));
+    net_service_.ConfigureUdpBackend(
+        static_cast<std::uint16_t>(config_.net_udp_local_port),
+        net::UdpEndpoint{
+            .host = config_.net_udp_remote_host,
+            .port = static_cast<std::uint16_t>(config_.net_udp_remote_port),
+        });
     core::Logger::Info(
         "net",
         "Configured net backend preference: " +
-            std::string(core::NetBackendModeName(config_.net_backend_mode)));
+            std::string(core::NetBackendModeName(config_.net_backend_mode)) +
+            ", udp_local_port=" + std::to_string(config_.net_udp_local_port) +
+            ", udp_remote=" + config_.net_udp_remote_host +
+            ":" + std::to_string(config_.net_udp_remote_port));
 
     std::string runtime_error;
     if (!simulation_kernel_.Initialize(runtime_error)) {

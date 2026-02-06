@@ -38,6 +38,7 @@ int main() {
     runtime.Shutdown();
 
     runtime.SetBackendPreference(novaria::net::NetBackendPreference::UdpLoopback);
+    runtime.ConfigureUdpBackend(0, {.host = "127.0.0.1", .port = 0});
     const bool udp_init_ok = runtime.Initialize(error);
     if (udp_init_ok) {
         passed &= Expect(
