@@ -179,6 +179,7 @@ public:
     bool initialize_called = false;
     bool shutdown_called = false;
     int tick_count = 0;
+    std::vector<novaria::script::ScriptEvent> dispatched_events;
 
     bool Initialize(std::string& out_error) override {
         initialize_called = true;
@@ -200,7 +201,7 @@ public:
     }
 
     void DispatchEvent(const novaria::script::ScriptEvent& event_data) override {
-        (void)event_data;
+        dispatched_events.push_back(event_data);
     }
 };
 
@@ -403,6 +404,56 @@ bool TestUpdateRequestsReconnectWhenNetDisconnected() {
     passed &= Expect(
         net.SessionState() == novaria::net::NetSessionState::Connected,
         "Reconnect request should recover fake net session.");
+
+    kernel.Shutdown();
+    return passed;
+}
+
+bool TestNetSessionStateChangeDispatchesScriptEvent() {
+    bool passed = true;
+
+    FakeWorldService world;
+    FakeNetService net;
+    FakeScriptHost script;
+    net.auto_progress_connection = false;
+    novaria::sim::SimulationKernel kernel(world, net, script);
+
+    std::string error;
+    passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
+    passed &= Expect(
+        script.dispatched_events.empty(),
+        "Kernel initialize should not dispatch session change event yet.");
+
+    kernel.Update(1.0 / 60.0);
+    passed &= Expect(
+        script.dispatched_events.empty(),
+        "No session change event should dispatch when state remains connecting.");
+
+    net.auto_progress_connection = true;
+    kernel.Update(1.0 / 60.0);
+    passed &= Expect(
+        script.dispatched_events.size() == 1,
+        "Session change to connected should dispatch one script event.");
+    if (script.dispatched_events.size() == 1) {
+        passed &= Expect(
+            script.dispatched_events[0].event_name == "net.session_state_changed",
+            "Session change event name should match contract.");
+        passed &= Expect(
+            script.dispatched_events[0].payload == "connected,1",
+            "Session change event payload should include state and tick.");
+    }
+
+    net.auto_progress_connection = false;
+    net.session_state = novaria::net::NetSessionState::Disconnected;
+    kernel.Update(1.0 / 60.0);
+    passed &= Expect(
+        script.dispatched_events.size() == 2,
+        "Reconnect transition to connecting should dispatch one more script event.");
+    if (script.dispatched_events.size() == 2) {
+        passed &= Expect(
+            script.dispatched_events[1].payload == "connecting,2",
+            "Reconnect transition payload should include connecting state and tick.");
+    }
 
     kernel.Shutdown();
     return passed;
@@ -680,6 +731,7 @@ int main() {
     passed &= TestInitializeRollbackOnScriptFailure();
     passed &= TestInitializeRequestsNetConnect();
     passed &= TestUpdateRequestsReconnectWhenNetDisconnected();
+    passed &= TestNetSessionStateChangeDispatchesScriptEvent();
     passed &= TestSubmitCommandIgnoredBeforeInitialize();
     passed &= TestLocalCommandQueueCapAndDroppedCount();
     passed &= TestApplyRemoteChunkPayload();

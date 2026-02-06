@@ -19,6 +19,7 @@
 - `sim::SimulationKernel` 额外提供远端快照应用入口：`ApplyRemoteChunkPayload`。
 - `sim::SimulationKernel` 本地命令队列提供上限保护：超出 `kMaxPendingLocalCommands` 的输入会被丢弃并计数。
 - `sim::SimulationKernel` 初始化会请求 `net` 建连，运行时检测到断线会自动请求重连。
+- `sim::SimulationKernel` 检测到 `net` 会话状态变化时，会向脚本层派发 `net.session_state_changed` 事件。
 
 ## `world`
 

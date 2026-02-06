@@ -10,6 +10,22 @@
 #include <vector>
 
 namespace novaria::sim {
+namespace {
+
+const char* SessionStatePayload(net::NetSessionState state) {
+    switch (state) {
+        case net::NetSessionState::Disconnected:
+            return "disconnected";
+        case net::NetSessionState::Connecting:
+            return "connecting";
+        case net::NetSessionState::Connected:
+            return "connected";
+    }
+
+    return "unknown";
+}
+
+}  // namespace
 
 SimulationKernel::SimulationKernel(
     world::IWorldService& world_service,
@@ -38,6 +54,7 @@ bool SimulationKernel::Initialize(std::string& out_error) {
     }
 
     net_service_.RequestConnect();
+    last_observed_net_session_state_ = net_service_.SessionState();
     tick_index_ = 0;
     pending_local_commands_.clear();
     dropped_local_command_count_ = 0;
@@ -55,6 +72,7 @@ void SimulationKernel::Shutdown() {
     net_service_.Shutdown();
     world_service_.Shutdown();
     pending_local_commands_.clear();
+    last_observed_net_session_state_ = net::NetSessionState::Disconnected;
     initialized_ = false;
 }
 
@@ -163,7 +181,17 @@ void SimulationKernel::Update(double fixed_delta_seconds) {
     pending_local_commands_.clear();
 
     net_service_.Tick(tick_context);
-    const bool net_connected = net_service_.SessionState() == net::NetSessionState::Connected;
+    const net::NetSessionState current_session_state = net_service_.SessionState();
+    if (current_session_state != last_observed_net_session_state_) {
+        script_host_.DispatchEvent(script::ScriptEvent{
+            .event_name = "net.session_state_changed",
+            .payload = std::string(SessionStatePayload(current_session_state)) + "," +
+                std::to_string(tick_index_),
+        });
+        last_observed_net_session_state_ = current_session_state;
+    }
+
+    const bool net_connected = current_session_state == net::NetSessionState::Connected;
     if (net_connected) {
         for (const auto& encoded_payload : net_service_.ConsumeRemoteChunkPayloads()) {
             std::string apply_error;

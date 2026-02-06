@@ -40,6 +40,7 @@ private:
     script::IScriptHost& script_host_;
     std::vector<net::PlayerCommand> pending_local_commands_;
     std::size_t dropped_local_command_count_ = 0;
+    net::NetSessionState last_observed_net_session_state_ = net::NetSessionState::Disconnected;
 };
 
 }  // namespace novaria::sim
