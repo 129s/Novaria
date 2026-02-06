@@ -53,7 +53,9 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
     } else if (!mod_loader_.LoadAll(loaded_mods_, mod_error)) {
         core::Logger::Warn("mod", "Mod loading failed: " + mod_error);
     } else {
+        const std::string fingerprint = mod::ModLoader::BuildManifestFingerprint(loaded_mods_);
         core::Logger::Info("mod", "Loaded mods: " + std::to_string(loaded_mods_.size()));
+        core::Logger::Info("mod", "Manifest fingerprint: " + fingerprint);
     }
 
     initialized_ = true;

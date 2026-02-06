@@ -60,6 +60,7 @@
 - 本地输入已接入命令通道：`J` 触发 `jump`，`K` 触发 `attack`，`F1` 触发 `debug.ping` 事件。
 - 启停流程已接入文件存档仓库：启动尝试读取 `saves/world.sav`，退出写回当前 Tick 与本地玩家编号。
 - 启动流程已接入最小 Mod 加载器：扫描 `mods/*/mod.toml` 并加载有效清单。
+- Mod 清单已提供稳定指纹（order-insensitive），用于后续联机一致性校验。
 - `world` 已从 Stub 升级为最小可运行实现。
 - 已接入 `CTest` 与 `world_service_basic` 单元测试入口。
 - 已补 `SimulationKernel` 编排与回滚测试。

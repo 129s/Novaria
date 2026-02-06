@@ -18,6 +18,7 @@ public:
     bool Initialize(const std::filesystem::path& mod_root, std::string& out_error);
     void Shutdown();
     bool LoadAll(std::vector<ModManifest>& out_manifests, std::string& out_error) const;
+    static std::string BuildManifestFingerprint(const std::vector<ModManifest>& manifests);
 
 private:
     static std::string Trim(const std::string& value);

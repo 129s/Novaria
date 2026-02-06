@@ -2,7 +2,10 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <fstream>
+#include <iomanip>
+#include <sstream>
 #include <utility>
 
 namespace novaria::mod {
@@ -64,6 +67,31 @@ bool ModLoader::LoadAll(std::vector<ModManifest>& out_manifests, std::string& ou
 
     out_error.clear();
     return true;
+}
+
+std::string ModLoader::BuildManifestFingerprint(const std::vector<ModManifest>& manifests) {
+    std::vector<std::string> canonical_entries;
+    canonical_entries.reserve(manifests.size());
+    for (const auto& manifest : manifests) {
+        canonical_entries.push_back(
+            manifest.name + "|" + manifest.version + "|" + manifest.description);
+    }
+    std::sort(canonical_entries.begin(), canonical_entries.end());
+
+    std::uint64_t hash = 1469598103934665603ULL;
+    constexpr std::uint64_t kFnvPrime = 1099511628211ULL;
+    for (const auto& entry : canonical_entries) {
+        for (const unsigned char ch : entry) {
+            hash ^= ch;
+            hash *= kFnvPrime;
+        }
+        hash ^= static_cast<unsigned char>('\n');
+        hash *= kFnvPrime;
+    }
+
+    std::ostringstream stream;
+    stream << std::hex << std::setfill('0') << std::setw(16) << hash;
+    return stream.str();
 }
 
 std::string ModLoader::Trim(const std::string& value) {
