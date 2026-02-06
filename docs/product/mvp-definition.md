@@ -2,7 +2,7 @@
 
 - `status`: authoritative
 - `owner`: @novaria-core
-- `last_verified_commit`: 5d2d727
+- `last_verified_commit`: 1937135
 - `updated`: 2026-02-06
 
 ## 1. 目标
@@ -43,13 +43,3 @@ Novaria 的 MVP 目标是验证三条闭环，而不是追求内容体量：
 - 大型剧情任务线与复杂世界事件系统。
 - 严格脚本安全沙箱。
 - 脚本改写底层渲染或网络协议。
-
-## 5. 里程碑（计划）
-
-- W1-W2：工程骨架。
-- W3-W6：单机闭环。
-- W7-W10：联机闭环。
-- W11-W12：Mod v0。
-- W13-W14：性能与发布准备。
-
-说明：里程碑是规划节奏，不等于当前完成状态；当前状态见 `docs/product/mvp-status.md`。
