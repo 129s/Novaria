@@ -1,5 +1,6 @@
 #include "script/script_host_stub.h"
 
+#include <cstddef>
 #include <iostream>
 #include <string>
 
@@ -24,6 +25,7 @@ int main() {
     passed &= Expect(error.empty(), "Initialize should not return error message.");
     passed &= Expect(script_host.PendingEventCount() == 0, "Pending event count should start at zero.");
     passed &= Expect(script_host.TotalProcessedEventCount() == 0, "Processed event count should start at zero.");
+    passed &= Expect(script_host.DroppedEventCount() == 0, "Dropped event count should start at zero.");
 
     script_host.DispatchEvent({.event_name = "on_spawn", .payload = "{player_id:1}"});
     script_host.DispatchEvent({.event_name = "on_damage", .payload = "{value:10}"});
@@ -38,6 +40,15 @@ int main() {
     passed &= Expect(
         script_host.PendingEventCount() == 0,
         "Events dispatched after shutdown should be ignored.");
+
+    passed &= Expect(script_host.Initialize(error), "Reinitialize should succeed.");
+    for (std::size_t index = 0; index < novaria::script::ScriptHostStub::kMaxPendingEvents + 5; ++index) {
+        script_host.DispatchEvent({.event_name = "spam", .payload = ""});
+    }
+    passed &= Expect(
+        script_host.PendingEventCount() == novaria::script::ScriptHostStub::kMaxPendingEvents,
+        "Pending events should be clamped to max capacity.");
+    passed &= Expect(script_host.DroppedEventCount() == 5, "Dropped event count should track overflow.");
 
     if (!passed) {
         return 1;

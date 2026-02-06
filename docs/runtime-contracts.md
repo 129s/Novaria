@@ -52,6 +52,7 @@
   - `DispatchEvent`
 - 当前实现：`script::ScriptHostStub`
   - 事件入队
+  - 入队上限与丢弃计数（防止事件风暴）
   - Tick 内批处理事件
   - 事件处理计数
 

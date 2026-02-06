@@ -7,6 +7,7 @@ namespace novaria::script {
 bool ScriptHostStub::Initialize(std::string& out_error) {
     pending_events_.clear();
     total_processed_event_count_ = 0;
+    dropped_event_count_ = 0;
     initialized_ = true;
     out_error.clear();
     core::Logger::Info("script", "Script host stub initialized.");
@@ -38,6 +39,11 @@ void ScriptHostStub::DispatchEvent(const ScriptEvent& event_data) {
         return;
     }
 
+    if (pending_events_.size() >= kMaxPendingEvents) {
+        ++dropped_event_count_;
+        return;
+    }
+
     pending_events_.push_back(event_data);
 }
 
@@ -47,6 +53,10 @@ std::size_t ScriptHostStub::PendingEventCount() const {
 
 std::size_t ScriptHostStub::TotalProcessedEventCount() const {
     return total_processed_event_count_;
+}
+
+std::size_t ScriptHostStub::DroppedEventCount() const {
+    return dropped_event_count_;
 }
 
 }  // namespace novaria::script
