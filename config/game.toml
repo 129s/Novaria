@@ -1,0 +1,4 @@
+window_title = "Novaria"
+window_width = 1280
+window_height = 720
+vsync = true
