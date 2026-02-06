@@ -46,6 +46,16 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
         }
     }
 
+    std::string mod_error;
+    loaded_mods_.clear();
+    if (!mod_loader_.Initialize(mod_root_, mod_error)) {
+        core::Logger::Warn("mod", "Mod loader initialize failed: " + mod_error);
+    } else if (!mod_loader_.LoadAll(loaded_mods_, mod_error)) {
+        core::Logger::Warn("mod", "Mod loading failed: " + mod_error);
+    } else {
+        core::Logger::Info("mod", "Loaded mods: " + std::to_string(loaded_mods_.size()));
+    }
+
     initialized_ = true;
     core::Logger::Info("app", "Novaria started.");
     return true;
@@ -112,6 +122,8 @@ void GameApp::Shutdown() {
         core::Logger::Warn("save", "World save write failed: " + save_error);
     }
 
+    loaded_mods_.clear();
+    mod_loader_.Shutdown();
     save_repository_.Shutdown();
     simulation_kernel_.Shutdown();
     sdl_context_.Shutdown();

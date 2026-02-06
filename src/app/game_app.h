@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/config.h"
+#include "mod/mod_loader.h"
 #include "platform/sdl_context.h"
 #include "save/save_repository.h"
 #include "sim/simulation_kernel.h"
@@ -10,6 +11,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <vector>
 
 namespace novaria::app {
 
@@ -28,6 +30,9 @@ private:
     platform::SdlContext sdl_context_;
     save::FileSaveRepository save_repository_;
     std::filesystem::path save_root_ = "saves";
+    mod::ModLoader mod_loader_;
+    std::filesystem::path mod_root_ = "mods";
+    std::vector<mod::ModManifest> loaded_mods_;
     platform::InputActions frame_actions_;
     std::uint32_t local_player_id_ = 1;
     std::uint64_t script_ping_counter_ = 0;
