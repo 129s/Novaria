@@ -2,18 +2,19 @@
 
 ## 目标
 
-定义 `sim/world/net/script` 四层边界，保证后续开发并行可控，不破坏主循环。
+定义 `sim/world/net/script/save/mod` 的边界，确保实现可并行推进且可测试。
 
 ## `sim`
 
 - `sim::TickContext`：统一 Tick 输入（`tick_index`、`fixed_delta_seconds`）。
-- `sim::SimulationKernel`：固定顺序编排：
+- `sim::SimulationKernel`：固定调度顺序：
   0. 转发本地命令到 `net`
-  1. `net.Tick`
-  2. `world.Tick`
-  3. `script.Tick`
-  4. `world` 生成脏块快照并编码
-  5. `net.PublishWorldSnapshot`
+  1. 执行可识别的世界命令（`world.set_tile`、`world.load_chunk`、`world.unload_chunk`）
+  2. `net.Tick`
+  3. `world.Tick`
+  4. `script.Tick`
+  5. `world` 生成脏块快照并编码
+  6. `net.PublishWorldSnapshot`
 - `sim::SimulationKernel` 额外提供远端快照应用入口：`ApplyRemoteChunkPayload`。
 
 ## `world`
@@ -29,7 +30,7 @@
 - 当前实现：`world::WorldServiceBasic`
   - 内存 Chunk 容器
   - 基础地表生成
-  - 支持负坐标 Tile 写入
+  - 负坐标 Tile 写入
 
 ## `net`
 
@@ -40,9 +41,9 @@
   - `PublishWorldSnapshot(tick_index, encoded_dirty_chunks)`
 - 当前实现：`net::NetServiceStub`
   - 本地命令入队
-  - 入队上限与丢弃计数（防止输入风暴）
+  - 队列上限与丢弃计数（防输入风暴）
   - Tick 内批处理命令
-  - 快照发布计数与最后 Tick 记录
+  - 快照发布统计
 
 ## `script`
 
@@ -52,18 +53,30 @@
   - `DispatchEvent`
 - 当前实现：`script::ScriptHostStub`
   - 事件入队
-  - 入队上限与丢弃计数（防止事件风暴）
+  - 队列上限与丢弃计数（防事件风暴）
   - Tick 内批处理事件
-  - 事件处理计数
+  - 事件处理统计
 
-## 当前状态
+## `save`
 
-- `GameApp` 已接入 `SimulationKernel` 固定更新入口。
-- 本地输入已接入命令通道：`J` 触发 `jump`，`K` 触发 `attack`，`F1` 触发 `debug.ping` 事件。
-- 启停流程已接入文件存档仓库：启动尝试读取 `saves/world.sav`，退出写回当前 Tick 与本地玩家编号。
-- 启动流程已接入最小 Mod 加载器：扫描 `mods/*/mod.toml` 并加载有效清单。
-- Mod 清单已提供稳定指纹（order-insensitive），用于后续联机一致性校验。
-- `world` 已从 Stub 升级为最小可运行实现。
-- 已接入 `CTest` 与 `world_service_basic` 单元测试入口。
-- 已补 `SimulationKernel` 编排与回滚测试。
-- 已补世界快照编解码与复制流测试。
+- `save::ISaveRepository` 契约：
+  - `Initialize/Shutdown`
+  - `SaveWorldState/LoadWorldState`
+- 当前实现：`save::FileSaveRepository`
+  - 启动读取 `saves/world.sav`
+  - 退出写回当前 Tick 与本地玩家编号
+
+## `mod`
+
+- `mod::ModLoader`：
+  - 扫描 `mods/*/mod.toml`
+  - 解析 `name/version/description`
+  - 生成稳定清单指纹（order-insensitive）用于后续联机一致性校验
+
+## 当前输入映射（调试）
+
+- `J`：提交 `jump` 命令（保留）
+- `K`：提交 `attack` 命令（保留）
+- `F1`：发送 `debug.ping` 脚本事件
+- `F2`：提交 `world.set_tile`（`0,0,0`，挖空）
+- `F3`：提交 `world.set_tile`（`0,0,2`，放置石块）

@@ -25,6 +25,9 @@ public:
     std::vector<std::vector<novaria::world::ChunkCoord>> dirty_batches;
     std::vector<novaria::world::ChunkSnapshot> available_snapshots;
     std::vector<novaria::world::ChunkSnapshot> applied_snapshots;
+    std::vector<novaria::world::ChunkCoord> loaded_chunks;
+    std::vector<novaria::world::ChunkCoord> unloaded_chunks;
+    std::vector<novaria::world::TileMutation> applied_tile_mutations;
     std::size_t dirty_batch_cursor = 0;
 
     bool Initialize(std::string& out_error) override {
@@ -47,15 +50,15 @@ public:
     }
 
     void LoadChunk(const novaria::world::ChunkCoord& chunk_coord) override {
-        (void)chunk_coord;
+        loaded_chunks.push_back(chunk_coord);
     }
 
     void UnloadChunk(const novaria::world::ChunkCoord& chunk_coord) override {
-        (void)chunk_coord;
+        unloaded_chunks.push_back(chunk_coord);
     }
 
     bool ApplyTileMutation(const novaria::world::TileMutation& mutation, std::string& out_error) override {
-        (void)mutation;
+        applied_tile_mutations.push_back(mutation);
         out_error.clear();
         return true;
     }
@@ -328,6 +331,44 @@ bool TestApplyRemoteChunkPayload() {
     return passed;
 }
 
+bool TestWorldCommandExecutionFromLocalQueue() {
+    bool passed = true;
+
+    FakeWorldService world;
+    FakeNetService net;
+    FakeScriptHost script;
+    novaria::sim::SimulationKernel kernel(world, net, script);
+
+    std::string error;
+    passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
+
+    kernel.SubmitLocalCommand({.player_id = 1, .command_type = "world.load_chunk", .payload = "2,-1"});
+    kernel.SubmitLocalCommand({.player_id = 1, .command_type = "world.set_tile", .payload = "10,11,7"});
+    kernel.SubmitLocalCommand({.player_id = 1, .command_type = "world.unload_chunk", .payload = "2,-1"});
+    kernel.SubmitLocalCommand({.player_id = 1, .command_type = "world.set_tile", .payload = "invalid"});
+    kernel.Update(1.0 / 60.0);
+
+    passed &= Expect(net.submitted_commands.size() == 4, "All local commands should be forwarded to net.");
+    passed &= Expect(world.loaded_chunks.size() == 1, "One load chunk command should execute.");
+    if (world.loaded_chunks.size() == 1) {
+        passed &= Expect(
+            world.loaded_chunks[0].x == 2 && world.loaded_chunks[0].y == -1,
+            "Loaded chunk coordinates should match command payload.");
+    }
+    passed &= Expect(world.unloaded_chunks.size() == 1, "One unload chunk command should execute.");
+    passed &= Expect(world.applied_tile_mutations.size() == 1, "Only valid set_tile command should execute.");
+    if (world.applied_tile_mutations.size() == 1) {
+        passed &= Expect(
+            world.applied_tile_mutations[0].tile_x == 10 &&
+                world.applied_tile_mutations[0].tile_y == 11 &&
+                world.applied_tile_mutations[0].material_id == 7,
+            "Parsed tile mutation should match payload.");
+    }
+
+    kernel.Shutdown();
+    return passed;
+}
+
 }  // namespace
 
 int main() {
@@ -337,6 +378,7 @@ int main() {
     passed &= TestInitializeRollbackOnScriptFailure();
     passed &= TestSubmitCommandIgnoredBeforeInitialize();
     passed &= TestApplyRemoteChunkPayload();
+    passed &= TestWorldCommandExecutionFromLocalQueue();
 
     if (!passed) {
         return 1;

@@ -98,6 +98,18 @@ bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
                 out_actions.emit_script_ping = true;
             }
 #endif
+
+#if defined(SDL_SCANCODE_F2)
+            if (event.key.scancode == SDL_SCANCODE_F2) {
+                out_actions.debug_set_tile_air = true;
+            }
+#endif
+
+#if defined(SDL_SCANCODE_F3)
+            if (event.key.scancode == SDL_SCANCODE_F3) {
+                out_actions.debug_set_tile_stone = true;
+            }
+#endif
         }
 #endif
     }

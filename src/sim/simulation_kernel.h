@@ -26,6 +26,15 @@ public:
     void Update(double fixed_delta_seconds);
 
 private:
+    static bool TryParseWorldSetTileCommand(
+        const net::PlayerCommand& command,
+        world::TileMutation& out_mutation);
+    static bool TryParseWorldChunkCommand(
+        const net::PlayerCommand& command,
+        std::string_view expected_command_type,
+        world::ChunkCoord& out_chunk_coord);
+    void ExecuteWorldCommandIfMatched(const net::PlayerCommand& command);
+
     bool initialized_ = false;
     std::uint64_t tick_index_ = 0;
     world::IWorldService& world_service_;

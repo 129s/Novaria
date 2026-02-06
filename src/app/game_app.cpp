@@ -101,6 +101,22 @@ int GameApp::Run() {
                 });
             }
 
+            if (frame_actions_.debug_set_tile_air) {
+                simulation_kernel_.SubmitLocalCommand(net::PlayerCommand{
+                    .player_id = local_player_id_,
+                    .command_type = "world.set_tile",
+                    .payload = "0,0,0",
+                });
+            }
+
+            if (frame_actions_.debug_set_tile_stone) {
+                simulation_kernel_.SubmitLocalCommand(net::PlayerCommand{
+                    .player_id = local_player_id_,
+                    .command_type = "world.set_tile",
+                    .payload = "0,0,2",
+                });
+            }
+
             return !quit_requested_;
         },
         [this](double fixed_delta_seconds) { simulation_kernel_.Update(fixed_delta_seconds); },
