@@ -9,6 +9,12 @@
 
 namespace novaria::net {
 
+enum class NetSessionState : std::uint8_t {
+    Disconnected = 0,
+    Connecting = 1,
+    Connected = 2,
+};
+
 struct PlayerCommand final {
     std::uint32_t player_id = 0;
     std::string command_type;
@@ -21,6 +27,10 @@ public:
 
     virtual bool Initialize(std::string& out_error) = 0;
     virtual void Shutdown() = 0;
+    virtual void RequestConnect() = 0;
+    virtual void RequestDisconnect() = 0;
+    virtual void NotifyHeartbeatReceived(std::uint64_t tick_index) = 0;
+    virtual NetSessionState SessionState() const = 0;
     virtual void Tick(const sim::TickContext& tick_context) = 0;
     virtual void SubmitLocalCommand(const PlayerCommand& command) = 0;
     virtual std::vector<std::string> ConsumeRemoteChunkPayloads() = 0;

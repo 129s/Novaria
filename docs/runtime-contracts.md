@@ -40,10 +40,16 @@
 
 - `net::INetService` 契约：
   - `Initialize/Shutdown`
+  - `RequestConnect/RequestDisconnect`
+  - `NotifyHeartbeatReceived`
+  - `SessionState`
   - `Tick`
   - `SubmitLocalCommand`
   - `PublishWorldSnapshot(tick_index, encoded_dirty_chunks)`
 - 当前实现：`net::NetServiceStub`
+  - 会话状态机：`Disconnected -> Connecting -> Connected`
+  - 心跳超时：超过 `kHeartbeatTimeoutTicks` 未更新心跳将断线
+  - 断线恢复入口：`RequestConnect` 重新发起连接
   - 本地命令入队
   - 队列上限与丢弃计数（防输入风暴）
   - 远端快照 payload 入队与消费（含队列上限与丢弃计数）

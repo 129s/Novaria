@@ -13,9 +13,14 @@ class NetServiceStub final : public INetService {
 public:
     static constexpr std::size_t kMaxPendingCommands = 1024;
     static constexpr std::size_t kMaxPendingRemoteChunkPayloads = 1024;
+    static constexpr std::uint64_t kHeartbeatTimeoutTicks = 180;
 
     bool Initialize(std::string& out_error) override;
     void Shutdown() override;
+    void RequestConnect() override;
+    void RequestDisconnect() override;
+    void NotifyHeartbeatReceived(std::uint64_t tick_index) override;
+    NetSessionState SessionState() const override;
     void Tick(const sim::TickContext& tick_context) override;
     void SubmitLocalCommand(const PlayerCommand& command) override;
     std::vector<std::string> ConsumeRemoteChunkPayloads() override;
@@ -29,18 +34,27 @@ public:
     std::size_t TotalProcessedCommandCount() const;
     std::size_t DroppedCommandCount() const;
     std::size_t DroppedRemoteChunkPayloadCount() const;
+    std::uint64_t ConnectRequestCount() const;
+    std::uint64_t TimeoutDisconnectCount() const;
+    std::uint64_t LastHeartbeatTick() const;
     std::uint64_t LastPublishedSnapshotTick() const;
     std::size_t LastPublishedDirtyChunkCount() const;
     std::uint64_t SnapshotPublishCount() const;
     const std::vector<std::string>& LastPublishedEncodedChunks() const;
 
 private:
+    static constexpr std::uint64_t kInvalidTick = std::numeric_limits<std::uint64_t>::max();
+
     bool initialized_ = false;
+    NetSessionState session_state_ = NetSessionState::Disconnected;
     std::vector<PlayerCommand> pending_commands_;
     std::vector<std::string> pending_remote_chunk_payloads_;
     std::size_t total_processed_command_count_ = 0;
     std::size_t dropped_command_count_ = 0;
     std::size_t dropped_remote_chunk_payload_count_ = 0;
+    std::uint64_t connect_request_count_ = 0;
+    std::uint64_t timeout_disconnect_count_ = 0;
+    std::uint64_t last_heartbeat_tick_ = kInvalidTick;
     std::uint64_t last_published_snapshot_tick_ = std::numeric_limits<std::uint64_t>::max();
     std::size_t last_published_dirty_chunk_count_ = 0;
     std::vector<std::string> last_published_encoded_chunks_;

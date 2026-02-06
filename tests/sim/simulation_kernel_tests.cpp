@@ -107,6 +107,7 @@ public:
     std::vector<std::pair<std::uint64_t, std::size_t>> published_snapshots;
     std::vector<std::vector<std::string>> published_snapshot_payloads;
     std::vector<std::string> pending_remote_chunk_payloads;
+    novaria::net::NetSessionState session_state = novaria::net::NetSessionState::Disconnected;
 
     bool Initialize(std::string& out_error) override {
         initialize_called = true;
@@ -120,6 +121,22 @@ public:
 
     void Shutdown() override {
         shutdown_called = true;
+    }
+
+    void RequestConnect() override {
+        session_state = novaria::net::NetSessionState::Connected;
+    }
+
+    void RequestDisconnect() override {
+        session_state = novaria::net::NetSessionState::Disconnected;
+    }
+
+    void NotifyHeartbeatReceived(std::uint64_t tick_index) override {
+        (void)tick_index;
+    }
+
+    novaria::net::NetSessionState SessionState() const override {
+        return session_state;
     }
 
     void Tick(const novaria::sim::TickContext& tick_context) override {
