@@ -11,11 +11,11 @@
   0. 转发本地命令到 `net`
   1. 执行可识别的世界命令（`world.set_tile`、`world.load_chunk`、`world.unload_chunk`）
   2. `net.Tick`
-  3. 消费 `net` 远端快照 payload 并应用到 `world`
+  3. （仅已连接）消费 `net` 远端快照 payload 并应用到 `world`
   4. `world.Tick`
   5. `script.Tick`
   6. `world` 生成脏块快照并编码
-  7. `net.PublishWorldSnapshot`
+  7. （仅已连接）`net.PublishWorldSnapshot`
 - `sim::SimulationKernel` 额外提供远端快照应用入口：`ApplyRemoteChunkPayload`。
 - `sim::SimulationKernel` 本地命令队列提供上限保护：超出 `kMaxPendingLocalCommands` 的输入会被丢弃并计数。
 - `sim::SimulationKernel` 初始化会请求 `net` 建连，运行时检测到断线会自动请求重连。

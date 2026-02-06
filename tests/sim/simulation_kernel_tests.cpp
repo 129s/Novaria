@@ -102,6 +102,7 @@ public:
     bool initialize_success = true;
     bool initialize_called = false;
     bool shutdown_called = false;
+    bool auto_progress_connection = true;
     int tick_count = 0;
     int connect_request_count = 0;
     int disconnect_request_count = 0;
@@ -127,7 +128,9 @@ public:
 
     void RequestConnect() override {
         ++connect_request_count;
-        session_state = novaria::net::NetSessionState::Connected;
+        if (session_state == novaria::net::NetSessionState::Disconnected) {
+            session_state = novaria::net::NetSessionState::Connecting;
+        }
     }
 
     void RequestDisconnect() override {
@@ -145,6 +148,10 @@ public:
 
     void Tick(const novaria::sim::TickContext& tick_context) override {
         (void)tick_context;
+        if (session_state == novaria::net::NetSessionState::Connecting &&
+            auto_progress_connection) {
+            session_state = novaria::net::NetSessionState::Connected;
+        }
         ++tick_count;
     }
 
@@ -368,8 +375,8 @@ bool TestInitializeRequestsNetConnect() {
     passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
     passed &= Expect(net.connect_request_count == 1, "Kernel initialize should request one net connect.");
     passed &= Expect(
-        net.SessionState() == novaria::net::NetSessionState::Connected,
-        "Fake net should become connected after connect request.");
+        net.SessionState() == novaria::net::NetSessionState::Connecting,
+        "Fake net should enter connecting state after connect request.");
 
     kernel.Shutdown();
     return passed;
@@ -561,6 +568,54 @@ bool TestUpdateConsumesRemoteChunkPayloads() {
     return passed;
 }
 
+bool TestUpdateSkipsNetExchangeWhenSessionNotConnected() {
+    bool passed = true;
+
+    FakeWorldService world;
+    FakeNetService net;
+    FakeScriptHost script;
+    net.auto_progress_connection = false;
+    novaria::sim::SimulationKernel kernel(world, net, script);
+
+    std::string error;
+    passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
+    passed &= Expect(
+        net.SessionState() == novaria::net::NetSessionState::Connecting,
+        "Net session should remain connecting when auto-progress is disabled.");
+
+    world.dirty_batches = {
+        {{.x = 3, .y = 4}},
+    };
+    world.available_snapshots = {
+        {.chunk_coord = {.x = 3, .y = 4}, .tiles = {8, 8, 8, 8}},
+    };
+
+    novaria::world::ChunkSnapshot remote_snapshot{
+        .chunk_coord = {.x = 7, .y = -2},
+        .tiles = {5, 6, 7, 8},
+    };
+    std::string remote_payload;
+    passed &= Expect(
+        novaria::world::WorldSnapshotCodec::EncodeChunkSnapshot(remote_snapshot, remote_payload, error),
+        "EncodeChunkSnapshot should succeed.");
+    net.pending_remote_chunk_payloads.push_back(remote_payload);
+
+    kernel.Update(1.0 / 60.0);
+
+    passed &= Expect(
+        world.applied_snapshots.empty(),
+        "Kernel should not apply remote payloads when net session is not connected.");
+    passed &= Expect(
+        net.pending_remote_chunk_payloads.size() == 1,
+        "Remote payload queue should remain untouched when not connected.");
+    passed &= Expect(
+        net.published_snapshots.empty(),
+        "Kernel should not publish world snapshots when net session is not connected.");
+
+    kernel.Shutdown();
+    return passed;
+}
+
 bool TestWorldCommandExecutionFromLocalQueue() {
     bool passed = true;
 
@@ -630,6 +685,7 @@ int main() {
     passed &= TestApplyRemoteChunkPayload();
     passed &= TestWorldCommandExecutionFromLocalQueue();
     passed &= TestUpdateConsumesRemoteChunkPayloads();
+    passed &= TestUpdateSkipsNetExchangeWhenSessionNotConnected();
 
     if (!passed) {
         return 1;
