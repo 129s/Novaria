@@ -1,10 +1,14 @@
 #include "sim/simulation_kernel.h"
 #include "sim/command_schema.h"
+#include "save/save_repository.h"
+#include "net/net_service_stub.h"
 #include "world/snapshot_codec.h"
 
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -79,6 +83,10 @@ bool TryParseSessionStateChangedPayload(
     out_payload.tick_index = parsed_tick_index;
     out_payload.reason.assign(reason_value);
     return true;
+}
+
+std::filesystem::path BuildSimulationKernelSaveTestDirectory() {
+    return std::filesystem::temp_directory_path() / "novaria_sim_kernel_save_e2e_test";
 }
 
 class FakeWorldService final : public novaria::world::IWorldService {
@@ -682,6 +690,143 @@ bool TestNetSessionStateEventsAreCoalescedWithinCooldown() {
     return passed;
 }
 
+bool TestReconnectHeartbeatAndSaveDiagnosticsEndToEnd() {
+    bool passed = true;
+    const std::filesystem::path test_dir = BuildSimulationKernelSaveTestDirectory();
+    std::error_code ec;
+    std::filesystem::remove_all(test_dir, ec);
+
+    FakeWorldService world;
+    novaria::net::NetServiceStub net;
+    FakeScriptHost script;
+    novaria::sim::SimulationKernel kernel(world, net, script);
+
+    std::string error;
+    passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
+
+    kernel.Update(1.0 / 60.0);
+    passed &= Expect(
+        script.dispatched_events.size() == 1,
+        "Initial connect transition should dispatch one script event.");
+    SessionStateChangedPayload initial_connect_payload{};
+    if (!script.dispatched_events.empty()) {
+        passed &= Expect(
+            TryParseSessionStateChangedPayload(
+                script.dispatched_events[0].payload,
+                initial_connect_payload),
+            "Initial connect payload should be parseable.");
+        passed &= Expect(
+            initial_connect_payload.state == "connected" && initial_connect_payload.tick_index == 0 &&
+                initial_connect_payload.reason == "tick_connect_complete",
+            "Initial connect payload fields should match expected transition.");
+    }
+
+    const std::uint64_t disconnect_tick = novaria::net::NetServiceStub::kHeartbeatTimeoutTicks + 1;
+    while (kernel.CurrentTick() <= disconnect_tick) {
+        kernel.Update(1.0 / 60.0);
+    }
+
+    passed &= Expect(
+        script.dispatched_events.size() >= 2,
+        "Heartbeat timeout should dispatch disconnect event.");
+    SessionStateChangedPayload disconnect_payload{};
+    if (script.dispatched_events.size() >= 2) {
+        passed &= Expect(
+            TryParseSessionStateChangedPayload(script.dispatched_events[1].payload, disconnect_payload),
+            "Disconnect payload should be parseable.");
+        passed &= Expect(
+            disconnect_payload.state == "disconnected" &&
+                disconnect_payload.tick_index == disconnect_tick &&
+                disconnect_payload.reason == "heartbeat_timeout",
+            "Disconnect payload fields should match heartbeat timeout transition.");
+    }
+
+    const std::uint64_t reconnect_tick =
+        disconnect_tick + novaria::sim::SimulationKernel::kAutoReconnectRetryIntervalTicks;
+    while (kernel.CurrentTick() <= reconnect_tick) {
+        kernel.Update(1.0 / 60.0);
+    }
+
+    passed &= Expect(
+        script.dispatched_events.size() >= 3,
+        "Auto reconnect should dispatch connected event.");
+    SessionStateChangedPayload reconnect_payload{};
+    if (script.dispatched_events.size() >= 3) {
+        passed &= Expect(
+            TryParseSessionStateChangedPayload(script.dispatched_events[2].payload, reconnect_payload),
+            "Reconnect payload should be parseable.");
+        passed &= Expect(
+            reconnect_payload.state == "connected" &&
+                reconnect_payload.tick_index == reconnect_tick &&
+                reconnect_payload.reason == "tick_connect_complete",
+            "Reconnect payload fields should match transition after reconnect.");
+    }
+
+    const std::uint64_t heartbeat_recovery_tick = kernel.CurrentTick();
+    net.NotifyHeartbeatReceived(heartbeat_recovery_tick);
+    kernel.Update(1.0 / 60.0);
+
+    const novaria::net::NetDiagnosticsSnapshot diagnostics = net.DiagnosticsSnapshot();
+    passed &= Expect(
+        diagnostics.session_state == novaria::net::NetSessionState::Connected,
+        "Net diagnostics should report connected after reconnect.");
+    passed &= Expect(
+        diagnostics.timeout_disconnect_count == 1,
+        "Net diagnostics should report one heartbeat timeout disconnect.");
+    passed &= Expect(
+        diagnostics.connected_transition_count == 2,
+        "Net diagnostics should report two connected transitions.");
+    passed &= Expect(
+        diagnostics.last_heartbeat_tick == heartbeat_recovery_tick,
+        "Net diagnostics should record restored heartbeat tick.");
+
+    novaria::save::FileSaveRepository save_repository;
+    passed &= Expect(
+        save_repository.Initialize(test_dir, error),
+        "Save repository initialize should succeed.");
+    const novaria::save::WorldSaveState expected_save_state{
+        .tick_index = kernel.CurrentTick(),
+        .local_player_id = 42,
+        .mod_manifest_fingerprint = "mods:v1:e2e",
+        .debug_net_session_transitions = diagnostics.session_transition_count,
+        .debug_net_timeout_disconnects = diagnostics.timeout_disconnect_count,
+        .debug_net_manual_disconnects = diagnostics.manual_disconnect_count,
+        .debug_net_last_heartbeat_tick = diagnostics.last_heartbeat_tick,
+        .debug_net_dropped_commands = diagnostics.dropped_command_count,
+        .debug_net_dropped_remote_payloads = diagnostics.dropped_remote_chunk_payload_count,
+        .debug_net_last_transition_reason = diagnostics.last_session_transition_reason,
+    };
+    passed &= Expect(
+        save_repository.SaveWorldState(expected_save_state, error),
+        "Save repository should persist e2e diagnostics snapshot.");
+
+    novaria::save::WorldSaveState loaded_save_state{};
+    passed &= Expect(
+        save_repository.LoadWorldState(loaded_save_state, error),
+        "Save repository should load persisted e2e diagnostics snapshot.");
+    passed &= Expect(
+        loaded_save_state.debug_net_session_transitions ==
+            expected_save_state.debug_net_session_transitions,
+        "Loaded session transition count should match persisted diagnostics.");
+    passed &= Expect(
+        loaded_save_state.debug_net_timeout_disconnects == 1,
+        "Loaded timeout disconnect count should match expected reconnect flow.");
+    passed &= Expect(
+        loaded_save_state.debug_net_last_heartbeat_tick == heartbeat_recovery_tick,
+        "Loaded last heartbeat tick should match recovered heartbeat.");
+    passed &= Expect(
+        loaded_save_state.debug_net_last_transition_reason == reconnect_payload.reason,
+        "Loaded last transition reason should align with last script session event.");
+    passed &= Expect(
+        loaded_save_state.debug_net_last_transition_reason == "tick_connect_complete",
+        "Loaded last transition reason should match reconnect completion.");
+
+    save_repository.Shutdown();
+    kernel.Shutdown();
+    std::filesystem::remove_all(test_dir, ec);
+    return passed;
+}
+
 bool TestSubmitCommandIgnoredBeforeInitialize() {
     bool passed = true;
 
@@ -958,6 +1103,7 @@ int main() {
     passed &= TestReconnectRequestsAreRateLimitedByTickInterval();
     passed &= TestNetSessionStateChangeDispatchesScriptEvent();
     passed &= TestNetSessionStateEventsAreCoalescedWithinCooldown();
+    passed &= TestReconnectHeartbeatAndSaveDiagnosticsEndToEnd();
     passed &= TestSubmitCommandIgnoredBeforeInitialize();
     passed &= TestLocalCommandQueueCapAndDroppedCount();
     passed &= TestApplyRemoteChunkPayload();

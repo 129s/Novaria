@@ -128,6 +128,9 @@ if(NOVARIA_BUILD_TESTS)
         tests/sim/simulation_kernel_tests.cpp
         src/sim/simulation_kernel.cpp
         src/world/snapshot_codec.cpp
+        src/net/net_service_stub.cpp
+        src/save/save_repository.cpp
+        src/core/logger.cpp
     )
     target_include_directories(novaria_simulation_kernel_tests PRIVATE src)
 
