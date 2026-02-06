@@ -1,5 +1,6 @@
 #include "sim/simulation_kernel.h"
 
+#include "sim/command_schema.h"
 #include "world/snapshot_codec.h"
 
 #include <cstdint>
@@ -143,7 +144,7 @@ std::uint64_t SimulationKernel::CurrentTick() const {
 bool SimulationKernel::TryParseWorldSetTileCommand(
     const net::PlayerCommand& command,
     world::TileMutation& out_mutation) {
-    if (command.command_type != "world.set_tile") {
+    if (command.command_type != command::kWorldSetTile) {
         return false;
     }
 
@@ -205,12 +206,12 @@ void SimulationKernel::ExecuteWorldCommandIfMatched(const net::PlayerCommand& co
     }
 
     world::ChunkCoord chunk_coord{};
-    if (TryParseWorldChunkCommand(command, "world.load_chunk", chunk_coord)) {
+    if (TryParseWorldChunkCommand(command, command::kWorldLoadChunk, chunk_coord)) {
         world_service_.LoadChunk(chunk_coord);
         return;
     }
 
-    if (TryParseWorldChunkCommand(command, "world.unload_chunk", chunk_coord)) {
+    if (TryParseWorldChunkCommand(command, command::kWorldUnloadChunk, chunk_coord)) {
         world_service_.UnloadChunk(chunk_coord);
     }
 }

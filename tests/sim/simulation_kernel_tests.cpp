@@ -1,4 +1,5 @@
 #include "sim/simulation_kernel.h"
+#include "sim/command_schema.h"
 #include "world/snapshot_codec.h"
 
 #include <cstdint>
@@ -221,13 +222,25 @@ bool TestUpdatePublishesDirtyChunkCount() {
             "Encoded chunk payload should be decodable.");
     }
 
-    kernel.SubmitLocalCommand({.player_id = 12, .command_type = "jump", .payload = ""});
-    kernel.SubmitLocalCommand({.player_id = 12, .command_type = "attack", .payload = "light"});
+    kernel.SubmitLocalCommand({
+        .player_id = 12,
+        .command_type = std::string(novaria::sim::command::kJump),
+        .payload = "",
+    });
+    kernel.SubmitLocalCommand({
+        .player_id = 12,
+        .command_type = std::string(novaria::sim::command::kAttack),
+        .payload = "light",
+    });
     kernel.Update(1.0 / 60.0);
     passed &= Expect(net.submitted_commands.size() == 2, "Submitted commands should be forwarded on update.");
     if (net.submitted_commands.size() == 2) {
-        passed &= Expect(net.submitted_commands[0].command_type == "jump", "First command type should match.");
-        passed &= Expect(net.submitted_commands[1].command_type == "attack", "Second command type should match.");
+        passed &= Expect(
+            net.submitted_commands[0].command_type == novaria::sim::command::kJump,
+            "First command type should match.");
+        passed &= Expect(
+            net.submitted_commands[1].command_type == novaria::sim::command::kAttack,
+            "Second command type should match.");
     }
 
     kernel.Shutdown();
@@ -391,10 +404,26 @@ bool TestWorldCommandExecutionFromLocalQueue() {
     std::string error;
     passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
 
-    kernel.SubmitLocalCommand({.player_id = 1, .command_type = "world.load_chunk", .payload = "2,-1"});
-    kernel.SubmitLocalCommand({.player_id = 1, .command_type = "world.set_tile", .payload = "10,11,7"});
-    kernel.SubmitLocalCommand({.player_id = 1, .command_type = "world.unload_chunk", .payload = "2,-1"});
-    kernel.SubmitLocalCommand({.player_id = 1, .command_type = "world.set_tile", .payload = "invalid"});
+    kernel.SubmitLocalCommand({
+        .player_id = 1,
+        .command_type = std::string(novaria::sim::command::kWorldLoadChunk),
+        .payload = novaria::sim::command::BuildWorldChunkPayload(2, -1),
+    });
+    kernel.SubmitLocalCommand({
+        .player_id = 1,
+        .command_type = std::string(novaria::sim::command::kWorldSetTile),
+        .payload = novaria::sim::command::BuildWorldSetTilePayload(10, 11, 7),
+    });
+    kernel.SubmitLocalCommand({
+        .player_id = 1,
+        .command_type = std::string(novaria::sim::command::kWorldUnloadChunk),
+        .payload = novaria::sim::command::BuildWorldChunkPayload(2, -1),
+    });
+    kernel.SubmitLocalCommand({
+        .player_id = 1,
+        .command_type = std::string(novaria::sim::command::kWorldSetTile),
+        .payload = "invalid",
+    });
     kernel.Update(1.0 / 60.0);
 
     passed &= Expect(net.submitted_commands.size() == 4, "All local commands should be forwarded to net.");

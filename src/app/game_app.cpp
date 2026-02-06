@@ -2,6 +2,7 @@
 
 #include "app/game_loop.h"
 #include "core/logger.h"
+#include "sim/command_schema.h"
 
 #include <string>
 
@@ -81,7 +82,7 @@ int GameApp::Run() {
             if (frame_actions_.send_jump_command) {
                 simulation_kernel_.SubmitLocalCommand(net::PlayerCommand{
                     .player_id = local_player_id_,
-                    .command_type = "jump",
+                    .command_type = std::string(sim::command::kJump),
                     .payload = "",
                 });
             }
@@ -89,7 +90,7 @@ int GameApp::Run() {
             if (frame_actions_.send_attack_command) {
                 simulation_kernel_.SubmitLocalCommand(net::PlayerCommand{
                     .player_id = local_player_id_,
-                    .command_type = "attack",
+                    .command_type = std::string(sim::command::kAttack),
                     .payload = "light",
                 });
             }
@@ -104,16 +105,16 @@ int GameApp::Run() {
             if (frame_actions_.debug_set_tile_air) {
                 simulation_kernel_.SubmitLocalCommand(net::PlayerCommand{
                     .player_id = local_player_id_,
-                    .command_type = "world.set_tile",
-                    .payload = "0,0,0",
+                    .command_type = std::string(sim::command::kWorldSetTile),
+                    .payload = sim::command::BuildWorldSetTilePayload(0, 0, 0),
                 });
             }
 
             if (frame_actions_.debug_set_tile_stone) {
                 simulation_kernel_.SubmitLocalCommand(net::PlayerCommand{
                     .player_id = local_player_id_,
-                    .command_type = "world.set_tile",
-                    .payload = "0,0,2",
+                    .command_type = std::string(sim::command::kWorldSetTile),
+                    .payload = sim::command::BuildWorldSetTilePayload(0, 0, 2),
                 });
             }
 
