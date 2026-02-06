@@ -54,6 +54,7 @@ add_executable(
     src/sim/simulation_kernel.cpp
     src/platform/sdl_context.cpp
     src/world/world_service_basic.cpp
+    src/world/snapshot_codec.cpp
     src/net/net_service_stub.cpp
     src/script/script_host_stub.cpp
     src/mod/mod_loader.cpp
@@ -119,6 +120,7 @@ if(NOVARIA_BUILD_TESTS)
         novaria_simulation_kernel_tests
         tests/sim/simulation_kernel_tests.cpp
         src/sim/simulation_kernel.cpp
+        src/world/snapshot_codec.cpp
     )
     target_include_directories(novaria_simulation_kernel_tests PRIVATE src)
 
@@ -137,6 +139,13 @@ if(NOVARIA_BUILD_TESTS)
     )
     target_include_directories(novaria_mod_loader_tests PRIVATE src)
 
+    add_executable(
+        novaria_world_snapshot_codec_tests
+        tests/world/world_snapshot_codec_tests.cpp
+        src/world/snapshot_codec.cpp
+    )
+    target_include_directories(novaria_world_snapshot_codec_tests PRIVATE src)
+
     if(MSVC)
         target_compile_options(novaria_net_service_stub_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_world_service_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
@@ -144,6 +153,7 @@ if(NOVARIA_BUILD_TESTS)
         target_compile_options(novaria_simulation_kernel_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_save_repository_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_mod_loader_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
+        target_compile_options(novaria_world_snapshot_codec_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         if(NOVARIA_WARNINGS_AS_ERRORS)
             target_compile_options(novaria_net_service_stub_tests PRIVATE /WX)
             target_compile_options(novaria_world_service_tests PRIVATE /WX)
@@ -151,6 +161,7 @@ if(NOVARIA_BUILD_TESTS)
             target_compile_options(novaria_simulation_kernel_tests PRIVATE /WX)
             target_compile_options(novaria_save_repository_tests PRIVATE /WX)
             target_compile_options(novaria_mod_loader_tests PRIVATE /WX)
+            target_compile_options(novaria_world_snapshot_codec_tests PRIVATE /WX)
         endif()
     else()
         target_compile_options(novaria_net_service_stub_tests PRIVATE -Wall -Wextra -Wpedantic)
@@ -159,6 +170,7 @@ if(NOVARIA_BUILD_TESTS)
         target_compile_options(novaria_simulation_kernel_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_save_repository_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_mod_loader_tests PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(novaria_world_snapshot_codec_tests PRIVATE -Wall -Wextra -Wpedantic)
         if(NOVARIA_WARNINGS_AS_ERRORS)
             target_compile_options(novaria_net_service_stub_tests PRIVATE -Werror)
             target_compile_options(novaria_world_service_tests PRIVATE -Werror)
@@ -166,6 +178,7 @@ if(NOVARIA_BUILD_TESTS)
             target_compile_options(novaria_simulation_kernel_tests PRIVATE -Werror)
             target_compile_options(novaria_save_repository_tests PRIVATE -Werror)
             target_compile_options(novaria_mod_loader_tests PRIVATE -Werror)
+            target_compile_options(novaria_world_snapshot_codec_tests PRIVATE -Werror)
         endif()
     endif()
 
@@ -175,4 +188,5 @@ if(NOVARIA_BUILD_TESTS)
     add_test(NAME novaria_simulation_kernel_tests COMMAND novaria_simulation_kernel_tests)
     add_test(NAME novaria_save_repository_tests COMMAND novaria_save_repository_tests)
     add_test(NAME novaria_mod_loader_tests COMMAND novaria_mod_loader_tests)
+    add_test(NAME novaria_world_snapshot_codec_tests COMMAND novaria_world_snapshot_codec_tests)
 endif()

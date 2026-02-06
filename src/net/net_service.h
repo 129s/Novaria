@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace novaria::net {
 
@@ -22,7 +23,9 @@ public:
     virtual void Shutdown() = 0;
     virtual void Tick(const sim::TickContext& tick_context) = 0;
     virtual void SubmitLocalCommand(const PlayerCommand& command) = 0;
-    virtual void PublishWorldSnapshot(std::uint64_t tick_index, std::size_t dirty_chunk_count) = 0;
+    virtual void PublishWorldSnapshot(
+        std::uint64_t tick_index,
+        const std::vector<std::string>& encoded_dirty_chunks) = 0;
 };
 
 }  // namespace novaria::net

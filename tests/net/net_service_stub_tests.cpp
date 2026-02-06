@@ -37,10 +37,18 @@ int main() {
     passed &= Expect(net_service.PendingCommandCount() == 0, "Queue should be drained after tick.");
     passed &= Expect(net_service.TotalProcessedCommandCount() == 2, "Processed command count should increase.");
 
-    net_service.PublishWorldSnapshot(42, 3);
+    net_service.PublishWorldSnapshot(42, {"chunk_a", "chunk_b", "chunk_c"});
     passed &= Expect(net_service.LastPublishedSnapshotTick() == 42, "Last snapshot tick should update.");
     passed &= Expect(net_service.LastPublishedDirtyChunkCount() == 3, "Last dirty chunk count should update.");
     passed &= Expect(net_service.SnapshotPublishCount() == 1, "Snapshot publish count should increment.");
+    passed &= Expect(
+        net_service.LastPublishedEncodedChunks().size() == 3,
+        "Published encoded chunk payload count should match.");
+    if (net_service.LastPublishedEncodedChunks().size() == 3) {
+        passed &= Expect(
+            net_service.LastPublishedEncodedChunks()[1] == "chunk_b",
+            "Published encoded chunk payload should preserve ordering.");
+    }
 
     net_service.Shutdown();
     net_service.SubmitLocalCommand({.player_id = 9, .command_type = "attack", .payload = ""});

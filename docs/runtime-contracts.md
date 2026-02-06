@@ -12,7 +12,8 @@
   1. `net.Tick`
   2. `world.Tick`
   3. `script.Tick`
-  4. `net.PublishWorldSnapshot`
+  4. `world` 生成脏块快照并编码
+  5. `net.PublishWorldSnapshot`
 
 ## `world`
 
@@ -21,6 +22,7 @@
   - `Tick`
   - `LoadChunk/UnloadChunk`
   - `ApplyTileMutation`
+  - `BuildChunkSnapshot`
   - `ConsumeDirtyChunks`
 - 当前实现：`world::WorldServiceBasic`
   - 内存 Chunk 容器
@@ -33,7 +35,7 @@
   - `Initialize/Shutdown`
   - `Tick`
   - `SubmitLocalCommand`
-  - `PublishWorldSnapshot(tick_index, dirty_chunk_count)`
+  - `PublishWorldSnapshot(tick_index, encoded_dirty_chunks)`
 - 当前实现：`net::NetServiceStub`
   - 本地命令入队
   - Tick 内批处理命令

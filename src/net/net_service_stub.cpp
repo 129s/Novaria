@@ -9,6 +9,7 @@ bool NetServiceStub::Initialize(std::string& out_error) {
     total_processed_command_count_ = 0;
     last_published_snapshot_tick_ = std::numeric_limits<std::uint64_t>::max();
     last_published_dirty_chunk_count_ = 0;
+    last_published_encoded_chunks_.clear();
     snapshot_publish_count_ = 0;
     initialized_ = true;
     out_error.clear();
@@ -22,6 +23,7 @@ void NetServiceStub::Shutdown() {
     }
 
     pending_commands_.clear();
+    last_published_encoded_chunks_.clear();
     initialized_ = false;
     core::Logger::Info("net", "Net service stub shutdown.");
 }
@@ -44,13 +46,16 @@ void NetServiceStub::SubmitLocalCommand(const PlayerCommand& command) {
     pending_commands_.push_back(command);
 }
 
-void NetServiceStub::PublishWorldSnapshot(std::uint64_t tick_index, std::size_t dirty_chunk_count) {
+void NetServiceStub::PublishWorldSnapshot(
+    std::uint64_t tick_index,
+    const std::vector<std::string>& encoded_dirty_chunks) {
     if (!initialized_) {
         return;
     }
 
     last_published_snapshot_tick_ = tick_index;
-    last_published_dirty_chunk_count_ = dirty_chunk_count;
+    last_published_dirty_chunk_count_ = encoded_dirty_chunks.size();
+    last_published_encoded_chunks_ = encoded_dirty_chunks;
     ++snapshot_publish_count_;
 }
 
@@ -72,6 +77,10 @@ std::size_t NetServiceStub::LastPublishedDirtyChunkCount() const {
 
 std::uint64_t NetServiceStub::SnapshotPublishCount() const {
     return snapshot_publish_count_;
+}
+
+const std::vector<std::string>& NetServiceStub::LastPublishedEncodedChunks() const {
+    return last_published_encoded_chunks_;
 }
 
 }  // namespace novaria::net

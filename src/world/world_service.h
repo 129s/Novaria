@@ -19,6 +19,11 @@ struct TileMutation final {
     std::uint16_t material_id = 0;
 };
 
+struct ChunkSnapshot final {
+    ChunkCoord chunk_coord;
+    std::vector<std::uint16_t> tiles;
+};
+
 class IWorldService {
 public:
     virtual ~IWorldService() = default;
@@ -29,6 +34,10 @@ public:
     virtual void LoadChunk(const ChunkCoord& chunk_coord) = 0;
     virtual void UnloadChunk(const ChunkCoord& chunk_coord) = 0;
     virtual bool ApplyTileMutation(const TileMutation& mutation, std::string& out_error) = 0;
+    virtual bool BuildChunkSnapshot(
+        const ChunkCoord& chunk_coord,
+        ChunkSnapshot& out_snapshot,
+        std::string& out_error) const = 0;
     virtual std::vector<ChunkCoord> ConsumeDirtyChunks() = 0;
 };
 

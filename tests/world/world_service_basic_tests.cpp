@@ -37,6 +37,13 @@ int main() {
     world_service.LoadChunk({.x = 0, .y = 0});
     passed &= Expect(world_service.IsChunkLoaded({.x = 0, .y = 0}), "Chunk (0,0) should be loaded.");
     passed &= Expect(world_service.LoadedChunkCount() == 1, "Loaded chunk count should be one.");
+    {
+        novaria::world::ChunkSnapshot snapshot{};
+        passed &= Expect(
+            world_service.BuildChunkSnapshot({.x = 0, .y = 0}, snapshot, error),
+            "BuildChunkSnapshot should succeed for loaded chunk.");
+        passed &= Expect(!snapshot.tiles.empty(), "Chunk snapshot should contain tile data.");
+    }
 
     std::uint16_t material_id = 0;
     passed &= Expect(world_service.TryReadTile(0, 0, material_id), "Tile (0,0) should be readable.");
@@ -71,6 +78,12 @@ int main() {
 
     world_service.UnloadChunk({.x = 0, .y = 0});
     passed &= Expect(!world_service.IsChunkLoaded({.x = 0, .y = 0}), "Chunk (0,0) should be unloaded.");
+    {
+        novaria::world::ChunkSnapshot snapshot{};
+        passed &= Expect(
+            !world_service.BuildChunkSnapshot({.x = 0, .y = 0}, snapshot, error),
+            "BuildChunkSnapshot should fail for unloaded chunk.");
+    }
 
     world_service.Shutdown();
     passed &= Expect(

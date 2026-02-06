@@ -19,6 +19,10 @@ public:
     void LoadChunk(const ChunkCoord& chunk_coord) override;
     void UnloadChunk(const ChunkCoord& chunk_coord) override;
     bool ApplyTileMutation(const TileMutation& mutation, std::string& out_error) override;
+    bool BuildChunkSnapshot(
+        const ChunkCoord& chunk_coord,
+        ChunkSnapshot& out_snapshot,
+        std::string& out_error) const override;
     std::vector<ChunkCoord> ConsumeDirtyChunks() override;
 
     bool IsChunkLoaded(const ChunkCoord& chunk_coord) const;

@@ -1,4 +1,5 @@
 #include "sim/simulation_kernel.h"
+#include "world/snapshot_codec.h"
 
 #include <cstdint>
 #include <iostream>
@@ -22,6 +23,7 @@ public:
     bool shutdown_called = false;
     int tick_count = 0;
     std::vector<std::vector<novaria::world::ChunkCoord>> dirty_batches;
+    std::vector<novaria::world::ChunkSnapshot> available_snapshots;
     std::size_t dirty_batch_cursor = 0;
 
     bool Initialize(std::string& out_error) override {
@@ -57,6 +59,22 @@ public:
         return true;
     }
 
+    bool BuildChunkSnapshot(
+        const novaria::world::ChunkCoord& chunk_coord,
+        novaria::world::ChunkSnapshot& out_snapshot,
+        std::string& out_error) const override {
+        for (const auto& snapshot : available_snapshots) {
+            if (snapshot.chunk_coord.x == chunk_coord.x && snapshot.chunk_coord.y == chunk_coord.y) {
+                out_snapshot = snapshot;
+                out_error.clear();
+                return true;
+            }
+        }
+
+        out_error = "snapshot not found";
+        return false;
+    }
+
     std::vector<novaria::world::ChunkCoord> ConsumeDirtyChunks() override {
         if (dirty_batch_cursor >= dirty_batches.size()) {
             return {};
@@ -74,6 +92,7 @@ public:
     int tick_count = 0;
     std::vector<novaria::net::PlayerCommand> submitted_commands;
     std::vector<std::pair<std::uint64_t, std::size_t>> published_snapshots;
+    std::vector<std::vector<std::string>> published_snapshot_payloads;
 
     bool Initialize(std::string& out_error) override {
         initialize_called = true;
@@ -98,8 +117,11 @@ public:
         submitted_commands.push_back(command);
     }
 
-    void PublishWorldSnapshot(std::uint64_t tick_index, std::size_t dirty_chunk_count) override {
-        published_snapshots.emplace_back(tick_index, dirty_chunk_count);
+    void PublishWorldSnapshot(
+        std::uint64_t tick_index,
+        const std::vector<std::string>& encoded_dirty_chunks) override {
+        published_snapshots.emplace_back(tick_index, encoded_dirty_chunks.size());
+        published_snapshot_payloads.push_back(encoded_dirty_chunks);
     }
 };
 
@@ -144,6 +166,11 @@ bool TestUpdatePublishesDirtyChunkCount() {
         {{.x = 0, .y = 0}, {.x = 1, .y = 0}},
         {{.x = -1, .y = -1}},
     };
+    world.available_snapshots = {
+        {.chunk_coord = {.x = 0, .y = 0}, .tiles = {1, 2, 3}},
+        {.chunk_coord = {.x = 1, .y = 0}, .tiles = {3, 4, 5}},
+        {.chunk_coord = {.x = -1, .y = -1}, .tiles = {6, 7, 8}},
+    };
 
     novaria::sim::SimulationKernel kernel(world, net, script);
     std::string error;
@@ -163,6 +190,17 @@ bool TestUpdatePublishesDirtyChunkCount() {
         passed &= Expect(net.published_snapshots[0].second == 2, "First snapshot dirty chunk count should be 2.");
         passed &= Expect(net.published_snapshots[1].first == 1, "Second snapshot tick should be 1.");
         passed &= Expect(net.published_snapshots[1].second == 1, "Second snapshot dirty chunk count should be 1.");
+        passed &= Expect(
+            net.published_snapshot_payloads[0].size() == 2,
+            "First snapshot payload should contain two chunk entries.");
+        novaria::world::ChunkSnapshot decoded_snapshot{};
+        std::string decode_error;
+        passed &= Expect(
+            novaria::world::WorldSnapshotCodec::DecodeChunkSnapshot(
+                net.published_snapshot_payloads[0][0],
+                decoded_snapshot,
+                decode_error),
+            "Encoded chunk payload should be decodable.");
     }
 
     kernel.SubmitLocalCommand({.player_id = 12, .command_type = "jump", .payload = ""});

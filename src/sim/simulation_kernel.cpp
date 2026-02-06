@@ -1,5 +1,11 @@
 #include "sim/simulation_kernel.h"
 
+#include "world/snapshot_codec.h"
+
+#include <string>
+#include <utility>
+#include <vector>
+
 namespace novaria::sim {
 
 SimulationKernel::SimulationKernel(
@@ -77,8 +83,29 @@ void SimulationKernel::Update(double fixed_delta_seconds) {
     net_service_.Tick(tick_context);
     world_service_.Tick(tick_context);
     script_host_.Tick(tick_context);
+
     const auto dirty_chunks = world_service_.ConsumeDirtyChunks();
-    net_service_.PublishWorldSnapshot(tick_index_, dirty_chunks.size());
+    std::vector<std::string> encoded_dirty_chunks;
+    encoded_dirty_chunks.reserve(dirty_chunks.size());
+    for (const auto& chunk_coord : dirty_chunks) {
+        world::ChunkSnapshot chunk_snapshot{};
+        std::string snapshot_error;
+        if (!world_service_.BuildChunkSnapshot(chunk_coord, chunk_snapshot, snapshot_error)) {
+            continue;
+        }
+
+        std::string encoded_chunk;
+        if (!world::WorldSnapshotCodec::EncodeChunkSnapshot(
+                chunk_snapshot,
+                encoded_chunk,
+                snapshot_error)) {
+            continue;
+        }
+
+        encoded_dirty_chunks.push_back(std::move(encoded_chunk));
+    }
+
+    net_service_.PublishWorldSnapshot(tick_index_, encoded_dirty_chunks);
 
     ++tick_index_;
 }

@@ -70,6 +70,27 @@ bool WorldServiceBasic::ApplyTileMutation(const TileMutation& mutation, std::str
     return true;
 }
 
+bool WorldServiceBasic::BuildChunkSnapshot(
+    const ChunkCoord& chunk_coord,
+    ChunkSnapshot& out_snapshot,
+    std::string& out_error) const {
+    if (!initialized_) {
+        out_error = "World service is not initialized.";
+        return false;
+    }
+
+    const ChunkData* chunk_data = FindChunk(chunk_coord);
+    if (chunk_data == nullptr) {
+        out_error = "Chunk is not loaded.";
+        return false;
+    }
+
+    out_snapshot.chunk_coord = chunk_coord;
+    out_snapshot.tiles = chunk_data->tiles;
+    out_error.clear();
+    return true;
+}
+
 std::vector<ChunkCoord> WorldServiceBasic::ConsumeDirtyChunks() {
     std::vector<ChunkCoord> dirty_chunks;
     if (!initialized_) {
