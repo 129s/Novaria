@@ -13,6 +13,11 @@ struct WorldSaveState final {
     std::uint64_t tick_index = 0;
     std::uint32_t local_player_id = 0;
     std::string mod_manifest_fingerprint;
+    std::uint64_t debug_net_session_transitions = 0;
+    std::uint64_t debug_net_timeout_disconnects = 0;
+    std::uint64_t debug_net_manual_disconnects = 0;
+    std::uint64_t debug_net_dropped_commands = 0;
+    std::uint64_t debug_net_dropped_remote_payloads = 0;
 };
 
 class ISaveRepository {

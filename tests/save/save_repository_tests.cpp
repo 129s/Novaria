@@ -42,6 +42,11 @@ int main() {
         .tick_index = 12345,
         .local_player_id = 9,
         .mod_manifest_fingerprint = "mods:v1:abc123",
+        .debug_net_session_transitions = 7,
+        .debug_net_timeout_disconnects = 2,
+        .debug_net_manual_disconnects = 3,
+        .debug_net_dropped_commands = 11,
+        .debug_net_dropped_remote_payloads = 5,
     };
     passed &= Expect(repository.SaveWorldState(expected, error), "Save should succeed.");
     passed &= Expect(error.empty(), "Save should not return error.");
@@ -59,6 +64,21 @@ int main() {
     passed &= Expect(
         actual.mod_manifest_fingerprint == expected.mod_manifest_fingerprint,
         "Loaded mod manifest fingerprint should match saved value.");
+    passed &= Expect(
+        actual.debug_net_session_transitions == expected.debug_net_session_transitions,
+        "Loaded debug net session transitions should match saved value.");
+    passed &= Expect(
+        actual.debug_net_timeout_disconnects == expected.debug_net_timeout_disconnects,
+        "Loaded debug net timeout disconnects should match saved value.");
+    passed &= Expect(
+        actual.debug_net_manual_disconnects == expected.debug_net_manual_disconnects,
+        "Loaded debug net manual disconnects should match saved value.");
+    passed &= Expect(
+        actual.debug_net_dropped_commands == expected.debug_net_dropped_commands,
+        "Loaded debug net dropped commands should match saved value.");
+    passed &= Expect(
+        actual.debug_net_dropped_remote_payloads == expected.debug_net_dropped_remote_payloads,
+        "Loaded debug net dropped remote payloads should match saved value.");
 
     std::ofstream legacy_file(test_dir / "world.sav", std::ios::trunc);
     legacy_file << "tick_index=77\n";
@@ -74,6 +94,13 @@ int main() {
     passed &= Expect(
         legacy_loaded.mod_manifest_fingerprint.empty(),
         "Legacy save without fingerprint should default to empty fingerprint.");
+    passed &= Expect(
+        legacy_loaded.debug_net_session_transitions == 0 &&
+            legacy_loaded.debug_net_timeout_disconnects == 0 &&
+            legacy_loaded.debug_net_manual_disconnects == 0 &&
+            legacy_loaded.debug_net_dropped_commands == 0 &&
+            legacy_loaded.debug_net_dropped_remote_payloads == 0,
+        "Legacy save without debug net snapshot should default debug counters to zero.");
 
     std::ofstream future_file(test_dir / "world.sav", std::ios::trunc);
     future_file << "format_version=" << (novaria::save::kCurrentWorldSaveFormatVersion + 1) << "\n";

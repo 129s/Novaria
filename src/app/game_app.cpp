@@ -62,6 +62,18 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
                 "Loaded world save: version=" + std::to_string(loaded_save_state.format_version) +
                     ", tick=" + std::to_string(loaded_save_state.tick_index) +
                     ", player=" + std::to_string(local_player_id_));
+            core::Logger::Info(
+                "save",
+                "Loaded debug net snapshot: transitions=" +
+                    std::to_string(loaded_save_state.debug_net_session_transitions) +
+                    ", timeout_disconnects=" +
+                    std::to_string(loaded_save_state.debug_net_timeout_disconnects) +
+                    ", manual_disconnects=" +
+                    std::to_string(loaded_save_state.debug_net_manual_disconnects) +
+                    ", dropped_commands=" +
+                    std::to_string(loaded_save_state.debug_net_dropped_commands) +
+                    ", dropped_payloads=" +
+                    std::to_string(loaded_save_state.debug_net_dropped_remote_payloads));
         } else {
             core::Logger::Warn("save", "World save load skipped: " + save_error);
         }
@@ -227,6 +239,11 @@ void GameApp::Shutdown() {
         .tick_index = simulation_kernel_.CurrentTick(),
         .local_player_id = local_player_id_,
         .mod_manifest_fingerprint = mod_manifest_fingerprint_,
+        .debug_net_session_transitions = net_service_.SessionTransitionCount(),
+        .debug_net_timeout_disconnects = net_service_.TimeoutDisconnectCount(),
+        .debug_net_manual_disconnects = net_service_.ManualDisconnectCount(),
+        .debug_net_dropped_commands = net_service_.DroppedCommandCount(),
+        .debug_net_dropped_remote_payloads = net_service_.DroppedRemoteChunkPayloadCount(),
     };
     if (!save_repository_.SaveWorldState(save_state, save_error)) {
         core::Logger::Warn("save", "World save write failed: " + save_error);

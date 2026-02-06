@@ -68,6 +68,11 @@ bool FileSaveRepository::SaveWorldState(const WorldSaveState& state, std::string
     file << "format_version=" << state.format_version << '\n';
     file << "local_player_id=" << state.local_player_id << '\n';
     file << "mod_manifest_fingerprint=" << state.mod_manifest_fingerprint << '\n';
+    file << "debug_net_session_transitions=" << state.debug_net_session_transitions << '\n';
+    file << "debug_net_timeout_disconnects=" << state.debug_net_timeout_disconnects << '\n';
+    file << "debug_net_manual_disconnects=" << state.debug_net_manual_disconnects << '\n';
+    file << "debug_net_dropped_commands=" << state.debug_net_dropped_commands << '\n';
+    file << "debug_net_dropped_remote_payloads=" << state.debug_net_dropped_remote_payloads << '\n';
     file.close();
 
     out_error.clear();
@@ -137,6 +142,56 @@ bool FileSaveRepository::LoadWorldState(WorldSaveState& out_state, std::string& 
 
         if (key == "mod_manifest_fingerprint") {
             parsed_state.mod_manifest_fingerprint = value;
+            continue;
+        }
+
+        if (key == "debug_net_session_transitions") {
+            std::uint64_t parsed = 0;
+            if (!ParseUnsignedInteger(value, parsed)) {
+                out_error = "Invalid debug_net_session_transitions value in world save file.";
+                return false;
+            }
+            parsed_state.debug_net_session_transitions = parsed;
+            continue;
+        }
+
+        if (key == "debug_net_timeout_disconnects") {
+            std::uint64_t parsed = 0;
+            if (!ParseUnsignedInteger(value, parsed)) {
+                out_error = "Invalid debug_net_timeout_disconnects value in world save file.";
+                return false;
+            }
+            parsed_state.debug_net_timeout_disconnects = parsed;
+            continue;
+        }
+
+        if (key == "debug_net_manual_disconnects") {
+            std::uint64_t parsed = 0;
+            if (!ParseUnsignedInteger(value, parsed)) {
+                out_error = "Invalid debug_net_manual_disconnects value in world save file.";
+                return false;
+            }
+            parsed_state.debug_net_manual_disconnects = parsed;
+            continue;
+        }
+
+        if (key == "debug_net_dropped_commands") {
+            std::uint64_t parsed = 0;
+            if (!ParseUnsignedInteger(value, parsed)) {
+                out_error = "Invalid debug_net_dropped_commands value in world save file.";
+                return false;
+            }
+            parsed_state.debug_net_dropped_commands = parsed;
+            continue;
+        }
+
+        if (key == "debug_net_dropped_remote_payloads") {
+            std::uint64_t parsed = 0;
+            if (!ParseUnsignedInteger(value, parsed)) {
+                out_error = "Invalid debug_net_dropped_remote_payloads value in world save file.";
+                return false;
+            }
+            parsed_state.debug_net_dropped_remote_payloads = parsed;
             continue;
         }
     }
