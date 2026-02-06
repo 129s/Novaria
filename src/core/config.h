@@ -10,6 +10,7 @@ struct GameConfig final {
     int window_width = 1280;
     int window_height = 720;
     bool vsync = true;
+    bool strict_save_mod_fingerprint = false;
 };
 
 class ConfigLoader final {

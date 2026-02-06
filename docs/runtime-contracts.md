@@ -69,6 +69,7 @@
   - 启动读取 `saves/world.sav`
   - 存档字段包含 `format_version`，支持旧档（缺失版本字段）兼容与前向版本拒绝
   - 退出写回当前 Tick、本地玩家编号与模组清单指纹
+  - 配置 `strict_save_mod_fingerprint=true` 时，读档指纹不一致将拒绝启动
 
 ## `mod`
 

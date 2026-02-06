@@ -120,6 +120,15 @@ bool ConfigLoader::Load(
             }
             continue;
         }
+
+        if (key == "strict_save_mod_fingerprint") {
+            if (!ParseBool(value, out_config.strict_save_mod_fingerprint)) {
+                out_error =
+                    "strict_save_mod_fingerprint expects boolean: line " + std::to_string(line_number);
+                return false;
+            }
+            continue;
+        }
     }
 
     if (out_config.window_width <= 0 || out_config.window_height <= 0) {

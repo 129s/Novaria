@@ -93,6 +93,13 @@ if(NOVARIA_BUILD_TESTS)
     enable_testing()
 
     add_executable(
+        novaria_config_tests
+        tests/core/config_tests.cpp
+        src/core/config.cpp
+    )
+    target_include_directories(novaria_config_tests PRIVATE src)
+
+    add_executable(
         novaria_net_service_stub_tests
         tests/net/net_service_stub_tests.cpp
         src/net/net_service_stub.cpp
@@ -156,6 +163,7 @@ if(NOVARIA_BUILD_TESTS)
     target_include_directories(novaria_world_replication_flow_tests PRIVATE src)
 
     if(MSVC)
+        target_compile_options(novaria_config_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_net_service_stub_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_world_service_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_script_host_stub_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
@@ -165,6 +173,7 @@ if(NOVARIA_BUILD_TESTS)
         target_compile_options(novaria_world_snapshot_codec_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_world_replication_flow_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         if(NOVARIA_WARNINGS_AS_ERRORS)
+            target_compile_options(novaria_config_tests PRIVATE /WX)
             target_compile_options(novaria_net_service_stub_tests PRIVATE /WX)
             target_compile_options(novaria_world_service_tests PRIVATE /WX)
             target_compile_options(novaria_script_host_stub_tests PRIVATE /WX)
@@ -175,6 +184,7 @@ if(NOVARIA_BUILD_TESTS)
             target_compile_options(novaria_world_replication_flow_tests PRIVATE /WX)
         endif()
     else()
+        target_compile_options(novaria_config_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_net_service_stub_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_world_service_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_script_host_stub_tests PRIVATE -Wall -Wextra -Wpedantic)
@@ -184,6 +194,7 @@ if(NOVARIA_BUILD_TESTS)
         target_compile_options(novaria_world_snapshot_codec_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_world_replication_flow_tests PRIVATE -Wall -Wextra -Wpedantic)
         if(NOVARIA_WARNINGS_AS_ERRORS)
+            target_compile_options(novaria_config_tests PRIVATE -Werror)
             target_compile_options(novaria_net_service_stub_tests PRIVATE -Werror)
             target_compile_options(novaria_world_service_tests PRIVATE -Werror)
             target_compile_options(novaria_script_host_stub_tests PRIVATE -Werror)
@@ -195,6 +206,7 @@ if(NOVARIA_BUILD_TESTS)
         endif()
     endif()
 
+    add_test(NAME novaria_config_tests COMMAND novaria_config_tests)
     add_test(NAME novaria_net_service_stub_tests COMMAND novaria_net_service_stub_tests)
     add_test(NAME novaria_world_service_tests COMMAND novaria_world_service_tests)
     add_test(NAME novaria_script_host_stub_tests COMMAND novaria_script_host_stub_tests)

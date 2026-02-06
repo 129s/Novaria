@@ -67,11 +67,21 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
     if (has_loaded_save_state && !loaded_save_state.mod_manifest_fingerprint.empty() &&
         !mod_manifest_fingerprint_.empty() &&
         loaded_save_state.mod_manifest_fingerprint != mod_manifest_fingerprint_) {
-        core::Logger::Warn(
-            "save",
+        const std::string mismatch_message =
             "Loaded save mod fingerprint mismatch. save=" +
-                loaded_save_state.mod_manifest_fingerprint +
-                ", runtime=" + mod_manifest_fingerprint_);
+            loaded_save_state.mod_manifest_fingerprint +
+            ", runtime=" + mod_manifest_fingerprint_;
+        if (config_.strict_save_mod_fingerprint) {
+            core::Logger::Error("save", mismatch_message);
+            mod_manifest_fingerprint_.clear();
+            loaded_mods_.clear();
+            mod_loader_.Shutdown();
+            save_repository_.Shutdown();
+            simulation_kernel_.Shutdown();
+            sdl_context_.Shutdown();
+            return false;
+        }
+        core::Logger::Warn("save", mismatch_message);
     }
 
     initialized_ = true;
