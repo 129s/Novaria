@@ -232,6 +232,11 @@ void SimulationKernel::Update(double fixed_delta_seconds) {
     pending_local_commands_.clear();
 
     net_service_.Tick(tick_context);
+    for (const auto& encoded_payload : net_service_.ConsumeRemoteChunkPayloads()) {
+        std::string apply_error;
+        (void)ApplyRemoteChunkPayload(encoded_payload, apply_error);
+    }
+
     world_service_.Tick(tick_context);
     script_host_.Tick(tick_context);
 

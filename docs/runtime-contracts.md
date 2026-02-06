@@ -11,10 +11,11 @@
   0. 转发本地命令到 `net`
   1. 执行可识别的世界命令（`world.set_tile`、`world.load_chunk`、`world.unload_chunk`）
   2. `net.Tick`
-  3. `world.Tick`
-  4. `script.Tick`
-  5. `world` 生成脏块快照并编码
-  6. `net.PublishWorldSnapshot`
+  3. 消费 `net` 远端快照 payload 并应用到 `world`
+  4. `world.Tick`
+  5. `script.Tick`
+  6. `world` 生成脏块快照并编码
+  7. `net.PublishWorldSnapshot`
 - `sim::SimulationKernel` 额外提供远端快照应用入口：`ApplyRemoteChunkPayload`。
 
 ## `world`
@@ -42,6 +43,7 @@
 - 当前实现：`net::NetServiceStub`
   - 本地命令入队
   - 队列上限与丢弃计数（防输入风暴）
+  - 远端快照 payload 入队与消费
   - Tick 内批处理命令
   - 快照发布统计
 

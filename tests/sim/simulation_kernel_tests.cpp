@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -103,6 +104,7 @@ public:
     std::vector<novaria::net::PlayerCommand> submitted_commands;
     std::vector<std::pair<std::uint64_t, std::size_t>> published_snapshots;
     std::vector<std::vector<std::string>> published_snapshot_payloads;
+    std::vector<std::string> pending_remote_chunk_payloads;
 
     bool Initialize(std::string& out_error) override {
         initialize_called = true;
@@ -125,6 +127,12 @@ public:
 
     void SubmitLocalCommand(const novaria::net::PlayerCommand& command) override {
         submitted_commands.push_back(command);
+    }
+
+    std::vector<std::string> ConsumeRemoteChunkPayloads() override {
+        std::vector<std::string> payloads = std::move(pending_remote_chunk_payloads);
+        pending_remote_chunk_payloads.clear();
+        return payloads;
     }
 
     void PublishWorldSnapshot(
@@ -331,6 +339,47 @@ bool TestApplyRemoteChunkPayload() {
     return passed;
 }
 
+bool TestUpdateConsumesRemoteChunkPayloads() {
+    bool passed = true;
+
+    FakeWorldService world;
+    FakeNetService net;
+    FakeScriptHost script;
+    novaria::sim::SimulationKernel kernel(world, net, script);
+
+    std::string error;
+    passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
+
+    novaria::world::ChunkSnapshot snapshot{
+        .chunk_coord = {.x = -4, .y = 9},
+        .tiles = {11, 12, 13, 14},
+    };
+    std::string payload;
+    passed &= Expect(
+        novaria::world::WorldSnapshotCodec::EncodeChunkSnapshot(snapshot, payload, error),
+        "EncodeChunkSnapshot should succeed.");
+    net.pending_remote_chunk_payloads.push_back(payload);
+    net.pending_remote_chunk_payloads.push_back("invalid_payload");
+
+    kernel.Update(1.0 / 60.0);
+
+    passed &= Expect(
+        world.applied_snapshots.size() == 1,
+        "Kernel update should apply one valid remote chunk payload.");
+    if (world.applied_snapshots.size() == 1) {
+        passed &= Expect(
+            world.applied_snapshots[0].chunk_coord.x == -4 &&
+                world.applied_snapshots[0].chunk_coord.y == 9,
+            "Applied remote snapshot chunk coordinate should match.");
+    }
+    passed &= Expect(
+        net.pending_remote_chunk_payloads.empty(),
+        "Remote payload queue should be drained after update.");
+
+    kernel.Shutdown();
+    return passed;
+}
+
 bool TestWorldCommandExecutionFromLocalQueue() {
     bool passed = true;
 
@@ -379,6 +428,7 @@ int main() {
     passed &= TestSubmitCommandIgnoredBeforeInitialize();
     passed &= TestApplyRemoteChunkPayload();
     passed &= TestWorldCommandExecutionFromLocalQueue();
+    passed &= TestUpdateConsumesRemoteChunkPayloads();
 
     if (!passed) {
         return 1;

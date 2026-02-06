@@ -23,6 +23,7 @@ public:
     virtual void Shutdown() = 0;
     virtual void Tick(const sim::TickContext& tick_context) = 0;
     virtual void SubmitLocalCommand(const PlayerCommand& command) = 0;
+    virtual std::vector<std::string> ConsumeRemoteChunkPayloads() = 0;
     virtual void PublishWorldSnapshot(
         std::uint64_t tick_index,
         const std::vector<std::string>& encoded_dirty_chunks) = 0;

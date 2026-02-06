@@ -66,6 +66,14 @@ int main() {
         "Pending commands should be clamped to max capacity.");
     passed &= Expect(net_service.DroppedCommandCount() == 8, "Dropped command count should track overflow.");
 
+    net_service.EnqueueRemoteChunkPayload("remote_chunk_a");
+    net_service.EnqueueRemoteChunkPayload("remote_chunk_b");
+    auto remote_payloads = net_service.ConsumeRemoteChunkPayloads();
+    passed &= Expect(remote_payloads.size() == 2, "Two remote payloads should be consumed.");
+    passed &= Expect(
+        net_service.ConsumeRemoteChunkPayloads().empty(),
+        "Remote payload queue should be empty after consume.");
+
     if (!passed) {
         return 1;
     }

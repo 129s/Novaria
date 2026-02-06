@@ -17,10 +17,12 @@ public:
     void Shutdown() override;
     void Tick(const sim::TickContext& tick_context) override;
     void SubmitLocalCommand(const PlayerCommand& command) override;
+    std::vector<std::string> ConsumeRemoteChunkPayloads() override;
     void PublishWorldSnapshot(
         std::uint64_t tick_index,
         const std::vector<std::string>& encoded_dirty_chunks) override;
 
+    void EnqueueRemoteChunkPayload(std::string payload);
     std::size_t PendingCommandCount() const;
     std::size_t TotalProcessedCommandCount() const;
     std::size_t DroppedCommandCount() const;
@@ -32,6 +34,7 @@ public:
 private:
     bool initialized_ = false;
     std::vector<PlayerCommand> pending_commands_;
+    std::vector<std::string> pending_remote_chunk_payloads_;
     std::size_t total_processed_command_count_ = 0;
     std::size_t dropped_command_count_ = 0;
     std::uint64_t last_published_snapshot_tick_ = std::numeric_limits<std::uint64_t>::max();
