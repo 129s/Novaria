@@ -10,6 +10,7 @@ struct ModManifest final {
     std::string name;
     std::string version;
     std::string description;
+    std::vector<std::string> dependencies;
     std::filesystem::path root_path;
 };
 
@@ -23,9 +24,16 @@ public:
 private:
     static std::string Trim(const std::string& value);
     static bool ParseQuotedString(const std::string& value, std::string& out_text);
+    static bool ParseQuotedStringArray(
+        const std::string& value,
+        std::vector<std::string>& out_items);
     static bool ParseManifestFile(
         const std::filesystem::path& manifest_path,
         ModManifest& out_manifest,
+        std::string& out_error);
+    static bool BuildDependencyOrderedManifestList(
+        const std::vector<ModManifest>& loaded_manifests,
+        std::vector<ModManifest>& out_ordered_manifests,
         std::string& out_error);
 
     bool initialized_ = false;

@@ -96,7 +96,8 @@
 
 - `mod::ModLoader`：
   - 扫描 `mods/*/mod.toml`
-  - 解析 `name/version/description`
+  - 解析 `name/version/description/dependencies`
+  - 依赖拓扑排序装载，缺失依赖与循环依赖直接失败
   - 生成稳定清单指纹（order-insensitive）用于后续联机一致性校验
 
 ## 当前输入映射（调试）
