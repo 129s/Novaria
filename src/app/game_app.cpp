@@ -73,7 +73,9 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
                     ", dropped_commands=" +
                     std::to_string(loaded_save_state.debug_net_dropped_commands) +
                     ", dropped_payloads=" +
-                    std::to_string(loaded_save_state.debug_net_dropped_remote_payloads));
+                    std::to_string(loaded_save_state.debug_net_dropped_remote_payloads) +
+                    ", last_transition_reason=" +
+                    loaded_save_state.debug_net_last_transition_reason);
         } else {
             core::Logger::Warn("save", "World save load skipped: " + save_error);
         }
@@ -247,6 +249,7 @@ void GameApp::Shutdown() {
         .debug_net_manual_disconnects = diagnostics.manual_disconnect_count,
         .debug_net_dropped_commands = diagnostics.dropped_command_count,
         .debug_net_dropped_remote_payloads = diagnostics.dropped_remote_chunk_payload_count,
+        .debug_net_last_transition_reason = diagnostics.last_session_transition_reason,
     };
     if (!save_repository_.SaveWorldState(save_state, save_error)) {
         core::Logger::Warn("save", "World save write failed: " + save_error);

@@ -73,6 +73,7 @@ bool FileSaveRepository::SaveWorldState(const WorldSaveState& state, std::string
     file << "debug_net_manual_disconnects=" << state.debug_net_manual_disconnects << '\n';
     file << "debug_net_dropped_commands=" << state.debug_net_dropped_commands << '\n';
     file << "debug_net_dropped_remote_payloads=" << state.debug_net_dropped_remote_payloads << '\n';
+    file << "debug_net_last_transition_reason=" << state.debug_net_last_transition_reason << '\n';
     file.close();
 
     out_error.clear();
@@ -192,6 +193,11 @@ bool FileSaveRepository::LoadWorldState(WorldSaveState& out_state, std::string& 
                 return false;
             }
             parsed_state.debug_net_dropped_remote_payloads = parsed;
+            continue;
+        }
+
+        if (key == "debug_net_last_transition_reason") {
+            parsed_state.debug_net_last_transition_reason = value;
             continue;
         }
     }

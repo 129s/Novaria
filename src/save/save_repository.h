@@ -18,6 +18,7 @@ struct WorldSaveState final {
     std::uint64_t debug_net_manual_disconnects = 0;
     std::uint64_t debug_net_dropped_commands = 0;
     std::uint64_t debug_net_dropped_remote_payloads = 0;
+    std::string debug_net_last_transition_reason;
 };
 
 class ISaveRepository {

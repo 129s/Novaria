@@ -47,6 +47,7 @@ int main() {
         .debug_net_manual_disconnects = 3,
         .debug_net_dropped_commands = 11,
         .debug_net_dropped_remote_payloads = 5,
+        .debug_net_last_transition_reason = "heartbeat_timeout",
     };
     passed &= Expect(repository.SaveWorldState(expected, error), "Save should succeed.");
     passed &= Expect(error.empty(), "Save should not return error.");
@@ -79,6 +80,9 @@ int main() {
     passed &= Expect(
         actual.debug_net_dropped_remote_payloads == expected.debug_net_dropped_remote_payloads,
         "Loaded debug net dropped remote payloads should match saved value.");
+    passed &= Expect(
+        actual.debug_net_last_transition_reason == expected.debug_net_last_transition_reason,
+        "Loaded debug net last transition reason should match saved value.");
 
     std::ofstream legacy_file(test_dir / "world.sav", std::ios::trunc);
     legacy_file << "tick_index=77\n";
@@ -99,7 +103,8 @@ int main() {
             legacy_loaded.debug_net_timeout_disconnects == 0 &&
             legacy_loaded.debug_net_manual_disconnects == 0 &&
             legacy_loaded.debug_net_dropped_commands == 0 &&
-            legacy_loaded.debug_net_dropped_remote_payloads == 0,
+            legacy_loaded.debug_net_dropped_remote_payloads == 0 &&
+            legacy_loaded.debug_net_last_transition_reason.empty(),
         "Legacy save without debug net snapshot should default debug counters to zero.");
 
     std::ofstream future_file(test_dir / "world.sav", std::ios::trunc);
