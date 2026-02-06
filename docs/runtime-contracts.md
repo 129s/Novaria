@@ -40,6 +40,7 @@
   - `PublishWorldSnapshot(tick_index, encoded_dirty_chunks)`
 - 当前实现：`net::NetServiceStub`
   - 本地命令入队
+  - 入队上限与丢弃计数（防止输入风暴）
   - Tick 内批处理命令
   - 快照发布计数与最后 Tick 记录
 

@@ -11,6 +11,8 @@ namespace novaria::net {
 
 class NetServiceStub final : public INetService {
 public:
+    static constexpr std::size_t kMaxPendingCommands = 1024;
+
     bool Initialize(std::string& out_error) override;
     void Shutdown() override;
     void Tick(const sim::TickContext& tick_context) override;
@@ -21,6 +23,7 @@ public:
 
     std::size_t PendingCommandCount() const;
     std::size_t TotalProcessedCommandCount() const;
+    std::size_t DroppedCommandCount() const;
     std::uint64_t LastPublishedSnapshotTick() const;
     std::size_t LastPublishedDirtyChunkCount() const;
     std::uint64_t SnapshotPublishCount() const;
@@ -30,6 +33,7 @@ private:
     bool initialized_ = false;
     std::vector<PlayerCommand> pending_commands_;
     std::size_t total_processed_command_count_ = 0;
+    std::size_t dropped_command_count_ = 0;
     std::uint64_t last_published_snapshot_tick_ = std::numeric_limits<std::uint64_t>::max();
     std::size_t last_published_dirty_chunk_count_ = 0;
     std::vector<std::string> last_published_encoded_chunks_;

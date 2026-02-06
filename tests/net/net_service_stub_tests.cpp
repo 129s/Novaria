@@ -25,6 +25,7 @@ int main() {
     passed &= Expect(error.empty(), "Initialize should not return error message.");
     passed &= Expect(net_service.PendingCommandCount() == 0, "Pending command count should start at zero.");
     passed &= Expect(net_service.TotalProcessedCommandCount() == 0, "Processed command count should start at zero.");
+    passed &= Expect(net_service.DroppedCommandCount() == 0, "Dropped command count should start at zero.");
     passed &= Expect(
         net_service.LastPublishedSnapshotTick() == std::numeric_limits<std::uint64_t>::max(),
         "Last snapshot tick should be sentinel before first publish.");
@@ -55,6 +56,15 @@ int main() {
     passed &= Expect(
         net_service.PendingCommandCount() == 0,
         "Commands submitted after shutdown should be ignored.");
+
+    passed &= Expect(net_service.Initialize(error), "Reinitialize should succeed.");
+    for (std::size_t index = 0; index < novaria::net::NetServiceStub::kMaxPendingCommands + 8; ++index) {
+        net_service.SubmitLocalCommand({.player_id = 1, .command_type = "spam", .payload = ""});
+    }
+    passed &= Expect(
+        net_service.PendingCommandCount() == novaria::net::NetServiceStub::kMaxPendingCommands,
+        "Pending commands should be clamped to max capacity.");
+    passed &= Expect(net_service.DroppedCommandCount() == 8, "Dropped command count should track overflow.");
 
     if (!passed) {
         return 1;

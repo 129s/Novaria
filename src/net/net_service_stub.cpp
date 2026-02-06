@@ -7,6 +7,7 @@ namespace novaria::net {
 bool NetServiceStub::Initialize(std::string& out_error) {
     pending_commands_.clear();
     total_processed_command_count_ = 0;
+    dropped_command_count_ = 0;
     last_published_snapshot_tick_ = std::numeric_limits<std::uint64_t>::max();
     last_published_dirty_chunk_count_ = 0;
     last_published_encoded_chunks_.clear();
@@ -43,6 +44,11 @@ void NetServiceStub::SubmitLocalCommand(const PlayerCommand& command) {
         return;
     }
 
+    if (pending_commands_.size() >= kMaxPendingCommands) {
+        ++dropped_command_count_;
+        return;
+    }
+
     pending_commands_.push_back(command);
 }
 
@@ -65,6 +71,10 @@ std::size_t NetServiceStub::PendingCommandCount() const {
 
 std::size_t NetServiceStub::TotalProcessedCommandCount() const {
     return total_processed_command_count_;
+}
+
+std::size_t NetServiceStub::DroppedCommandCount() const {
+    return dropped_command_count_;
 }
 
 std::uint64_t NetServiceStub::LastPublishedSnapshotTick() const {
