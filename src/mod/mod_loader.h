@@ -1,16 +1,39 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <vector>
 
 namespace novaria::mod {
 
+struct ModItemDefinition final {
+    std::string id;
+    std::string behavior;
+};
+
+struct ModRecipeDefinition final {
+    std::string id;
+    std::string input_item_id;
+    std::uint32_t input_amount = 0;
+    std::string output_item_id;
+    std::uint32_t output_amount = 0;
+};
+
+struct ModNpcDefinition final {
+    std::string id;
+    std::uint32_t max_health = 0;
+    std::string behavior;
+};
+
 struct ModManifest final {
     std::string name;
     std::string version;
     std::string description;
     std::vector<std::string> dependencies;
+    std::vector<ModItemDefinition> items;
+    std::vector<ModRecipeDefinition> recipes;
+    std::vector<ModNpcDefinition> npcs;
     std::filesystem::path root_path;
 };
 
@@ -30,6 +53,18 @@ private:
     static bool ParseManifestFile(
         const std::filesystem::path& manifest_path,
         ModManifest& out_manifest,
+        std::string& out_error);
+    static bool ParseItemDefinitions(
+        const std::filesystem::path& file_path,
+        std::vector<ModItemDefinition>& out_items,
+        std::string& out_error);
+    static bool ParseRecipeDefinitions(
+        const std::filesystem::path& file_path,
+        std::vector<ModRecipeDefinition>& out_recipes,
+        std::string& out_error);
+    static bool ParseNpcDefinitions(
+        const std::filesystem::path& file_path,
+        std::vector<ModNpcDefinition>& out_npcs,
         std::string& out_error);
     static bool BuildDependencyOrderedManifestList(
         const std::vector<ModManifest>& loaded_manifests,

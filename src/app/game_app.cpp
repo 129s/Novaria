@@ -122,7 +122,20 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
         core::Logger::Warn("mod", "Mod loading failed: " + mod_error);
     } else {
         mod_manifest_fingerprint_ = mod::ModLoader::BuildManifestFingerprint(loaded_mods_);
+        std::size_t item_definition_count = 0;
+        std::size_t recipe_definition_count = 0;
+        std::size_t npc_definition_count = 0;
+        for (const auto& manifest : loaded_mods_) {
+            item_definition_count += manifest.items.size();
+            recipe_definition_count += manifest.recipes.size();
+            npc_definition_count += manifest.npcs.size();
+        }
         core::Logger::Info("mod", "Loaded mods: " + std::to_string(loaded_mods_.size()));
+        core::Logger::Info(
+            "mod",
+            "Loaded mod content definitions: items=" + std::to_string(item_definition_count) +
+                ", recipes=" + std::to_string(recipe_definition_count) +
+                ", npcs=" + std::to_string(npc_definition_count));
         core::Logger::Info("mod", "Manifest fingerprint: " + mod_manifest_fingerprint_);
     }
 

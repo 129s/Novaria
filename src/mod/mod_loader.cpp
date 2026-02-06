@@ -1,16 +1,50 @@
 #include "mod/mod_loader.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cctype>
 #include <cstdint>
 #include <functional>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include <unordered_map>
 #include <utility>
 
 namespace novaria::mod {
+namespace {
+
+std::vector<std::string> SplitCsvLine(const std::string& line) {
+    std::vector<std::string> tokens;
+    std::string token;
+    std::stringstream line_stream(line);
+    while (std::getline(line_stream, token, ',')) {
+        tokens.push_back(token);
+    }
+    return tokens;
+}
+
+bool ParseUInt32Token(const std::string& token, std::uint32_t& out_value) {
+    if (token.empty()) {
+        return false;
+    }
+
+    std::uint64_t parsed = 0;
+    const auto [parse_end, error] =
+        std::from_chars(token.data(), token.data() + token.size(), parsed);
+    if (error != std::errc{} || parse_end != token.data() + token.size()) {
+        return false;
+    }
+    if (parsed > std::numeric_limits<std::uint32_t>::max()) {
+        return false;
+    }
+
+    out_value = static_cast<std::uint32_t>(parsed);
+    return true;
+}
+
+}  // namespace
 
 bool ModLoader::Initialize(const std::filesystem::path& mod_root, std::string& out_error) {
     if (!std::filesystem::exists(mod_root)) {
@@ -65,6 +99,30 @@ bool ModLoader::LoadAll(std::vector<ModManifest>& out_manifests, std::string& ou
         }
 
         manifest.root_path = entry.path();
+        const std::filesystem::path content_root = entry.path() / "content";
+        if (std::filesystem::exists(content_root) && std::filesystem::is_directory(content_root)) {
+            const std::filesystem::path items_path = content_root / "items.csv";
+            if (std::filesystem::exists(items_path) &&
+                !ParseItemDefinitions(items_path, manifest.items, out_error)) {
+                out_error = "Invalid mod items file '" + items_path.string() + "': " + out_error;
+                return false;
+            }
+
+            const std::filesystem::path recipes_path = content_root / "recipes.csv";
+            if (std::filesystem::exists(recipes_path) &&
+                !ParseRecipeDefinitions(recipes_path, manifest.recipes, out_error)) {
+                out_error = "Invalid mod recipes file '" + recipes_path.string() + "': " + out_error;
+                return false;
+            }
+
+            const std::filesystem::path npcs_path = content_root / "npcs.csv";
+            if (std::filesystem::exists(npcs_path) &&
+                !ParseNpcDefinitions(npcs_path, manifest.npcs, out_error)) {
+                out_error = "Invalid mod npcs file '" + npcs_path.string() + "': " + out_error;
+                return false;
+            }
+        }
+
         loaded_manifests.push_back(std::move(manifest));
     }
 
@@ -78,6 +136,30 @@ std::string ModLoader::BuildManifestFingerprint(const std::vector<ModManifest>& 
         std::vector<std::string> normalized_dependencies = manifest.dependencies;
         std::sort(normalized_dependencies.begin(), normalized_dependencies.end());
 
+        std::vector<std::string> normalized_items;
+        normalized_items.reserve(manifest.items.size());
+        for (const auto& item : manifest.items) {
+            normalized_items.push_back(item.id + ":" + item.behavior);
+        }
+        std::sort(normalized_items.begin(), normalized_items.end());
+
+        std::vector<std::string> normalized_recipes;
+        normalized_recipes.reserve(manifest.recipes.size());
+        for (const auto& recipe : manifest.recipes) {
+            normalized_recipes.push_back(
+                recipe.id + ":" + recipe.input_item_id + "*" + std::to_string(recipe.input_amount) +
+                "->" + recipe.output_item_id + "*" + std::to_string(recipe.output_amount));
+        }
+        std::sort(normalized_recipes.begin(), normalized_recipes.end());
+
+        std::vector<std::string> normalized_npcs;
+        normalized_npcs.reserve(manifest.npcs.size());
+        for (const auto& npc : manifest.npcs) {
+            normalized_npcs.push_back(
+                npc.id + ":" + std::to_string(npc.max_health) + ":" + npc.behavior);
+        }
+        std::sort(normalized_npcs.begin(), normalized_npcs.end());
+
         std::string canonical_entry =
             manifest.name + "|" + manifest.version + "|" + manifest.description + "|deps=";
         for (std::size_t dependency_index = 0;
@@ -87,6 +169,27 @@ std::string ModLoader::BuildManifestFingerprint(const std::vector<ModManifest>& 
                 canonical_entry += ",";
             }
             canonical_entry += normalized_dependencies[dependency_index];
+        }
+        canonical_entry += "|items=";
+        for (std::size_t item_index = 0; item_index < normalized_items.size(); ++item_index) {
+            if (item_index > 0) {
+                canonical_entry += ",";
+            }
+            canonical_entry += normalized_items[item_index];
+        }
+        canonical_entry += "|recipes=";
+        for (std::size_t recipe_index = 0; recipe_index < normalized_recipes.size(); ++recipe_index) {
+            if (recipe_index > 0) {
+                canonical_entry += ",";
+            }
+            canonical_entry += normalized_recipes[recipe_index];
+        }
+        canonical_entry += "|npcs=";
+        for (std::size_t npc_index = 0; npc_index < normalized_npcs.size(); ++npc_index) {
+            if (npc_index > 0) {
+                canonical_entry += ",";
+            }
+            canonical_entry += normalized_npcs[npc_index];
         }
 
         canonical_entries.push_back(std::move(canonical_entry));
@@ -171,6 +274,187 @@ bool ModLoader::ParseQuotedStringArray(
         }
     }
 
+    return true;
+}
+
+bool ModLoader::ParseItemDefinitions(
+    const std::filesystem::path& file_path,
+    std::vector<ModItemDefinition>& out_items,
+    std::string& out_error) {
+    out_items.clear();
+
+    std::ifstream file(file_path);
+    if (!file.is_open()) {
+        out_error = "cannot open file";
+        return false;
+    }
+
+    std::unordered_map<std::string, bool> item_ids;
+    std::string line;
+    int line_number = 0;
+    while (std::getline(file, line)) {
+        ++line_number;
+        const auto comment_pos = line.find('#');
+        if (comment_pos != std::string::npos) {
+            line = line.substr(0, comment_pos);
+        }
+        line = Trim(line);
+        if (line.empty()) {
+            continue;
+        }
+
+        const auto tokens = SplitCsvLine(line);
+        if (tokens.size() != 2) {
+            out_error = "line " + std::to_string(line_number) + " expects 2 csv tokens";
+            return false;
+        }
+
+        const std::string item_id = Trim(tokens[0]);
+        const std::string behavior = Trim(tokens[1]);
+        if (item_id.empty() || behavior.empty()) {
+            out_error = "line " + std::to_string(line_number) + " has empty item fields";
+            return false;
+        }
+        if (item_ids.contains(item_id)) {
+            out_error = "line " + std::to_string(line_number) + " duplicates item id '" + item_id + "'";
+            return false;
+        }
+
+        item_ids.emplace(item_id, true);
+        out_items.push_back(ModItemDefinition{
+            .id = item_id,
+            .behavior = behavior,
+        });
+    }
+
+    out_error.clear();
+    return true;
+}
+
+bool ModLoader::ParseRecipeDefinitions(
+    const std::filesystem::path& file_path,
+    std::vector<ModRecipeDefinition>& out_recipes,
+    std::string& out_error) {
+    out_recipes.clear();
+
+    std::ifstream file(file_path);
+    if (!file.is_open()) {
+        out_error = "cannot open file";
+        return false;
+    }
+
+    std::unordered_map<std::string, bool> recipe_ids;
+    std::string line;
+    int line_number = 0;
+    while (std::getline(file, line)) {
+        ++line_number;
+        const auto comment_pos = line.find('#');
+        if (comment_pos != std::string::npos) {
+            line = line.substr(0, comment_pos);
+        }
+        line = Trim(line);
+        if (line.empty()) {
+            continue;
+        }
+
+        const auto tokens = SplitCsvLine(line);
+        if (tokens.size() != 5) {
+            out_error = "line " + std::to_string(line_number) + " expects 5 csv tokens";
+            return false;
+        }
+
+        const std::string recipe_id = Trim(tokens[0]);
+        const std::string input_item_id = Trim(tokens[1]);
+        const std::string output_item_id = Trim(tokens[3]);
+        std::uint32_t input_amount = 0;
+        std::uint32_t output_amount = 0;
+        if (recipe_id.empty() || input_item_id.empty() || output_item_id.empty()) {
+            out_error = "line " + std::to_string(line_number) + " has empty recipe fields";
+            return false;
+        }
+        if (!ParseUInt32Token(Trim(tokens[2]), input_amount) ||
+            !ParseUInt32Token(Trim(tokens[4]), output_amount) ||
+            input_amount == 0 ||
+            output_amount == 0) {
+            out_error = "line " + std::to_string(line_number) + " has invalid recipe amounts";
+            return false;
+        }
+        if (recipe_ids.contains(recipe_id)) {
+            out_error = "line " + std::to_string(line_number) + " duplicates recipe id '" + recipe_id + "'";
+            return false;
+        }
+
+        recipe_ids.emplace(recipe_id, true);
+        out_recipes.push_back(ModRecipeDefinition{
+            .id = recipe_id,
+            .input_item_id = input_item_id,
+            .input_amount = input_amount,
+            .output_item_id = output_item_id,
+            .output_amount = output_amount,
+        });
+    }
+
+    out_error.clear();
+    return true;
+}
+
+bool ModLoader::ParseNpcDefinitions(
+    const std::filesystem::path& file_path,
+    std::vector<ModNpcDefinition>& out_npcs,
+    std::string& out_error) {
+    out_npcs.clear();
+
+    std::ifstream file(file_path);
+    if (!file.is_open()) {
+        out_error = "cannot open file";
+        return false;
+    }
+
+    std::unordered_map<std::string, bool> npc_ids;
+    std::string line;
+    int line_number = 0;
+    while (std::getline(file, line)) {
+        ++line_number;
+        const auto comment_pos = line.find('#');
+        if (comment_pos != std::string::npos) {
+            line = line.substr(0, comment_pos);
+        }
+        line = Trim(line);
+        if (line.empty()) {
+            continue;
+        }
+
+        const auto tokens = SplitCsvLine(line);
+        if (tokens.size() != 3) {
+            out_error = "line " + std::to_string(line_number) + " expects 3 csv tokens";
+            return false;
+        }
+
+        const std::string npc_id = Trim(tokens[0]);
+        const std::string behavior = Trim(tokens[2]);
+        std::uint32_t max_health = 0;
+        if (npc_id.empty() || behavior.empty()) {
+            out_error = "line " + std::to_string(line_number) + " has empty npc fields";
+            return false;
+        }
+        if (!ParseUInt32Token(Trim(tokens[1]), max_health) || max_health == 0) {
+            out_error = "line " + std::to_string(line_number) + " has invalid npc max_health";
+            return false;
+        }
+        if (npc_ids.contains(npc_id)) {
+            out_error = "line " + std::to_string(line_number) + " duplicates npc id '" + npc_id + "'";
+            return false;
+        }
+
+        npc_ids.emplace(npc_id, true);
+        out_npcs.push_back(ModNpcDefinition{
+            .id = npc_id,
+            .max_health = max_health,
+            .behavior = behavior,
+        });
+    }
+
+    out_error.clear();
     return true;
 }
 

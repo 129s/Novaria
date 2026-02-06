@@ -35,6 +35,8 @@ bool TestLoadAllAndFingerprint() {
     std::filesystem::create_directories(test_root / "mod_ok_a", ec);
     std::filesystem::create_directories(test_root / "mod_ok_b", ec);
     std::filesystem::create_directories(test_root / "mod_no_manifest", ec);
+    std::filesystem::create_directories(test_root / "mod_ok_a" / "content", ec);
+    std::filesystem::create_directories(test_root / "mod_ok_b" / "content", ec);
 
     WriteTextFile(
         test_root / "mod_ok_a" / "mod.toml",
@@ -43,11 +45,20 @@ bool TestLoadAllAndFingerprint() {
         "description = \"A valid test mod\"\n"
         "dependencies = []\n");
     WriteTextFile(
+        test_root / "mod_ok_a" / "content" / "items.csv",
+        "wood_pickaxe,tool.mine_speed+1\n");
+    WriteTextFile(
+        test_root / "mod_ok_a" / "content" / "recipes.csv",
+        "recipe_pickaxe,wood_pickaxe,1,wood_pickaxe_plus,1\n");
+    WriteTextFile(
         test_root / "mod_ok_b" / "mod.toml",
         "name = \"mod_ok_b\"\n"
         "version = \"0.2.0\"\n"
         "description = \"Another valid test mod\"\n"
         "dependencies = [\"mod_ok_a\"]\n");
+    WriteTextFile(
+        test_root / "mod_ok_b" / "content" / "npcs.csv",
+        "slime_boss,200,boss.jump_charge\n");
 
     novaria::mod::ModLoader loader;
     std::string error;
@@ -64,6 +75,12 @@ bool TestLoadAllAndFingerprint() {
     passed &= Expect(
         manifests[1].dependencies.size() == 1 && manifests[1].dependencies[0] == "mod_ok_a",
         "Manifest dependencies should parse from TOML array.");
+    passed &= Expect(
+        manifests[0].items.size() == 1 && manifests[0].recipes.size() == 1,
+        "Mod content loader should parse item and recipe definitions.");
+    passed &= Expect(
+        manifests[1].npcs.size() == 1 && manifests[1].npcs[0].behavior == "boss.jump_charge",
+        "Mod content loader should parse npc definitions.");
 
     const std::string fingerprint_a = novaria::mod::ModLoader::BuildManifestFingerprint(manifests);
     passed &= Expect(!fingerprint_a.empty(), "Manifest fingerprint should not be empty.");
@@ -88,6 +105,13 @@ bool TestLoadAllAndFingerprint() {
         fingerprint_d != fingerprint_a,
         "Manifest fingerprint should change when dependency content changes.");
 
+    reordered[0].dependencies = manifests[1].dependencies;
+    reordered[0].npcs[0].behavior = "boss.frenzy";
+    const std::string fingerprint_e = novaria::mod::ModLoader::BuildManifestFingerprint(reordered);
+    passed &= Expect(
+        fingerprint_e != fingerprint_a,
+        "Manifest fingerprint should change when mod content definitions change.");
+
     loader.Shutdown();
     std::filesystem::remove_all(test_root, ec);
     return passed;
@@ -111,6 +135,38 @@ bool TestRejectInvalidManifest() {
     std::vector<novaria::mod::ModManifest> manifests;
     passed &= Expect(!loader.LoadAll(manifests, error), "LoadAll should fail when manifest is invalid.");
     passed &= Expect(!error.empty(), "Invalid manifest should return error message.");
+
+    loader.Shutdown();
+    std::filesystem::remove_all(test_root, ec);
+    return passed;
+}
+
+bool TestRejectInvalidContentDefinition() {
+    bool passed = true;
+    const std::filesystem::path test_root = BuildTestDirectory();
+    std::error_code ec;
+    std::filesystem::remove_all(test_root, ec);
+
+    std::filesystem::create_directories(test_root / "mod_bad_content" / "content", ec);
+    WriteTextFile(
+        test_root / "mod_bad_content" / "mod.toml",
+        "name = \"mod_bad_content\"\n"
+        "version = \"1.0.0\"\n");
+    WriteTextFile(
+        test_root / "mod_bad_content" / "content" / "recipes.csv",
+        "broken_recipe,wood,NaN,sword,1\n");
+
+    novaria::mod::ModLoader loader;
+    std::string error;
+    passed &= Expect(loader.Initialize(test_root, error), "Initialize should succeed for test root.");
+
+    std::vector<novaria::mod::ModManifest> manifests;
+    passed &= Expect(
+        !loader.LoadAll(manifests, error),
+        "LoadAll should fail when content definitions are invalid.");
+    passed &= Expect(
+        error.find("Invalid mod recipes file") != std::string::npos,
+        "Invalid content failure should include source file category.");
 
     loader.Shutdown();
     std::filesystem::remove_all(test_root, ec);
@@ -189,6 +245,7 @@ int main() {
     bool passed = true;
     passed &= TestLoadAllAndFingerprint();
     passed &= TestRejectInvalidManifest();
+    passed &= TestRejectInvalidContentDefinition();
     passed &= TestRejectMissingDependency();
     passed &= TestRejectCyclicDependency();
 
