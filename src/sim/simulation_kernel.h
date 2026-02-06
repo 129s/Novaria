@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace novaria::sim {
 
@@ -18,6 +19,7 @@ public:
 
     bool Initialize(std::string& out_error);
     void Shutdown();
+    void SubmitLocalCommand(const net::PlayerCommand& command);
     void Update(double fixed_delta_seconds);
 
 private:
@@ -26,6 +28,7 @@ private:
     world::IWorldService& world_service_;
     net::INetService& net_service_;
     script::IScriptHost& script_host_;
+    std::vector<net::PlayerCommand> pending_local_commands_;
 };
 
 }  // namespace novaria::sim

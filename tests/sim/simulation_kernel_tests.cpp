@@ -72,6 +72,7 @@ public:
     bool initialize_called = false;
     bool shutdown_called = false;
     int tick_count = 0;
+    std::vector<novaria::net::PlayerCommand> submitted_commands;
     std::vector<std::pair<std::uint64_t, std::size_t>> published_snapshots;
 
     bool Initialize(std::string& out_error) override {
@@ -94,7 +95,7 @@ public:
     }
 
     void SubmitLocalCommand(const novaria::net::PlayerCommand& command) override {
-        (void)command;
+        submitted_commands.push_back(command);
     }
 
     void PublishWorldSnapshot(std::uint64_t tick_index, std::size_t dirty_chunk_count) override {
@@ -164,6 +165,15 @@ bool TestUpdatePublishesDirtyChunkCount() {
         passed &= Expect(net.published_snapshots[1].second == 1, "Second snapshot dirty chunk count should be 1.");
     }
 
+    kernel.SubmitLocalCommand({.player_id = 12, .command_type = "jump", .payload = ""});
+    kernel.SubmitLocalCommand({.player_id = 12, .command_type = "attack", .payload = "light"});
+    kernel.Update(1.0 / 60.0);
+    passed &= Expect(net.submitted_commands.size() == 2, "Submitted commands should be forwarded on update.");
+    if (net.submitted_commands.size() == 2) {
+        passed &= Expect(net.submitted_commands[0].command_type == "jump", "First command type should match.");
+        passed &= Expect(net.submitted_commands[1].command_type == "attack", "Second command type should match.");
+    }
+
     kernel.Shutdown();
     passed &= Expect(script.shutdown_called, "Script shutdown should be called.");
     passed &= Expect(net.shutdown_called, "Net shutdown should be called.");
@@ -209,6 +219,26 @@ bool TestInitializeRollbackOnScriptFailure() {
     return passed;
 }
 
+bool TestSubmitCommandIgnoredBeforeInitialize() {
+    bool passed = true;
+
+    FakeWorldService world;
+    FakeNetService net;
+    FakeScriptHost script;
+    novaria::sim::SimulationKernel kernel(world, net, script);
+
+    kernel.SubmitLocalCommand({.player_id = 3, .command_type = "move", .payload = "left"});
+    std::string error;
+    passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
+    kernel.Update(1.0 / 60.0);
+
+    passed &= Expect(
+        net.submitted_commands.empty(),
+        "Command submitted before initialize should be ignored.");
+    kernel.Shutdown();
+    return passed;
+}
+
 }  // namespace
 
 int main() {
@@ -216,6 +246,7 @@ int main() {
     passed &= TestUpdatePublishesDirtyChunkCount();
     passed &= TestInitializeRollbackOnNetFailure();
     passed &= TestInitializeRollbackOnScriptFailure();
+    passed &= TestSubmitCommandIgnoredBeforeInitialize();
 
     if (!passed) {
         return 1;

@@ -29,6 +29,7 @@ bool SimulationKernel::Initialize(std::string& out_error) {
     }
 
     tick_index_ = 0;
+    pending_local_commands_.clear();
     initialized_ = true;
     out_error.clear();
     return true;
@@ -42,7 +43,16 @@ void SimulationKernel::Shutdown() {
     script_host_.Shutdown();
     net_service_.Shutdown();
     world_service_.Shutdown();
+    pending_local_commands_.clear();
     initialized_ = false;
+}
+
+void SimulationKernel::SubmitLocalCommand(const net::PlayerCommand& command) {
+    if (!initialized_) {
+        return;
+    }
+
+    pending_local_commands_.push_back(command);
 }
 
 void SimulationKernel::Update(double fixed_delta_seconds) {
@@ -54,6 +64,11 @@ void SimulationKernel::Update(double fixed_delta_seconds) {
         .tick_index = tick_index_,
         .fixed_delta_seconds = fixed_delta_seconds,
     };
+
+    for (const auto& command : pending_local_commands_) {
+        net_service_.SubmitLocalCommand(command);
+    }
+    pending_local_commands_.clear();
 
     net_service_.Tick(tick_context);
     world_service_.Tick(tick_context);

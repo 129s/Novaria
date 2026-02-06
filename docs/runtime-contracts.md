@@ -8,6 +8,7 @@
 
 - `sim::TickContext`：统一 Tick 输入（`tick_index`、`fixed_delta_seconds`）。
 - `sim::SimulationKernel`：固定顺序编排：
+  0. 转发本地命令到 `net`
   1. `net.Tick`
   2. `world.Tick`
   3. `script.Tick`
