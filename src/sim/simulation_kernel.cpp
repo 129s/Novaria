@@ -37,6 +37,7 @@ bool SimulationKernel::Initialize(std::string& out_error) {
         return false;
     }
 
+    net_service_.RequestConnect();
     tick_index_ = 0;
     pending_local_commands_.clear();
     dropped_local_command_count_ = 0;
@@ -144,6 +145,10 @@ void SimulationKernel::ExecuteWorldCommandIfMatched(const net::PlayerCommand& co
 void SimulationKernel::Update(double fixed_delta_seconds) {
     if (!initialized_) {
         return;
+    }
+
+    if (net_service_.SessionState() == net::NetSessionState::Disconnected) {
+        net_service_.RequestConnect();
     }
 
     const TickContext tick_context{

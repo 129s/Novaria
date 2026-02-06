@@ -103,6 +103,8 @@ public:
     bool initialize_called = false;
     bool shutdown_called = false;
     int tick_count = 0;
+    int connect_request_count = 0;
+    int disconnect_request_count = 0;
     std::vector<novaria::net::PlayerCommand> submitted_commands;
     std::vector<std::pair<std::uint64_t, std::size_t>> published_snapshots;
     std::vector<std::vector<std::string>> published_snapshot_payloads;
@@ -124,10 +126,12 @@ public:
     }
 
     void RequestConnect() override {
+        ++connect_request_count;
         session_state = novaria::net::NetSessionState::Connected;
     }
 
     void RequestDisconnect() override {
+        ++disconnect_request_count;
         session_state = novaria::net::NetSessionState::Disconnected;
     }
 
@@ -349,6 +353,51 @@ bool TestInitializeRollbackOnScriptFailure() {
     passed &= Expect(script.initialize_called, "Script initialize should be called.");
     passed &= Expect(net.shutdown_called, "Net should rollback via shutdown.");
     passed &= Expect(world.shutdown_called, "World should rollback via shutdown.");
+    return passed;
+}
+
+bool TestInitializeRequestsNetConnect() {
+    bool passed = true;
+
+    FakeWorldService world;
+    FakeNetService net;
+    FakeScriptHost script;
+    novaria::sim::SimulationKernel kernel(world, net, script);
+
+    std::string error;
+    passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
+    passed &= Expect(net.connect_request_count == 1, "Kernel initialize should request one net connect.");
+    passed &= Expect(
+        net.SessionState() == novaria::net::NetSessionState::Connected,
+        "Fake net should become connected after connect request.");
+
+    kernel.Shutdown();
+    return passed;
+}
+
+bool TestUpdateRequestsReconnectWhenNetDisconnected() {
+    bool passed = true;
+
+    FakeWorldService world;
+    FakeNetService net;
+    FakeScriptHost script;
+    novaria::sim::SimulationKernel kernel(world, net, script);
+
+    std::string error;
+    passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
+    passed &= Expect(net.connect_request_count == 1, "Initialize should request initial net connect.");
+
+    net.session_state = novaria::net::NetSessionState::Disconnected;
+    kernel.Update(1.0 / 60.0);
+
+    passed &= Expect(
+        net.connect_request_count == 2,
+        "Kernel update should request reconnect when net session is disconnected.");
+    passed &= Expect(
+        net.SessionState() == novaria::net::NetSessionState::Connected,
+        "Reconnect request should recover fake net session.");
+
+    kernel.Shutdown();
     return passed;
 }
 
@@ -574,6 +623,8 @@ int main() {
     passed &= TestUpdatePublishesDirtyChunkCount();
     passed &= TestInitializeRollbackOnNetFailure();
     passed &= TestInitializeRollbackOnScriptFailure();
+    passed &= TestInitializeRequestsNetConnect();
+    passed &= TestUpdateRequestsReconnectWhenNetDisconnected();
     passed &= TestSubmitCommandIgnoredBeforeInitialize();
     passed &= TestLocalCommandQueueCapAndDroppedCount();
     passed &= TestApplyRemoteChunkPayload();
