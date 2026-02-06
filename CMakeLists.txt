@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(NOVARIA_WARNINGS_AS_ERRORS "Treat compiler warnings as errors." OFF)
 option(NOVARIA_FETCH_SDL3 "Fetch SDL3 when local package is unavailable." OFF)
+option(NOVARIA_BUILD_TESTS "Build unit tests." ON)
 
 set(NOVARIA_LOCAL_SDL3_DIR "${CMAKE_SOURCE_DIR}/third_party/SDL3-3.2.0/cmake")
 if(NOT DEFINED SDL3_DIR AND EXISTS "${NOVARIA_LOCAL_SDL3_DIR}/SDL3Config.cmake")
@@ -50,7 +51,11 @@ add_executable(
     src/main.cpp
     src/app/game_app.cpp
     src/app/game_loop.cpp
+    src/sim/simulation_kernel.cpp
     src/platform/sdl_context.cpp
+    src/world/world_service_basic.cpp
+    src/net/net_service_stub.cpp
+    src/script/script_host_stub.cpp
     src/core/logger.cpp
     src/core/config.cpp
 )
@@ -79,4 +84,30 @@ else()
     if(NOVARIA_WARNINGS_AS_ERRORS)
         target_compile_options(novaria PRIVATE -Werror)
     endif()
+endif()
+
+if(NOVARIA_BUILD_TESTS)
+    enable_testing()
+
+    add_executable(
+        novaria_world_service_tests
+        tests/world/world_service_basic_tests.cpp
+        src/world/world_service_basic.cpp
+        src/core/logger.cpp
+    )
+    target_include_directories(novaria_world_service_tests PRIVATE src)
+
+    if(MSVC)
+        target_compile_options(novaria_world_service_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
+        if(NOVARIA_WARNINGS_AS_ERRORS)
+            target_compile_options(novaria_world_service_tests PRIVATE /WX)
+        endif()
+    else()
+        target_compile_options(novaria_world_service_tests PRIVATE -Wall -Wextra -Wpedantic)
+        if(NOVARIA_WARNINGS_AS_ERRORS)
+            target_compile_options(novaria_world_service_tests PRIVATE -Werror)
+        endif()
+    endif()
+
+    add_test(NAME novaria_world_service_tests COMMAND novaria_world_service_tests)
 endif()

@@ -7,6 +7,9 @@
 
 namespace novaria::app {
 
+GameApp::GameApp()
+    : simulation_kernel_(world_service_, net_service_, script_host_) {}
+
 bool GameApp::Initialize(const std::filesystem::path& config_path) {
     std::string config_error;
     if (!core::ConfigLoader::Load(config_path, config_, config_error)) {
@@ -17,6 +20,13 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
 
     if (!sdl_context_.Initialize(config_)) {
         core::Logger::Error("app", "SDL3 initialization failed.");
+        return false;
+    }
+
+    std::string runtime_error;
+    if (!simulation_kernel_.Initialize(runtime_error)) {
+        core::Logger::Error("app", "Simulation kernel initialization failed: " + runtime_error);
+        sdl_context_.Shutdown();
         return false;
     }
 
@@ -40,7 +50,7 @@ int GameApp::Run() {
             }
             return !quit_requested_;
         },
-        [](double) {},
+        [this](double fixed_delta_seconds) { simulation_kernel_.Update(fixed_delta_seconds); },
         [this](float interpolation_alpha) { sdl_context_.RenderFrame(interpolation_alpha); });
 
     core::Logger::Info("app", "Main loop exited.");
@@ -52,6 +62,7 @@ void GameApp::Shutdown() {
         return;
     }
 
+    simulation_kernel_.Shutdown();
     sdl_context_.Shutdown();
     initialized_ = false;
     core::Logger::Info("app", "Novaria shutdown complete.");
