@@ -7,6 +7,7 @@
 #include "script/script_host_stub.h"
 #include "world/world_service_basic.h"
 
+#include <cstdint>
 #include <filesystem>
 
 namespace novaria::app {
@@ -24,6 +25,9 @@ private:
     bool quit_requested_ = false;
     core::GameConfig config_;
     platform::SdlContext sdl_context_;
+    platform::InputActions frame_actions_;
+    std::uint32_t local_player_id_ = 1;
+    std::uint64_t script_ping_counter_ = 0;
     world::WorldServiceBasic world_service_;
     net::NetServiceStub net_service_;
     script::ScriptHostStub script_host_;

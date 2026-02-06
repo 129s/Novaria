@@ -70,12 +70,36 @@ bool SdlContext::Initialize(const core::GameConfig& config) {
     return true;
 }
 
-bool SdlContext::PumpEvents(bool& quit_requested) {
+bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
+    (void)out_actions;
+
     SDL_Event event{};
     while (SDL_PollEvent(&event)) {
         if (IsQuitEvent(event.type)) {
             quit_requested = true;
         }
+
+#if defined(SDL_EVENT_KEY_DOWN)
+        if (event.type == SDL_EVENT_KEY_DOWN) {
+#if defined(SDL_SCANCODE_J)
+            if (event.key.scancode == SDL_SCANCODE_J) {
+                out_actions.send_jump_command = true;
+            }
+#endif
+
+#if defined(SDL_SCANCODE_K)
+            if (event.key.scancode == SDL_SCANCODE_K) {
+                out_actions.send_attack_command = true;
+            }
+#endif
+
+#if defined(SDL_SCANCODE_F1)
+            if (event.key.scancode == SDL_SCANCODE_F1) {
+                out_actions.emit_script_ping = true;
+            }
+#endif
+        }
+#endif
     }
     return true;
 }

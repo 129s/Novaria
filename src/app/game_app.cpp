@@ -44,10 +44,35 @@ int GameApp::Run() {
     GameLoop loop;
     loop.Run(
         [this]() -> bool {
-            if (!sdl_context_.PumpEvents(quit_requested_)) {
+            frame_actions_ = {};
+            if (!sdl_context_.PumpEvents(quit_requested_, frame_actions_)) {
                 core::Logger::Error("platform", "Event pump failed.");
                 return false;
             }
+
+            if (frame_actions_.send_jump_command) {
+                simulation_kernel_.SubmitLocalCommand(net::PlayerCommand{
+                    .player_id = local_player_id_,
+                    .command_type = "jump",
+                    .payload = "",
+                });
+            }
+
+            if (frame_actions_.send_attack_command) {
+                simulation_kernel_.SubmitLocalCommand(net::PlayerCommand{
+                    .player_id = local_player_id_,
+                    .command_type = "attack",
+                    .payload = "light",
+                });
+            }
+
+            if (frame_actions_.emit_script_ping) {
+                script_host_.DispatchEvent(script::ScriptEvent{
+                    .event_name = "debug.ping",
+                    .payload = std::to_string(script_ping_counter_++),
+                });
+            }
+
             return !quit_requested_;
         },
         [this](double fixed_delta_seconds) { simulation_kernel_.Update(fixed_delta_seconds); },

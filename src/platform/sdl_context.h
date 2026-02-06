@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/config.h"
+#include "platform/input_actions.h"
 
 #include <SDL3/SDL.h>
 
@@ -11,7 +12,7 @@ public:
     ~SdlContext();
 
     bool Initialize(const core::GameConfig& config);
-    bool PumpEvents(bool& quit_requested);
+    bool PumpEvents(bool& quit_requested, InputActions& out_actions);
     void RenderFrame(float interpolation_alpha);
     void Shutdown();
 
