@@ -55,6 +55,7 @@ bool SimulationKernel::Initialize(std::string& out_error) {
 
     net_service_.RequestConnect();
     last_observed_net_session_state_ = net_service_.SessionState();
+    next_auto_reconnect_tick_ = 0;
     tick_index_ = 0;
     pending_local_commands_.clear();
     dropped_local_command_count_ = 0;
@@ -73,6 +74,7 @@ void SimulationKernel::Shutdown() {
     world_service_.Shutdown();
     pending_local_commands_.clear();
     last_observed_net_session_state_ = net::NetSessionState::Disconnected;
+    next_auto_reconnect_tick_ = 0;
     initialized_ = false;
 }
 
@@ -165,8 +167,10 @@ void SimulationKernel::Update(double fixed_delta_seconds) {
         return;
     }
 
-    if (net_service_.SessionState() == net::NetSessionState::Disconnected) {
+    if (net_service_.SessionState() == net::NetSessionState::Disconnected &&
+        tick_index_ >= next_auto_reconnect_tick_) {
         net_service_.RequestConnect();
+        next_auto_reconnect_tick_ = tick_index_ + kAutoReconnectRetryIntervalTicks;
     }
 
     const TickContext tick_context{
@@ -188,6 +192,11 @@ void SimulationKernel::Update(double fixed_delta_seconds) {
             .payload = std::string(SessionStatePayload(current_session_state)) + "," +
                 std::to_string(tick_index_),
         });
+
+        if (current_session_state == net::NetSessionState::Disconnected) {
+            next_auto_reconnect_tick_ = tick_index_ + kAutoReconnectRetryIntervalTicks;
+        }
+
         last_observed_net_session_state_ = current_session_state;
     }
 

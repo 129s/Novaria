@@ -409,6 +409,50 @@ bool TestUpdateRequestsReconnectWhenNetDisconnected() {
     return passed;
 }
 
+bool TestReconnectRequestsAreRateLimitedByTickInterval() {
+    bool passed = true;
+
+    FakeWorldService world;
+    FakeNetService net;
+    FakeScriptHost script;
+    net.auto_progress_connection = false;
+    novaria::sim::SimulationKernel kernel(world, net, script);
+
+    std::string error;
+    passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
+    passed &= Expect(net.connect_request_count == 1, "Initialize should request initial net connect.");
+
+    net.session_state = novaria::net::NetSessionState::Disconnected;
+    kernel.Update(1.0 / 60.0);
+    passed &= Expect(
+        net.connect_request_count == 2,
+        "First disconnected update should request reconnect.");
+
+    net.session_state = novaria::net::NetSessionState::Disconnected;
+    kernel.Update(1.0 / 60.0);
+    passed &= Expect(
+        net.connect_request_count == 2,
+        "Reconnect request should be rate-limited before interval is reached.");
+
+    while (kernel.CurrentTick() <
+           novaria::sim::SimulationKernel::kAutoReconnectRetryIntervalTicks + 1) {
+        net.session_state = novaria::net::NetSessionState::Disconnected;
+        kernel.Update(1.0 / 60.0);
+    }
+    passed &= Expect(
+        net.connect_request_count == 2,
+        "Reconnect count should remain unchanged before recalculated retry interval boundary.");
+
+    net.session_state = novaria::net::NetSessionState::Disconnected;
+    kernel.Update(1.0 / 60.0);
+    passed &= Expect(
+        net.connect_request_count == 3,
+        "Reconnect should trigger once retry interval boundary is reached.");
+
+    kernel.Shutdown();
+    return passed;
+}
+
 bool TestNetSessionStateChangeDispatchesScriptEvent() {
     bool passed = true;
 
@@ -731,6 +775,7 @@ int main() {
     passed &= TestInitializeRollbackOnScriptFailure();
     passed &= TestInitializeRequestsNetConnect();
     passed &= TestUpdateRequestsReconnectWhenNetDisconnected();
+    passed &= TestReconnectRequestsAreRateLimitedByTickInterval();
     passed &= TestNetSessionStateChangeDispatchesScriptEvent();
     passed &= TestSubmitCommandIgnoredBeforeInitialize();
     passed &= TestLocalCommandQueueCapAndDroppedCount();

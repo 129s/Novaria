@@ -15,6 +15,7 @@ namespace novaria::sim {
 class SimulationKernel final {
 public:
     static constexpr std::size_t kMaxPendingLocalCommands = 1024;
+    static constexpr std::uint64_t kAutoReconnectRetryIntervalTicks = 120;
 
     SimulationKernel(
         world::IWorldService& world_service,
@@ -41,6 +42,7 @@ private:
     std::vector<net::PlayerCommand> pending_local_commands_;
     std::size_t dropped_local_command_count_ = 0;
     net::NetSessionState last_observed_net_session_state_ = net::NetSessionState::Disconnected;
+    std::uint64_t next_auto_reconnect_tick_ = 0;
 };
 
 }  // namespace novaria::sim
