@@ -133,6 +133,26 @@ NetSessionState NetServiceStub::SessionState() const {
     return session_state_;
 }
 
+NetDiagnosticsSnapshot NetServiceStub::DiagnosticsSnapshot() const {
+    return NetDiagnosticsSnapshot{
+        .session_state = session_state_,
+        .session_transition_count = session_transition_count_,
+        .connected_transition_count = connected_transition_count_,
+        .connect_request_count = connect_request_count_,
+        .timeout_disconnect_count = timeout_disconnect_count_,
+        .manual_disconnect_count = manual_disconnect_count_,
+        .ignored_heartbeat_count = ignored_heartbeat_count_,
+        .dropped_command_count = dropped_command_count_,
+        .dropped_command_disconnected_count = dropped_command_disconnected_count_,
+        .dropped_command_queue_full_count = dropped_command_queue_full_count_,
+        .dropped_remote_chunk_payload_count = dropped_remote_chunk_payload_count_,
+        .dropped_remote_chunk_payload_disconnected_count =
+            dropped_remote_chunk_payload_disconnected_count_,
+        .dropped_remote_chunk_payload_queue_full_count =
+            dropped_remote_chunk_payload_queue_full_count_,
+    };
+}
+
 void NetServiceStub::Tick(const sim::TickContext& tick_context) {
     if (!initialized_) {
         return;

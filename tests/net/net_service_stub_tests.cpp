@@ -58,6 +58,18 @@ int main() {
     passed &= Expect(
         net_service.LastPublishedSnapshotTick() == std::numeric_limits<std::uint64_t>::max(),
         "Last snapshot tick should be sentinel before first publish.");
+    {
+        const novaria::net::NetDiagnosticsSnapshot snapshot = net_service.DiagnosticsSnapshot();
+        passed &= Expect(
+            snapshot.session_state == novaria::net::NetSessionState::Disconnected,
+            "Diagnostics snapshot should expose disconnected initial session state.");
+        passed &= Expect(
+            snapshot.connect_request_count == 0 &&
+                snapshot.timeout_disconnect_count == 0 &&
+                snapshot.dropped_command_count == 0 &&
+                snapshot.dropped_remote_chunk_payload_count == 0,
+            "Diagnostics snapshot counters should match initial zero state.");
+    }
 
     net_service.NotifyHeartbeatReceived(0);
     net_service.SubmitLocalCommand({.player_id = 1, .command_type = "offline", .payload = ""});
@@ -206,6 +218,17 @@ int main() {
     passed &= Expect(
         net_service.DroppedRemoteChunkPayloadQueueFullCount() == 5,
         "Queue-full remote payload drop reason counter should track overflow.");
+    {
+        const novaria::net::NetDiagnosticsSnapshot snapshot = net_service.DiagnosticsSnapshot();
+        passed &= Expect(
+            snapshot.session_state == novaria::net::NetSessionState::Connected,
+            "Diagnostics snapshot should expose connected session state.");
+        passed &= Expect(
+            snapshot.dropped_command_count == net_service.DroppedCommandCount() &&
+                snapshot.dropped_remote_chunk_payload_count ==
+                    net_service.DroppedRemoteChunkPayloadCount(),
+            "Diagnostics snapshot drop counters should mirror service counters.");
+    }
 
     auto remote_payloads = net_service.ConsumeRemoteChunkPayloads();
     passed &= Expect(

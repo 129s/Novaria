@@ -22,6 +22,7 @@ public:
     void RequestDisconnect() override;
     void NotifyHeartbeatReceived(std::uint64_t tick_index) override;
     NetSessionState SessionState() const override;
+    NetDiagnosticsSnapshot DiagnosticsSnapshot() const override;
     void Tick(const sim::TickContext& tick_context) override;
     void SubmitLocalCommand(const PlayerCommand& command) override;
     std::vector<std::string> ConsumeRemoteChunkPayloads() override;

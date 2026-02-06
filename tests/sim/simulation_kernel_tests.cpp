@@ -146,6 +146,12 @@ public:
         return session_state;
     }
 
+    novaria::net::NetDiagnosticsSnapshot DiagnosticsSnapshot() const override {
+        return novaria::net::NetDiagnosticsSnapshot{
+            .session_state = session_state,
+        };
+    }
+
     void Tick(const novaria::sim::TickContext& tick_context) override {
         (void)tick_context;
         if (session_state == novaria::net::NetSessionState::Connecting &&

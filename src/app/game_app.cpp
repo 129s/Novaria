@@ -204,24 +204,25 @@ int GameApp::Run() {
             }
 
             last_net_diagnostics_tick_ = current_tick;
+            const net::NetDiagnosticsSnapshot diagnostics = net_service_.DiagnosticsSnapshot();
             core::Logger::Info(
                 "net",
                 "Diagnostics: tick=" + std::to_string(current_tick) +
-                    ", state=" + NetSessionStateName(net_service_.SessionState()) +
-                    ", transitions=" + std::to_string(net_service_.SessionTransitionCount()) +
-                    ", connected_transitions=" + std::to_string(net_service_.ConnectedTransitionCount()) +
-                    ", connect_requests=" + std::to_string(net_service_.ConnectRequestCount()) +
-                    ", timeout_disconnects=" + std::to_string(net_service_.TimeoutDisconnectCount()) +
-                    ", manual_disconnects=" + std::to_string(net_service_.ManualDisconnectCount()) +
+                    ", state=" + NetSessionStateName(diagnostics.session_state) +
+                    ", transitions=" + std::to_string(diagnostics.session_transition_count) +
+                    ", connected_transitions=" + std::to_string(diagnostics.connected_transition_count) +
+                    ", connect_requests=" + std::to_string(diagnostics.connect_request_count) +
+                    ", timeout_disconnects=" + std::to_string(diagnostics.timeout_disconnect_count) +
+                    ", manual_disconnects=" + std::to_string(diagnostics.manual_disconnect_count) +
                     ", dropped_commands(total/disconnected/queue_full)=" +
-                    std::to_string(net_service_.DroppedCommandCount()) + "/" +
-                    std::to_string(net_service_.DroppedCommandDisconnectedCount()) + "/" +
-                    std::to_string(net_service_.DroppedCommandQueueFullCount()) +
+                    std::to_string(diagnostics.dropped_command_count) + "/" +
+                    std::to_string(diagnostics.dropped_command_disconnected_count) + "/" +
+                    std::to_string(diagnostics.dropped_command_queue_full_count) +
                     ", dropped_payloads(total/disconnected/queue_full)=" +
-                    std::to_string(net_service_.DroppedRemoteChunkPayloadCount()) + "/" +
-                    std::to_string(net_service_.DroppedRemoteChunkPayloadDisconnectedCount()) + "/" +
-                    std::to_string(net_service_.DroppedRemoteChunkPayloadQueueFullCount()) +
-                    ", ignored_heartbeats=" + std::to_string(net_service_.IgnoredHeartbeatCount()));
+                    std::to_string(diagnostics.dropped_remote_chunk_payload_count) + "/" +
+                    std::to_string(diagnostics.dropped_remote_chunk_payload_disconnected_count) + "/" +
+                    std::to_string(diagnostics.dropped_remote_chunk_payload_queue_full_count) +
+                    ", ignored_heartbeats=" + std::to_string(diagnostics.ignored_heartbeat_count));
         },
         [this](float interpolation_alpha) { sdl_context_.RenderFrame(interpolation_alpha); });
 
@@ -235,15 +236,16 @@ void GameApp::Shutdown() {
     }
 
     std::string save_error;
+    const net::NetDiagnosticsSnapshot diagnostics = net_service_.DiagnosticsSnapshot();
     const save::WorldSaveState save_state{
         .tick_index = simulation_kernel_.CurrentTick(),
         .local_player_id = local_player_id_,
         .mod_manifest_fingerprint = mod_manifest_fingerprint_,
-        .debug_net_session_transitions = net_service_.SessionTransitionCount(),
-        .debug_net_timeout_disconnects = net_service_.TimeoutDisconnectCount(),
-        .debug_net_manual_disconnects = net_service_.ManualDisconnectCount(),
-        .debug_net_dropped_commands = net_service_.DroppedCommandCount(),
-        .debug_net_dropped_remote_payloads = net_service_.DroppedRemoteChunkPayloadCount(),
+        .debug_net_session_transitions = diagnostics.session_transition_count,
+        .debug_net_timeout_disconnects = diagnostics.timeout_disconnect_count,
+        .debug_net_manual_disconnects = diagnostics.manual_disconnect_count,
+        .debug_net_dropped_commands = diagnostics.dropped_command_count,
+        .debug_net_dropped_remote_payloads = diagnostics.dropped_remote_chunk_payload_count,
     };
     if (!save_repository_.SaveWorldState(save_state, save_error)) {
         core::Logger::Warn("save", "World save write failed: " + save_error);

@@ -46,6 +46,7 @@
   - `RequestConnect/RequestDisconnect`
   - `NotifyHeartbeatReceived`
   - `SessionState`
+  - `DiagnosticsSnapshot`
   - `Tick`
   - `SubmitLocalCommand`
   - `PublishWorldSnapshot(tick_index, encoded_dirty_chunks)`

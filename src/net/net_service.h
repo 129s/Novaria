@@ -21,6 +21,22 @@ struct PlayerCommand final {
     std::string payload;
 };
 
+struct NetDiagnosticsSnapshot final {
+    NetSessionState session_state = NetSessionState::Disconnected;
+    std::uint64_t session_transition_count = 0;
+    std::uint64_t connected_transition_count = 0;
+    std::uint64_t connect_request_count = 0;
+    std::uint64_t timeout_disconnect_count = 0;
+    std::uint64_t manual_disconnect_count = 0;
+    std::uint64_t ignored_heartbeat_count = 0;
+    std::size_t dropped_command_count = 0;
+    std::size_t dropped_command_disconnected_count = 0;
+    std::size_t dropped_command_queue_full_count = 0;
+    std::size_t dropped_remote_chunk_payload_count = 0;
+    std::size_t dropped_remote_chunk_payload_disconnected_count = 0;
+    std::size_t dropped_remote_chunk_payload_queue_full_count = 0;
+};
+
 class INetService {
 public:
     virtual ~INetService() = default;
@@ -31,6 +47,7 @@ public:
     virtual void RequestDisconnect() = 0;
     virtual void NotifyHeartbeatReceived(std::uint64_t tick_index) = 0;
     virtual NetSessionState SessionState() const = 0;
+    virtual NetDiagnosticsSnapshot DiagnosticsSnapshot() const = 0;
     virtual void Tick(const sim::TickContext& tick_context) = 0;
     virtual void SubmitLocalCommand(const PlayerCommand& command) = 0;
     virtual std::vector<std::string> ConsumeRemoteChunkPayloads() = 0;
