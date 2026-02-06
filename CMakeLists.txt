@@ -140,6 +140,16 @@ if(NOVARIA_BUILD_TESTS)
     target_include_directories(novaria_net_service_stub_tests PRIVATE src)
 
     add_executable(
+        novaria_udp_transport_tests
+        tests/net/udp_transport_tests.cpp
+        src/net/udp_transport.cpp
+    )
+    target_include_directories(novaria_udp_transport_tests PRIVATE src)
+    if(WIN32)
+        target_link_libraries(novaria_udp_transport_tests PRIVATE ws2_32)
+    endif()
+
+    add_executable(
         novaria_world_service_tests
         tests/world/world_service_basic_tests.cpp
         src/world/world_service_basic.cpp
@@ -225,6 +235,7 @@ if(NOVARIA_BUILD_TESTS)
     if(MSVC)
         target_compile_options(novaria_config_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_net_service_stub_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
+        target_compile_options(novaria_udp_transport_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_world_service_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_script_host_stub_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_script_host_runtime_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
@@ -237,6 +248,7 @@ if(NOVARIA_BUILD_TESTS)
         if(NOVARIA_WARNINGS_AS_ERRORS)
             target_compile_options(novaria_config_tests PRIVATE /WX)
             target_compile_options(novaria_net_service_stub_tests PRIVATE /WX)
+            target_compile_options(novaria_udp_transport_tests PRIVATE /WX)
             target_compile_options(novaria_world_service_tests PRIVATE /WX)
             target_compile_options(novaria_script_host_stub_tests PRIVATE /WX)
             target_compile_options(novaria_script_host_runtime_tests PRIVATE /WX)
@@ -250,6 +262,7 @@ if(NOVARIA_BUILD_TESTS)
     else()
         target_compile_options(novaria_config_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_net_service_stub_tests PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(novaria_udp_transport_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_world_service_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_script_host_stub_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_script_host_runtime_tests PRIVATE -Wall -Wextra -Wpedantic)
@@ -262,6 +275,7 @@ if(NOVARIA_BUILD_TESTS)
         if(NOVARIA_WARNINGS_AS_ERRORS)
             target_compile_options(novaria_config_tests PRIVATE -Werror)
             target_compile_options(novaria_net_service_stub_tests PRIVATE -Werror)
+            target_compile_options(novaria_udp_transport_tests PRIVATE -Werror)
             target_compile_options(novaria_world_service_tests PRIVATE -Werror)
             target_compile_options(novaria_script_host_stub_tests PRIVATE -Werror)
             target_compile_options(novaria_script_host_runtime_tests PRIVATE -Werror)
@@ -276,6 +290,7 @@ if(NOVARIA_BUILD_TESTS)
 
     add_test(NAME novaria_config_tests COMMAND novaria_config_tests)
     add_test(NAME novaria_net_service_stub_tests COMMAND novaria_net_service_stub_tests)
+    add_test(NAME novaria_udp_transport_tests COMMAND novaria_udp_transport_tests)
     add_test(NAME novaria_world_service_tests COMMAND novaria_world_service_tests)
     add_test(NAME novaria_script_host_stub_tests COMMAND novaria_script_host_stub_tests)
     add_test(NAME novaria_script_host_runtime_tests COMMAND novaria_script_host_runtime_tests)

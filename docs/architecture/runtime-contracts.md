@@ -81,6 +81,7 @@
 - 心跳超时断线：`kHeartbeatTimeoutTicks`。
 - 断线态拒收本地命令与远端 payload。
 - 提供可观测诊断：迁移计数、丢弃计数、最近迁移原因、最后心跳 Tick。
+- `UdpTransport` 已提供可绑定端口、非阻塞收发、Loopback 自测能力（基础传输层骨架）。
 
 ### 3.4 `script`
 
