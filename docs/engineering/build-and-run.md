@@ -2,7 +2,7 @@
 
 - `status`: authoritative
 - `owner`: @novaria-core
-- `last_verified_commit`: 6e0a7a5
+- `last_verified_commit`: 2fc8b1d
 - `updated`: 2026-02-06
 
 ## 1. 前置条件
@@ -76,6 +76,11 @@ net_udp_local_port = 0
 net_udp_remote_host = "127.0.0.1"
 net_udp_remote_port = 0
 ```
+
+同机双进程联调示例：
+
+- 进程 A：`net_backend = "udp_loopback"`，`net_udp_local_port = 25000`，`net_udp_remote_port = 25001`
+- 进程 B：`net_backend = "udp_loopback"`，`net_udp_local_port = 25001`，`net_udp_remote_port = 25000`
 
 ## 6. 调试热键（当前）
 

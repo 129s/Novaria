@@ -32,10 +32,15 @@ int main() {
     passed &= Expect(
         net_service.SessionState() == novaria::net::NetSessionState::Connecting,
         "RequestConnect should move state to connecting.");
-    net_service.Tick({.tick_index = 1, .fixed_delta_seconds = 1.0 / 60.0});
+    for (std::uint64_t tick = 1; tick <= 10; ++tick) {
+        net_service.Tick({.tick_index = tick, .fixed_delta_seconds = 1.0 / 60.0});
+        if (net_service.SessionState() == novaria::net::NetSessionState::Connected) {
+            break;
+        }
+    }
     passed &= Expect(
         net_service.SessionState() == novaria::net::NetSessionState::Connected,
-        "Tick should move connecting state to connected.");
+        "Handshake ticks should move connecting state to connected.");
 
     net_service.SubmitLocalCommand({.player_id = 1, .command_type = "jump", .payload = "{}"});
     net_service.Tick({.tick_index = 2, .fixed_delta_seconds = 1.0 / 60.0});
@@ -78,8 +83,18 @@ int main() {
 
     host_a.RequestConnect();
     host_b.RequestConnect();
-    host_a.Tick({.tick_index = 1, .fixed_delta_seconds = 1.0 / 60.0});
-    host_b.Tick({.tick_index = 1, .fixed_delta_seconds = 1.0 / 60.0});
+    for (std::uint64_t tick = 1; tick <= 20; ++tick) {
+        host_a.Tick({.tick_index = tick, .fixed_delta_seconds = 1.0 / 60.0});
+        host_b.Tick({.tick_index = tick, .fixed_delta_seconds = 1.0 / 60.0});
+        if (host_a.SessionState() == novaria::net::NetSessionState::Connected &&
+            host_b.SessionState() == novaria::net::NetSessionState::Connected) {
+            break;
+        }
+    }
+    passed &= Expect(
+        host_a.SessionState() == novaria::net::NetSessionState::Connected &&
+            host_b.SessionState() == novaria::net::NetSessionState::Connected,
+        "Both hosts should enter connected state after handshake.");
 
     host_a.PublishWorldSnapshot(2, {"cross_process_payload"});
     host_a.Tick({.tick_index = 2, .fixed_delta_seconds = 1.0 / 60.0});
