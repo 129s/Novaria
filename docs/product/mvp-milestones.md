@@ -2,7 +2,7 @@
 
 - `status`: active
 - `owner`: @novaria-core
-- `last_verified_commit`: 1937135
+- `last_verified_commit`: 23daedb
 - `updated`: 2026-02-06
 
 ## 1. 里程碑清单
