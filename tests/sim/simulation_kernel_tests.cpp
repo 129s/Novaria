@@ -24,6 +24,7 @@ public:
     int tick_count = 0;
     std::vector<std::vector<novaria::world::ChunkCoord>> dirty_batches;
     std::vector<novaria::world::ChunkSnapshot> available_snapshots;
+    std::vector<novaria::world::ChunkSnapshot> applied_snapshots;
     std::size_t dirty_batch_cursor = 0;
 
     bool Initialize(std::string& out_error) override {
@@ -76,7 +77,7 @@ public:
     }
 
     bool ApplyChunkSnapshot(const novaria::world::ChunkSnapshot& snapshot, std::string& out_error) override {
-        (void)snapshot;
+        applied_snapshots.push_back(snapshot);
         out_error.clear();
         return true;
     }
@@ -283,6 +284,50 @@ bool TestSubmitCommandIgnoredBeforeInitialize() {
     return passed;
 }
 
+bool TestApplyRemoteChunkPayload() {
+    bool passed = true;
+
+    FakeWorldService world;
+    FakeNetService net;
+    FakeScriptHost script;
+    novaria::sim::SimulationKernel kernel(world, net, script);
+
+    std::string error;
+    passed &= Expect(
+        !kernel.ApplyRemoteChunkPayload("0,0,1,1", error),
+        "ApplyRemoteChunkPayload should fail before initialize.");
+
+    passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
+    passed &= Expect(
+        !kernel.ApplyRemoteChunkPayload("invalid_payload", error),
+        "ApplyRemoteChunkPayload should fail for invalid payload.");
+
+    novaria::world::ChunkSnapshot snapshot{
+        .chunk_coord = {.x = 2, .y = -3},
+        .tiles = {1, 2, 3, 4},
+    };
+    std::string payload;
+    passed &= Expect(
+        novaria::world::WorldSnapshotCodec::EncodeChunkSnapshot(snapshot, payload, error),
+        "EncodeChunkSnapshot should succeed.");
+    passed &= Expect(
+        kernel.ApplyRemoteChunkPayload(payload, error),
+        "ApplyRemoteChunkPayload should accept valid payload.");
+    passed &= Expect(world.applied_snapshots.size() == 1, "World should receive one applied snapshot.");
+    if (world.applied_snapshots.size() == 1) {
+        passed &= Expect(
+            world.applied_snapshots[0].chunk_coord.x == 2 &&
+                world.applied_snapshots[0].chunk_coord.y == -3,
+            "Applied snapshot chunk coordinate should match.");
+        passed &= Expect(
+            world.applied_snapshots[0].tiles == snapshot.tiles,
+            "Applied snapshot tile data should match.");
+    }
+
+    kernel.Shutdown();
+    return passed;
+}
+
 }  // namespace
 
 int main() {
@@ -291,6 +336,7 @@ int main() {
     passed &= TestInitializeRollbackOnNetFailure();
     passed &= TestInitializeRollbackOnScriptFailure();
     passed &= TestSubmitCommandIgnoredBeforeInitialize();
+    passed &= TestApplyRemoteChunkPayload();
 
     if (!passed) {
         return 1;

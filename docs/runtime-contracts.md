@@ -14,6 +14,7 @@
   3. `script.Tick`
   4. `world` 生成脏块快照并编码
   5. `net.PublishWorldSnapshot`
+- `sim::SimulationKernel` 额外提供远端快照应用入口：`ApplyRemoteChunkPayload`。
 
 ## `world`
 

@@ -61,6 +61,22 @@ void SimulationKernel::SubmitLocalCommand(const net::PlayerCommand& command) {
     pending_local_commands_.push_back(command);
 }
 
+bool SimulationKernel::ApplyRemoteChunkPayload(
+    std::string_view encoded_payload,
+    std::string& out_error) {
+    if (!initialized_) {
+        out_error = "Simulation kernel is not initialized.";
+        return false;
+    }
+
+    world::ChunkSnapshot snapshot{};
+    if (!world::WorldSnapshotCodec::DecodeChunkSnapshot(encoded_payload, snapshot, out_error)) {
+        return false;
+    }
+
+    return world_service_.ApplyChunkSnapshot(snapshot, out_error);
+}
+
 std::uint64_t SimulationKernel::CurrentTick() const {
     return tick_index_;
 }

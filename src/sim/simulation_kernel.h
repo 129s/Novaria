@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace novaria::sim {
@@ -20,6 +21,7 @@ public:
     bool Initialize(std::string& out_error);
     void Shutdown();
     void SubmitLocalCommand(const net::PlayerCommand& command);
+    bool ApplyRemoteChunkPayload(std::string_view encoded_payload, std::string& out_error);
     std::uint64_t CurrentTick() const;
     void Update(double fixed_delta_seconds);
 
