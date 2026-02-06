@@ -165,6 +165,20 @@ if(NOVARIA_BUILD_TESTS)
     )
     target_include_directories(novaria_world_replication_flow_tests PRIVATE src)
 
+    add_executable(
+        novaria_mvp_acceptance_tests
+        tests/mvp/mvp_acceptance_tests.cpp
+        src/sim/simulation_kernel.cpp
+        src/world/world_service_basic.cpp
+        src/world/snapshot_codec.cpp
+        src/net/net_service_stub.cpp
+        src/script/script_host_stub.cpp
+        src/save/save_repository.cpp
+        src/mod/mod_loader.cpp
+        src/core/logger.cpp
+    )
+    target_include_directories(novaria_mvp_acceptance_tests PRIVATE src)
+
     if(MSVC)
         target_compile_options(novaria_config_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_net_service_stub_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
@@ -175,6 +189,7 @@ if(NOVARIA_BUILD_TESTS)
         target_compile_options(novaria_mod_loader_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_world_snapshot_codec_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_world_replication_flow_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
+        target_compile_options(novaria_mvp_acceptance_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         if(NOVARIA_WARNINGS_AS_ERRORS)
             target_compile_options(novaria_config_tests PRIVATE /WX)
             target_compile_options(novaria_net_service_stub_tests PRIVATE /WX)
@@ -185,6 +200,7 @@ if(NOVARIA_BUILD_TESTS)
             target_compile_options(novaria_mod_loader_tests PRIVATE /WX)
             target_compile_options(novaria_world_snapshot_codec_tests PRIVATE /WX)
             target_compile_options(novaria_world_replication_flow_tests PRIVATE /WX)
+            target_compile_options(novaria_mvp_acceptance_tests PRIVATE /WX)
         endif()
     else()
         target_compile_options(novaria_config_tests PRIVATE -Wall -Wextra -Wpedantic)
@@ -196,6 +212,7 @@ if(NOVARIA_BUILD_TESTS)
         target_compile_options(novaria_mod_loader_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_world_snapshot_codec_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_world_replication_flow_tests PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(novaria_mvp_acceptance_tests PRIVATE -Wall -Wextra -Wpedantic)
         if(NOVARIA_WARNINGS_AS_ERRORS)
             target_compile_options(novaria_config_tests PRIVATE -Werror)
             target_compile_options(novaria_net_service_stub_tests PRIVATE -Werror)
@@ -206,6 +223,7 @@ if(NOVARIA_BUILD_TESTS)
             target_compile_options(novaria_mod_loader_tests PRIVATE -Werror)
             target_compile_options(novaria_world_snapshot_codec_tests PRIVATE -Werror)
             target_compile_options(novaria_world_replication_flow_tests PRIVATE -Werror)
+            target_compile_options(novaria_mvp_acceptance_tests PRIVATE -Werror)
         endif()
     endif()
 
@@ -218,4 +236,5 @@ if(NOVARIA_BUILD_TESTS)
     add_test(NAME novaria_mod_loader_tests COMMAND novaria_mod_loader_tests)
     add_test(NAME novaria_world_snapshot_codec_tests COMMAND novaria_world_snapshot_codec_tests)
     add_test(NAME novaria_world_replication_flow_tests COMMAND novaria_world_replication_flow_tests)
+    add_test(NAME novaria_mvp_acceptance_tests COMMAND novaria_mvp_acceptance_tests)
 endif()

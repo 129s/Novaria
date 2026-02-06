@@ -26,6 +26,13 @@ Novaria 的 MVP 目标是验证三条闭环，而不是追求内容体量：
 3. 联机可用：4 人协作连续 30 分钟无致命崩溃，关键状态无持续错乱。
 4. 扩展可用：第三方 Mod 可新增 `item`、`recipe`、`npc` 行为并通过联机一致性校验。
 
+### 1.4 自动化验收映射（当前工程）
+
+- DoD#1（采集→建造→战斗→Boss→存档回读）：`novaria_mvp_acceptance_tests` 的 `TestPlayableLoopAndSaveReload`。
+- DoD#2（P95 帧时间 ≤ 16.6ms）：`novaria_mvp_acceptance_tests` 的 `TestTickP95PerformanceBudget`。
+- DoD#3（4 人 30 分钟稳定协作）：`novaria_mvp_acceptance_tests` 的 `TestFourPlayerThirtyMinuteSimulationStability`（108000 Tick 等效 30 分钟）。
+- DoD#4（第三方 Mod 扩展与一致性）：`novaria_mvp_acceptance_tests` 的 `TestModContentConsistencyFingerprint` + `novaria_mod_loader_tests`。
+
 ## 2. 范围定义
 
 ### 2.1 MVP 必做
