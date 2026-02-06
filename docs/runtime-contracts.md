@@ -17,6 +17,7 @@
   6. `world` 生成脏块快照并编码
   7. `net.PublishWorldSnapshot`
 - `sim::SimulationKernel` 额外提供远端快照应用入口：`ApplyRemoteChunkPayload`。
+- `sim::SimulationKernel` 本地命令队列提供上限保护：超出 `kMaxPendingLocalCommands` 的输入会被丢弃并计数。
 
 ## `world`
 

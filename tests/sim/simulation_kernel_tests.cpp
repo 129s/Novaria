@@ -2,6 +2,7 @@
 #include "sim/command_schema.h"
 #include "world/snapshot_codec.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <iostream>
 #include <string>
@@ -308,6 +309,61 @@ bool TestSubmitCommandIgnoredBeforeInitialize() {
     return passed;
 }
 
+bool TestLocalCommandQueueCapAndDroppedCount() {
+    bool passed = true;
+
+    FakeWorldService world;
+    FakeNetService net;
+    FakeScriptHost script;
+    novaria::sim::SimulationKernel kernel(world, net, script);
+
+    std::string error;
+    passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
+
+    constexpr std::size_t overflow_count = 5;
+    for (std::size_t index = 0;
+         index < novaria::sim::SimulationKernel::kMaxPendingLocalCommands + overflow_count;
+         ++index) {
+        kernel.SubmitLocalCommand({
+            .player_id = 99,
+            .command_type = std::string(novaria::sim::command::kJump),
+            .payload = "",
+        });
+    }
+
+    passed &= Expect(
+        kernel.PendingLocalCommandCount() == novaria::sim::SimulationKernel::kMaxPendingLocalCommands,
+        "Pending local command count should cap at configured max.");
+    passed &= Expect(
+        kernel.DroppedLocalCommandCount() == overflow_count,
+        "Dropped local command count should track overflow commands.");
+
+    kernel.Update(1.0 / 60.0);
+
+    passed &= Expect(
+        net.submitted_commands.size() == novaria::sim::SimulationKernel::kMaxPendingLocalCommands,
+        "Kernel should forward only capped local commands.");
+    passed &= Expect(
+        kernel.PendingLocalCommandCount() == 0,
+        "Pending local command queue should be cleared after update.");
+    passed &= Expect(
+        kernel.DroppedLocalCommandCount() == overflow_count,
+        "Dropped local command count should persist across update.");
+
+    kernel.SubmitLocalCommand({
+        .player_id = 99,
+        .command_type = std::string(novaria::sim::command::kJump),
+        .payload = "",
+    });
+    kernel.Update(1.0 / 60.0);
+    passed &= Expect(
+        net.submitted_commands.size() == novaria::sim::SimulationKernel::kMaxPendingLocalCommands + 1,
+        "Kernel should accept new local commands after queue drain.");
+
+    kernel.Shutdown();
+    return passed;
+}
+
 bool TestApplyRemoteChunkPayload() {
     bool passed = true;
 
@@ -455,6 +511,7 @@ int main() {
     passed &= TestInitializeRollbackOnNetFailure();
     passed &= TestInitializeRollbackOnScriptFailure();
     passed &= TestSubmitCommandIgnoredBeforeInitialize();
+    passed &= TestLocalCommandQueueCapAndDroppedCount();
     passed &= TestApplyRemoteChunkPayload();
     passed &= TestWorldCommandExecutionFromLocalQueue();
     passed &= TestUpdateConsumesRemoteChunkPayloads();

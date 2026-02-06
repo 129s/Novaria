@@ -4,6 +4,7 @@
 #include "script/script_host.h"
 #include "world/world_service.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -13,6 +14,8 @@ namespace novaria::sim {
 
 class SimulationKernel final {
 public:
+    static constexpr std::size_t kMaxPendingLocalCommands = 1024;
+
     SimulationKernel(
         world::IWorldService& world_service,
         net::INetService& net_service,
@@ -23,6 +26,8 @@ public:
     void SubmitLocalCommand(const net::PlayerCommand& command);
     bool ApplyRemoteChunkPayload(std::string_view encoded_payload, std::string& out_error);
     std::uint64_t CurrentTick() const;
+    std::size_t PendingLocalCommandCount() const;
+    std::size_t DroppedLocalCommandCount() const;
     void Update(double fixed_delta_seconds);
 
 private:
@@ -41,6 +46,7 @@ private:
     net::INetService& net_service_;
     script::IScriptHost& script_host_;
     std::vector<net::PlayerCommand> pending_local_commands_;
+    std::size_t dropped_local_command_count_ = 0;
 };
 
 }  // namespace novaria::sim

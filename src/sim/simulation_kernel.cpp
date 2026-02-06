@@ -96,6 +96,7 @@ bool SimulationKernel::Initialize(std::string& out_error) {
 
     tick_index_ = 0;
     pending_local_commands_.clear();
+    dropped_local_command_count_ = 0;
     initialized_ = true;
     out_error.clear();
     return true;
@@ -115,6 +116,11 @@ void SimulationKernel::Shutdown() {
 
 void SimulationKernel::SubmitLocalCommand(const net::PlayerCommand& command) {
     if (!initialized_) {
+        return;
+    }
+
+    if (pending_local_commands_.size() >= kMaxPendingLocalCommands) {
+        ++dropped_local_command_count_;
         return;
     }
 
@@ -139,6 +145,14 @@ bool SimulationKernel::ApplyRemoteChunkPayload(
 
 std::uint64_t SimulationKernel::CurrentTick() const {
     return tick_index_;
+}
+
+std::size_t SimulationKernel::PendingLocalCommandCount() const {
+    return pending_local_commands_.size();
+}
+
+std::size_t SimulationKernel::DroppedLocalCommandCount() const {
+    return dropped_local_command_count_;
 }
 
 bool SimulationKernel::TryParseWorldSetTileCommand(
