@@ -12,6 +12,17 @@
 
 namespace novaria::sim {
 
+struct GameplayProgressSnapshot final {
+    std::uint32_t wood_collected = 0;
+    std::uint32_t stone_collected = 0;
+    bool workbench_built = false;
+    bool sword_crafted = false;
+    std::uint32_t enemy_kill_count = 0;
+    std::uint32_t boss_health = 0;
+    bool boss_defeated = false;
+    bool playable_loop_complete = false;
+};
+
 class SimulationKernel final {
 public:
     static constexpr std::size_t kMaxPendingLocalCommands = 1024;
@@ -30,6 +41,8 @@ public:
     std::uint64_t CurrentTick() const;
     std::size_t PendingLocalCommandCount() const;
     std::size_t DroppedLocalCommandCount() const;
+    GameplayProgressSnapshot GameplayProgress() const;
+    void RestoreGameplayProgress(const GameplayProgressSnapshot& snapshot);
     void Update(double fixed_delta_seconds);
 
 private:
@@ -41,6 +54,9 @@ private:
     };
 
     void ExecuteWorldCommandIfMatched(const net::PlayerCommand& command);
+    void ExecuteGameplayCommandIfMatched(const net::PlayerCommand& command);
+    void DispatchGameplayProgressEvent(std::string_view milestone);
+    void ResetGameplayProgress();
     void QueueNetSessionChangedEvent(
         net::NetSessionState session_state,
         std::string_view transition_reason);
@@ -57,6 +73,14 @@ private:
     std::uint64_t next_auto_reconnect_tick_ = 0;
     std::uint64_t next_net_session_event_dispatch_tick_ = 0;
     PendingNetSessionEvent pending_net_session_event_{};
+    std::uint32_t wood_collected_ = 0;
+    std::uint32_t stone_collected_ = 0;
+    bool workbench_built_ = false;
+    bool sword_crafted_ = false;
+    std::uint32_t enemy_kill_count_ = 0;
+    std::uint32_t boss_health_ = 0;
+    bool boss_defeated_ = false;
+    bool playable_loop_complete_ = false;
 };
 
 }  // namespace novaria::sim

@@ -57,11 +57,41 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
         if (save_repository_.LoadWorldState(loaded_save_state, save_error)) {
             has_loaded_save_state = true;
             local_player_id_ = loaded_save_state.local_player_id == 0 ? 1 : loaded_save_state.local_player_id;
+            if (loaded_save_state.has_gameplay_snapshot) {
+                simulation_kernel_.RestoreGameplayProgress(sim::GameplayProgressSnapshot{
+                    .wood_collected = loaded_save_state.gameplay_wood_collected,
+                    .stone_collected = loaded_save_state.gameplay_stone_collected,
+                    .workbench_built = loaded_save_state.gameplay_workbench_built,
+                    .sword_crafted = loaded_save_state.gameplay_sword_crafted,
+                    .enemy_kill_count = loaded_save_state.gameplay_enemy_kill_count,
+                    .boss_health = loaded_save_state.gameplay_boss_health,
+                    .boss_defeated = loaded_save_state.gameplay_boss_defeated,
+                    .playable_loop_complete = loaded_save_state.gameplay_loop_complete,
+                });
+            }
             core::Logger::Info(
                 "save",
                 "Loaded world save: version=" + std::to_string(loaded_save_state.format_version) +
                     ", tick=" + std::to_string(loaded_save_state.tick_index) +
                     ", player=" + std::to_string(local_player_id_));
+            if (loaded_save_state.has_gameplay_snapshot) {
+                core::Logger::Info(
+                    "save",
+                    "Loaded gameplay snapshot: wood=" +
+                        std::to_string(loaded_save_state.gameplay_wood_collected) +
+                        ", stone=" + std::to_string(loaded_save_state.gameplay_stone_collected) +
+                        ", workbench=" +
+                        (loaded_save_state.gameplay_workbench_built ? "true" : "false") +
+                        ", sword=" +
+                        (loaded_save_state.gameplay_sword_crafted ? "true" : "false") +
+                        ", enemy_kills=" +
+                        std::to_string(loaded_save_state.gameplay_enemy_kill_count) +
+                        ", boss_health=" + std::to_string(loaded_save_state.gameplay_boss_health) +
+                        ", boss_defeated=" +
+                        (loaded_save_state.gameplay_boss_defeated ? "true" : "false") +
+                        ", loop_complete=" +
+                        (loaded_save_state.gameplay_loop_complete ? "true" : "false"));
+            }
             core::Logger::Info(
                 "save",
                 "Loaded debug net snapshot: transitions=" +
@@ -194,6 +224,58 @@ int GameApp::Run() {
                         std::to_string(simulation_kernel_.CurrentTick()) + ".");
             }
 
+            if (frame_actions_.gameplay_collect_wood) {
+                simulation_kernel_.SubmitLocalCommand(net::PlayerCommand{
+                    .player_id = local_player_id_,
+                    .command_type = std::string(sim::command::kGameplayCollectResource),
+                    .payload = sim::command::BuildCollectResourcePayload(
+                        sim::command::kResourceWood,
+                        5),
+                });
+            }
+
+            if (frame_actions_.gameplay_collect_stone) {
+                simulation_kernel_.SubmitLocalCommand(net::PlayerCommand{
+                    .player_id = local_player_id_,
+                    .command_type = std::string(sim::command::kGameplayCollectResource),
+                    .payload = sim::command::BuildCollectResourcePayload(
+                        sim::command::kResourceStone,
+                        5),
+                });
+            }
+
+            if (frame_actions_.gameplay_build_workbench) {
+                simulation_kernel_.SubmitLocalCommand(net::PlayerCommand{
+                    .player_id = local_player_id_,
+                    .command_type = std::string(sim::command::kGameplayBuildWorkbench),
+                    .payload = "",
+                });
+            }
+
+            if (frame_actions_.gameplay_craft_sword) {
+                simulation_kernel_.SubmitLocalCommand(net::PlayerCommand{
+                    .player_id = local_player_id_,
+                    .command_type = std::string(sim::command::kGameplayCraftSword),
+                    .payload = "",
+                });
+            }
+
+            if (frame_actions_.gameplay_attack_enemy) {
+                simulation_kernel_.SubmitLocalCommand(net::PlayerCommand{
+                    .player_id = local_player_id_,
+                    .command_type = std::string(sim::command::kGameplayAttackEnemy),
+                    .payload = "",
+                });
+            }
+
+            if (frame_actions_.gameplay_attack_boss) {
+                simulation_kernel_.SubmitLocalCommand(net::PlayerCommand{
+                    .player_id = local_player_id_,
+                    .command_type = std::string(sim::command::kGameplayAttackBoss),
+                    .payload = "",
+                });
+            }
+
             return !quit_requested_;
         },
         [this](double fixed_delta_seconds) {
@@ -229,6 +311,18 @@ int GameApp::Run() {
                     std::to_string(diagnostics.dropped_remote_chunk_payload_disconnected_count) + "/" +
                     std::to_string(diagnostics.dropped_remote_chunk_payload_queue_full_count) +
                     ", ignored_heartbeats=" + std::to_string(diagnostics.ignored_heartbeat_count));
+            const sim::GameplayProgressSnapshot gameplay_progress = simulation_kernel_.GameplayProgress();
+            core::Logger::Info(
+                "sim",
+                "Gameplay: wood=" + std::to_string(gameplay_progress.wood_collected) +
+                    ", stone=" + std::to_string(gameplay_progress.stone_collected) +
+                    ", workbench=" + (gameplay_progress.workbench_built ? "true" : "false") +
+                    ", sword=" + (gameplay_progress.sword_crafted ? "true" : "false") +
+                    ", enemy_kills=" + std::to_string(gameplay_progress.enemy_kill_count) +
+                    ", boss_health=" + std::to_string(gameplay_progress.boss_health) +
+                    ", boss_defeated=" + (gameplay_progress.boss_defeated ? "true" : "false") +
+                    ", loop_complete=" +
+                    (gameplay_progress.playable_loop_complete ? "true" : "false"));
         },
         [this](float interpolation_alpha) { sdl_context_.RenderFrame(interpolation_alpha); });
 
@@ -243,10 +337,20 @@ void GameApp::Shutdown() {
 
     std::string save_error;
     const net::NetDiagnosticsSnapshot diagnostics = net_service_.DiagnosticsSnapshot();
+    const sim::GameplayProgressSnapshot gameplay_progress = simulation_kernel_.GameplayProgress();
     const save::WorldSaveState save_state{
         .tick_index = simulation_kernel_.CurrentTick(),
         .local_player_id = local_player_id_,
         .mod_manifest_fingerprint = mod_manifest_fingerprint_,
+        .gameplay_wood_collected = gameplay_progress.wood_collected,
+        .gameplay_stone_collected = gameplay_progress.stone_collected,
+        .gameplay_workbench_built = gameplay_progress.workbench_built,
+        .gameplay_sword_crafted = gameplay_progress.sword_crafted,
+        .gameplay_enemy_kill_count = gameplay_progress.enemy_kill_count,
+        .gameplay_boss_health = gameplay_progress.boss_health,
+        .gameplay_boss_defeated = gameplay_progress.boss_defeated,
+        .gameplay_loop_complete = gameplay_progress.playable_loop_complete,
+        .has_gameplay_snapshot = true,
         .debug_net_session_transitions = diagnostics.session_transition_count,
         .debug_net_timeout_disconnects = diagnostics.timeout_disconnect_count,
         .debug_net_manual_disconnects = diagnostics.manual_disconnect_count,

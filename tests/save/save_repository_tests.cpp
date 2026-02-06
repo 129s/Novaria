@@ -42,6 +42,15 @@ int main() {
         .tick_index = 12345,
         .local_player_id = 9,
         .mod_manifest_fingerprint = "mods:v1:abc123",
+        .gameplay_wood_collected = 42,
+        .gameplay_stone_collected = 27,
+        .gameplay_workbench_built = true,
+        .gameplay_sword_crafted = true,
+        .gameplay_enemy_kill_count = 3,
+        .gameplay_boss_health = 0,
+        .gameplay_boss_defeated = true,
+        .gameplay_loop_complete = true,
+        .has_gameplay_snapshot = true,
         .debug_net_session_transitions = 7,
         .debug_net_timeout_disconnects = 2,
         .debug_net_manual_disconnects = 3,
@@ -54,11 +63,21 @@ int main() {
     passed &= Expect(error.empty(), "Save should not return error.");
 
     std::ifstream saved_file(test_dir / "world.sav");
+    bool found_gameplay_section_version = false;
+    bool found_gameplay_section_field = false;
     bool found_debug_section_version = false;
     bool found_debug_section_counter = false;
     bool found_legacy_debug_counter = false;
     std::string saved_line;
     while (std::getline(saved_file, saved_line)) {
+        if (saved_line == "gameplay_section.core.version=1") {
+            found_gameplay_section_version = true;
+        }
+
+        if (saved_line.rfind("gameplay_section.core.enemy_kill_count=", 0) == 0) {
+            found_gameplay_section_field = true;
+        }
+
         if (saved_line == "debug_section.net.version=" +
                 std::to_string(novaria::save::kCurrentNetDebugSectionVersion)) {
             found_debug_section_version = true;
@@ -72,6 +91,12 @@ int main() {
             found_legacy_debug_counter = true;
         }
     }
+    passed &= Expect(
+        found_gameplay_section_version,
+        "Saved file should include gameplay_section.core.version.");
+    passed &= Expect(
+        found_gameplay_section_field,
+        "Saved file should include gameplay section fields.");
     passed &= Expect(
         found_debug_section_version,
         "Saved file should include debug_section.net.version.");
@@ -95,6 +120,23 @@ int main() {
     passed &= Expect(
         actual.mod_manifest_fingerprint == expected.mod_manifest_fingerprint,
         "Loaded mod manifest fingerprint should match saved value.");
+    passed &= Expect(
+        actual.gameplay_wood_collected == expected.gameplay_wood_collected &&
+            actual.gameplay_stone_collected == expected.gameplay_stone_collected,
+        "Loaded gameplay resource counters should match saved values.");
+    passed &= Expect(
+        actual.gameplay_workbench_built == expected.gameplay_workbench_built &&
+            actual.gameplay_sword_crafted == expected.gameplay_sword_crafted,
+        "Loaded gameplay craft flags should match saved values.");
+    passed &= Expect(
+        actual.gameplay_enemy_kill_count == expected.gameplay_enemy_kill_count &&
+            actual.gameplay_boss_health == expected.gameplay_boss_health &&
+            actual.gameplay_boss_defeated == expected.gameplay_boss_defeated &&
+            actual.gameplay_loop_complete == expected.gameplay_loop_complete,
+        "Loaded gameplay combat progress should match saved values.");
+    passed &= Expect(
+        actual.has_gameplay_snapshot,
+        "Loaded state should mark gameplay snapshot as present.");
     passed &= Expect(
         actual.debug_net_session_transitions == expected.debug_net_session_transitions,
         "Loaded debug net session transitions should match saved value.");
@@ -131,6 +173,17 @@ int main() {
     passed &= Expect(
         legacy_loaded.mod_manifest_fingerprint.empty(),
         "Legacy save without fingerprint should default to empty fingerprint.");
+    passed &= Expect(
+        !legacy_loaded.has_gameplay_snapshot &&
+            legacy_loaded.gameplay_wood_collected == 0 &&
+            legacy_loaded.gameplay_stone_collected == 0 &&
+            !legacy_loaded.gameplay_workbench_built &&
+            !legacy_loaded.gameplay_sword_crafted &&
+            legacy_loaded.gameplay_enemy_kill_count == 0 &&
+            legacy_loaded.gameplay_boss_health == 0 &&
+            !legacy_loaded.gameplay_boss_defeated &&
+            !legacy_loaded.gameplay_loop_complete,
+        "Legacy save without gameplay section should default gameplay snapshot state.");
     passed &= Expect(
         legacy_loaded.debug_net_session_transitions == 0 &&
             legacy_loaded.debug_net_timeout_disconnects == 0 &&
@@ -181,6 +234,23 @@ int main() {
         "Future save format version should be rejected.");
     passed &= Expect(!error.empty(), "Future save rejection should include reason.");
 
+    std::ofstream future_gameplay_section_file(test_dir / "world.sav", std::ios::trunc);
+    future_gameplay_section_file
+        << "format_version=" << novaria::save::kCurrentWorldSaveFormatVersion << "\n";
+    future_gameplay_section_file << "tick_index=1\n";
+    future_gameplay_section_file << "local_player_id=1\n";
+    future_gameplay_section_file << "gameplay_section.core.version=2\n";
+    future_gameplay_section_file << "gameplay_section.core.loop_complete=true\n";
+    future_gameplay_section_file.close();
+
+    novaria::save::WorldSaveState future_gameplay_section_loaded{};
+    passed &= Expect(
+        !repository.LoadWorldState(future_gameplay_section_loaded, error),
+        "Future gameplay section version should be rejected.");
+    passed &= Expect(
+        !error.empty(),
+        "Future gameplay section rejection should include reason.");
+
     std::ofstream future_debug_section_file(test_dir / "world.sav", std::ios::trunc);
     future_debug_section_file << "format_version=" << novaria::save::kCurrentWorldSaveFormatVersion
                               << "\n";
@@ -199,6 +269,39 @@ int main() {
     passed &= Expect(
         !error.empty(),
         "Future debug section rejection should include reason.");
+
+    std::ofstream invalid_gameplay_file(test_dir / "world.sav", std::ios::trunc);
+    invalid_gameplay_file
+        << "format_version=" << novaria::save::kCurrentWorldSaveFormatVersion << "\n";
+    invalid_gameplay_file << "tick_index=1\n";
+    invalid_gameplay_file << "local_player_id=1\n";
+    invalid_gameplay_file << "gameplay_section.core.version=1\n";
+    invalid_gameplay_file << "gameplay_section.core.loop_complete=maybe\n";
+    invalid_gameplay_file.close();
+
+    novaria::save::WorldSaveState invalid_gameplay_loaded{};
+    passed &= Expect(
+        !repository.LoadWorldState(invalid_gameplay_loaded, error),
+        "Invalid gameplay section value should fail save load.");
+    passed &= Expect(
+        !error.empty(),
+        "Invalid gameplay section load failure should include reason.");
+
+    std::ofstream missing_gameplay_version_file(test_dir / "world.sav", std::ios::trunc);
+    missing_gameplay_version_file
+        << "format_version=" << novaria::save::kCurrentWorldSaveFormatVersion << "\n";
+    missing_gameplay_version_file << "tick_index=1\n";
+    missing_gameplay_version_file << "local_player_id=1\n";
+    missing_gameplay_version_file << "gameplay_section.core.loop_complete=true\n";
+    missing_gameplay_version_file.close();
+
+    novaria::save::WorldSaveState missing_gameplay_version_loaded{};
+    passed &= Expect(
+        !repository.LoadWorldState(missing_gameplay_version_loaded, error),
+        "Gameplay section fields without version should be rejected.");
+    passed &= Expect(
+        !error.empty(),
+        "Missing gameplay section version should include reason.");
 
     std::ofstream invalid_debug_file(test_dir / "world.sav", std::ios::trunc);
     invalid_debug_file << "format_version=" << novaria::save::kCurrentWorldSaveFormatVersion << "\n";

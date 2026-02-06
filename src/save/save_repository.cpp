@@ -25,6 +25,16 @@ constexpr std::string_view kDebugNetDroppedRemotePayloadsKey =
     "debug_section.net.dropped_remote_payloads";
 constexpr std::string_view kDebugNetLastTransitionReasonKey =
     "debug_section.net.last_transition_reason";
+constexpr std::string_view kGameplaySectionVersionKey = "gameplay_section.core.version";
+constexpr std::string_view kGameplayWoodCollectedKey = "gameplay_section.core.wood_collected";
+constexpr std::string_view kGameplayStoneCollectedKey = "gameplay_section.core.stone_collected";
+constexpr std::string_view kGameplayWorkbenchBuiltKey = "gameplay_section.core.workbench_built";
+constexpr std::string_view kGameplaySwordCraftedKey = "gameplay_section.core.sword_crafted";
+constexpr std::string_view kGameplayEnemyKillCountKey = "gameplay_section.core.enemy_kill_count";
+constexpr std::string_view kGameplayBossHealthKey = "gameplay_section.core.boss_health";
+constexpr std::string_view kGameplayBossDefeatedKey = "gameplay_section.core.boss_defeated";
+constexpr std::string_view kGameplayLoopCompleteKey = "gameplay_section.core.loop_complete";
+constexpr std::uint32_t kCurrentGameplaySectionVersion = 1;
 
 bool ParseUnsignedInteger(const std::string& text, std::uint64_t& out_value) {
     try {
@@ -49,6 +59,18 @@ bool ParseUInt32Value(const std::string& text, std::uint32_t& out_value) {
 
     out_value = static_cast<std::uint32_t>(parsed);
     return true;
+}
+
+bool ParseBoolValue(const std::string& text, bool& out_value) {
+    if (text == "true") {
+        out_value = true;
+        return true;
+    }
+    if (text == "false") {
+        out_value = false;
+        return true;
+    }
+    return false;
 }
 
 }  // namespace
@@ -96,6 +118,21 @@ bool FileSaveRepository::SaveWorldState(const WorldSaveState& state, std::string
     file << "format_version=" << state.format_version << '\n';
     file << "local_player_id=" << state.local_player_id << '\n';
     file << "mod_manifest_fingerprint=" << state.mod_manifest_fingerprint << '\n';
+    if (state.has_gameplay_snapshot) {
+        file << kGameplaySectionVersionKey << "=" << kCurrentGameplaySectionVersion << '\n';
+        file << kGameplayWoodCollectedKey << "=" << state.gameplay_wood_collected << '\n';
+        file << kGameplayStoneCollectedKey << "=" << state.gameplay_stone_collected << '\n';
+        file << kGameplayWorkbenchBuiltKey << "="
+             << (state.gameplay_workbench_built ? "true" : "false") << '\n';
+        file << kGameplaySwordCraftedKey << "="
+             << (state.gameplay_sword_crafted ? "true" : "false") << '\n';
+        file << kGameplayEnemyKillCountKey << "=" << state.gameplay_enemy_kill_count << '\n';
+        file << kGameplayBossHealthKey << "=" << state.gameplay_boss_health << '\n';
+        file << kGameplayBossDefeatedKey << "="
+             << (state.gameplay_boss_defeated ? "true" : "false") << '\n';
+        file << kGameplayLoopCompleteKey << "="
+             << (state.gameplay_loop_complete ? "true" : "false") << '\n';
+    }
     file << kDebugNetSectionVersionKey << "=" << kCurrentNetDebugSectionVersion << '\n';
     file << kDebugNetSessionTransitionsKey << "=" << state.debug_net_session_transitions << '\n';
     file << kDebugNetTimeoutDisconnectsKey << "=" << state.debug_net_timeout_disconnects << '\n';
@@ -131,6 +168,9 @@ bool FileSaveRepository::LoadWorldState(WorldSaveState& out_state, std::string& 
 
     WorldSaveState parsed_state{};
     parsed_state.format_version = 0;
+    std::uint32_t parsed_gameplay_section_version = 0;
+    bool has_gameplay_section_version = false;
+    bool has_gameplay_section_fields = false;
     std::uint32_t parsed_debug_net_section_version = 0;
     bool has_debug_net_section_version = false;
     bool has_debug_net_section_fields = false;
@@ -176,6 +216,111 @@ bool FileSaveRepository::LoadWorldState(WorldSaveState& out_state, std::string& 
 
         if (key == "mod_manifest_fingerprint") {
             parsed_state.mod_manifest_fingerprint = value;
+            continue;
+        }
+
+        if (key == kGameplaySectionVersionKey) {
+            std::uint32_t parsed = 0;
+            if (!ParseUInt32Value(value, parsed) || parsed == 0) {
+                out_error = "Invalid gameplay_section.core.version value in world save file.";
+                return false;
+            }
+
+            if (parsed > kCurrentGameplaySectionVersion) {
+                out_error = "Unsupported gameplay section core version: " + std::to_string(parsed);
+                return false;
+            }
+
+            has_gameplay_section_version = true;
+            parsed_gameplay_section_version = parsed;
+            continue;
+        }
+
+        if (key == kGameplayWoodCollectedKey) {
+            std::uint32_t parsed = 0;
+            if (!ParseUInt32Value(value, parsed)) {
+                out_error = "Invalid gameplay_section.core.wood_collected value in world save file.";
+                return false;
+            }
+            parsed_state.gameplay_wood_collected = parsed;
+            has_gameplay_section_fields = true;
+            continue;
+        }
+
+        if (key == kGameplayStoneCollectedKey) {
+            std::uint32_t parsed = 0;
+            if (!ParseUInt32Value(value, parsed)) {
+                out_error = "Invalid gameplay_section.core.stone_collected value in world save file.";
+                return false;
+            }
+            parsed_state.gameplay_stone_collected = parsed;
+            has_gameplay_section_fields = true;
+            continue;
+        }
+
+        if (key == kGameplayWorkbenchBuiltKey) {
+            bool parsed = false;
+            if (!ParseBoolValue(value, parsed)) {
+                out_error = "Invalid gameplay_section.core.workbench_built value in world save file.";
+                return false;
+            }
+            parsed_state.gameplay_workbench_built = parsed;
+            has_gameplay_section_fields = true;
+            continue;
+        }
+
+        if (key == kGameplaySwordCraftedKey) {
+            bool parsed = false;
+            if (!ParseBoolValue(value, parsed)) {
+                out_error = "Invalid gameplay_section.core.sword_crafted value in world save file.";
+                return false;
+            }
+            parsed_state.gameplay_sword_crafted = parsed;
+            has_gameplay_section_fields = true;
+            continue;
+        }
+
+        if (key == kGameplayEnemyKillCountKey) {
+            std::uint32_t parsed = 0;
+            if (!ParseUInt32Value(value, parsed)) {
+                out_error = "Invalid gameplay_section.core.enemy_kill_count value in world save file.";
+                return false;
+            }
+            parsed_state.gameplay_enemy_kill_count = parsed;
+            has_gameplay_section_fields = true;
+            continue;
+        }
+
+        if (key == kGameplayBossHealthKey) {
+            std::uint32_t parsed = 0;
+            if (!ParseUInt32Value(value, parsed)) {
+                out_error = "Invalid gameplay_section.core.boss_health value in world save file.";
+                return false;
+            }
+            parsed_state.gameplay_boss_health = parsed;
+            has_gameplay_section_fields = true;
+            continue;
+        }
+
+        if (key == kGameplayBossDefeatedKey) {
+            bool parsed = false;
+            if (!ParseBoolValue(value, parsed)) {
+                out_error = "Invalid gameplay_section.core.boss_defeated value in world save file.";
+                return false;
+            }
+            parsed_state.gameplay_boss_defeated = parsed;
+            has_gameplay_section_fields = true;
+            continue;
+        }
+
+        if (key == kGameplayLoopCompleteKey) {
+            bool parsed = false;
+            if (!ParseBoolValue(value, parsed)) {
+                out_error = "Invalid gameplay_section.core.loop_complete value in world save file.";
+                return false;
+            }
+            parsed_state.gameplay_loop_complete = parsed;
+            has_gameplay_section_fields = true;
             continue;
         }
 
@@ -334,6 +479,16 @@ bool FileSaveRepository::LoadWorldState(WorldSaveState& out_state, std::string& 
         }
     }
 
+    if (has_gameplay_section_fields && !has_gameplay_section_version) {
+        out_error = "Missing gameplay_section.core.version for gameplay section fields.";
+        return false;
+    }
+
+    if (has_gameplay_section_version && parsed_gameplay_section_version == 0) {
+        out_error = "Invalid gameplay_section.core.version value in world save file.";
+        return false;
+    }
+
     if (has_debug_net_section_fields && !has_debug_net_section_version) {
         out_error = "Missing debug_section.net.version for debug section fields.";
         return false;
@@ -350,6 +505,8 @@ bool FileSaveRepository::LoadWorldState(WorldSaveState& out_state, std::string& 
         return false;
     }
 
+    parsed_state.has_gameplay_snapshot =
+        has_gameplay_section_version || has_gameplay_section_fields;
     out_state = parsed_state;
     out_error.clear();
     return true;

@@ -130,6 +130,42 @@ bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
                 out_actions.debug_net_connect = true;
             }
 #endif
+
+#if defined(SDL_SCANCODE_F7)
+            if (event.key.scancode == SDL_SCANCODE_F7) {
+                out_actions.gameplay_collect_wood = true;
+            }
+#endif
+
+#if defined(SDL_SCANCODE_F8)
+            if (event.key.scancode == SDL_SCANCODE_F8) {
+                out_actions.gameplay_collect_stone = true;
+            }
+#endif
+
+#if defined(SDL_SCANCODE_F9)
+            if (event.key.scancode == SDL_SCANCODE_F9) {
+                out_actions.gameplay_build_workbench = true;
+            }
+#endif
+
+#if defined(SDL_SCANCODE_F10)
+            if (event.key.scancode == SDL_SCANCODE_F10) {
+                out_actions.gameplay_craft_sword = true;
+            }
+#endif
+
+#if defined(SDL_SCANCODE_F11)
+            if (event.key.scancode == SDL_SCANCODE_F11) {
+                out_actions.gameplay_attack_enemy = true;
+            }
+#endif
+
+#if defined(SDL_SCANCODE_F12)
+            if (event.key.scancode == SDL_SCANCODE_F12) {
+                out_actions.gameplay_attack_boss = true;
+            }
+#endif
         }
 #endif
     }

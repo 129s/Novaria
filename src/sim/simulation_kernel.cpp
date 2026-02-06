@@ -12,6 +12,13 @@
 namespace novaria::sim {
 namespace {
 
+constexpr std::uint32_t kGameplayWorkbenchWoodCost = 10;
+constexpr std::uint32_t kGameplayWorkbenchStoneCost = 5;
+constexpr std::uint32_t kGameplaySwordWoodCost = 8;
+constexpr std::uint32_t kGameplaySwordStoneCost = 12;
+constexpr std::uint32_t kGameplayBossMaxHealth = 60;
+constexpr std::uint32_t kGameplayBossDamagePerAttack = 10;
+
 const char* SessionStateName(net::NetSessionState state) {
     switch (state) {
         case net::NetSessionState::Disconnected:
@@ -35,6 +42,16 @@ std::string BuildSessionStateChangedPayload(
     payload += std::to_string(tick_index);
     payload += ";reason=";
     payload += transition_reason;
+    return payload;
+}
+
+std::string BuildGameplayProgressPayload(
+    std::string_view milestone,
+    std::uint64_t tick_index) {
+    std::string payload = "milestone=";
+    payload += milestone;
+    payload += ";tick=";
+    payload += std::to_string(tick_index);
     return payload;
 }
 
@@ -74,6 +91,7 @@ bool SimulationKernel::Initialize(std::string& out_error) {
     tick_index_ = 0;
     pending_local_commands_.clear();
     dropped_local_command_count_ = 0;
+    ResetGameplayProgress();
     initialized_ = true;
     out_error.clear();
     return true;
@@ -92,6 +110,7 @@ void SimulationKernel::Shutdown() {
     next_auto_reconnect_tick_ = 0;
     next_net_session_event_dispatch_tick_ = 0;
     pending_net_session_event_ = {};
+    ResetGameplayProgress();
     initialized_ = false;
 }
 
@@ -134,6 +153,52 @@ std::size_t SimulationKernel::PendingLocalCommandCount() const {
 
 std::size_t SimulationKernel::DroppedLocalCommandCount() const {
     return dropped_local_command_count_;
+}
+
+GameplayProgressSnapshot SimulationKernel::GameplayProgress() const {
+    return GameplayProgressSnapshot{
+        .wood_collected = wood_collected_,
+        .stone_collected = stone_collected_,
+        .workbench_built = workbench_built_,
+        .sword_crafted = sword_crafted_,
+        .enemy_kill_count = enemy_kill_count_,
+        .boss_health = boss_health_,
+        .boss_defeated = boss_defeated_,
+        .playable_loop_complete = playable_loop_complete_,
+    };
+}
+
+void SimulationKernel::RestoreGameplayProgress(const GameplayProgressSnapshot& snapshot) {
+    wood_collected_ = snapshot.wood_collected;
+    stone_collected_ = snapshot.stone_collected;
+    workbench_built_ = snapshot.workbench_built;
+    sword_crafted_ = snapshot.sword_crafted;
+    enemy_kill_count_ = snapshot.enemy_kill_count;
+    boss_health_ = snapshot.boss_health > kGameplayBossMaxHealth
+        ? kGameplayBossMaxHealth
+        : snapshot.boss_health;
+    boss_defeated_ = snapshot.boss_defeated || boss_health_ == 0;
+    playable_loop_complete_ =
+        snapshot.playable_loop_complete ||
+        (workbench_built_ && sword_crafted_ && enemy_kill_count_ >= 3 && boss_defeated_);
+}
+
+void SimulationKernel::DispatchGameplayProgressEvent(std::string_view milestone) {
+    script_host_.DispatchEvent(script::ScriptEvent{
+        .event_name = "gameplay.progress",
+        .payload = BuildGameplayProgressPayload(milestone, tick_index_),
+    });
+}
+
+void SimulationKernel::ResetGameplayProgress() {
+    wood_collected_ = 0;
+    stone_collected_ = 0;
+    workbench_built_ = false;
+    sword_crafted_ = false;
+    enemy_kill_count_ = 0;
+    boss_health_ = kGameplayBossMaxHealth;
+    boss_defeated_ = false;
+    playable_loop_complete_ = false;
 }
 
 void SimulationKernel::QueueNetSessionChangedEvent(
@@ -207,6 +272,90 @@ void SimulationKernel::ExecuteWorldCommandIfMatched(const net::PlayerCommand& co
     }
 }
 
+void SimulationKernel::ExecuteGameplayCommandIfMatched(const net::PlayerCommand& command) {
+    if (command.command_type == command::kGameplayCollectResource) {
+        command::CollectResourcePayload payload{};
+        if (!command::TryParseCollectResourcePayload(command.payload, payload)) {
+            return;
+        }
+
+        if (payload.resource_id == command::kResourceWood) {
+            wood_collected_ += payload.amount;
+            DispatchGameplayProgressEvent("collect_wood");
+            return;
+        }
+
+        if (payload.resource_id == command::kResourceStone) {
+            stone_collected_ += payload.amount;
+            DispatchGameplayProgressEvent("collect_stone");
+        }
+        return;
+    }
+
+    if (command.command_type == command::kGameplayBuildWorkbench) {
+        if (workbench_built_) {
+            return;
+        }
+        if (wood_collected_ < kGameplayWorkbenchWoodCost ||
+            stone_collected_ < kGameplayWorkbenchStoneCost) {
+            return;
+        }
+
+        wood_collected_ -= kGameplayWorkbenchWoodCost;
+        stone_collected_ -= kGameplayWorkbenchStoneCost;
+        workbench_built_ = true;
+        DispatchGameplayProgressEvent("build_workbench");
+        return;
+    }
+
+    if (command.command_type == command::kGameplayCraftSword) {
+        if (sword_crafted_) {
+            return;
+        }
+        if (!workbench_built_) {
+            return;
+        }
+        if (wood_collected_ < kGameplaySwordWoodCost ||
+            stone_collected_ < kGameplaySwordStoneCost) {
+            return;
+        }
+
+        wood_collected_ -= kGameplaySwordWoodCost;
+        stone_collected_ -= kGameplaySwordStoneCost;
+        sword_crafted_ = true;
+        DispatchGameplayProgressEvent("craft_sword");
+        return;
+    }
+
+    if (command.command_type == command::kGameplayAttackEnemy) {
+        if (!sword_crafted_) {
+            return;
+        }
+
+        ++enemy_kill_count_;
+        DispatchGameplayProgressEvent("kill_enemy");
+        return;
+    }
+
+    if (command.command_type == command::kGameplayAttackBoss) {
+        if (!sword_crafted_ || boss_defeated_) {
+            return;
+        }
+        if (enemy_kill_count_ < 3) {
+            return;
+        }
+
+        if (boss_health_ <= kGameplayBossDamagePerAttack) {
+            boss_health_ = 0;
+            boss_defeated_ = true;
+            DispatchGameplayProgressEvent("defeat_boss");
+        } else {
+            boss_health_ -= kGameplayBossDamagePerAttack;
+            DispatchGameplayProgressEvent("attack_boss");
+        }
+    }
+}
+
 void SimulationKernel::Update(double fixed_delta_seconds) {
     if (!initialized_) {
         return;
@@ -226,8 +375,16 @@ void SimulationKernel::Update(double fixed_delta_seconds) {
     for (const auto& command : pending_local_commands_) {
         net_service_.SubmitLocalCommand(command);
         ExecuteWorldCommandIfMatched(command);
+        ExecuteGameplayCommandIfMatched(command);
     }
     pending_local_commands_.clear();
+
+    const bool previous_loop_complete = playable_loop_complete_;
+    playable_loop_complete_ =
+        workbench_built_ && sword_crafted_ && enemy_kill_count_ >= 3 && boss_defeated_;
+    if (playable_loop_complete_ && !previous_loop_complete) {
+        DispatchGameplayProgressEvent("playable_loop_complete");
+    }
 
     net_service_.Tick(tick_context);
     const net::NetDiagnosticsSnapshot net_diagnostics = net_service_.DiagnosticsSnapshot();

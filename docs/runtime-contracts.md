@@ -22,6 +22,8 @@
 - 自动重连请求带 Tick 级节流（`kAutoReconnectRetryIntervalTicks`）以避免重连风暴。
 - `sim::SimulationKernel` 检测到 `net` 会话状态变化时，会向脚本层派发 `net.session_state_changed` 事件（payload: `state=...;tick=...;reason=...`）。
 - 会话状态事件带 Tick 级限流（`kSessionStateEventMinIntervalTicks`）并在窗口内合并为最新一次状态变化，避免脚本事件风暴。
+- `sim::SimulationKernel` 支持最小可玩闭环指令：`gameplay.collect_resource`、`gameplay.build_workbench`、`gameplay.craft_sword`、`gameplay.attack_enemy`、`gameplay.attack_boss`。
+- `sim::SimulationKernel` 提供玩法进度快照（资源、制作状态、敌人击杀、Boss 血量、闭环完成标记）并在关键里程碑派发 `gameplay.progress` 事件（payload: `milestone=...;tick=...`）。
 
 ## `world`
 
@@ -86,6 +88,7 @@
   - 启动读取 `saves/world.sav`
   - 存档字段包含 `format_version`，支持旧档（缺失版本字段）兼容与前向版本拒绝
   - 退出写回当前 Tick、本地玩家编号与模组清单指纹
+  - 玩法快照区：按需写入版本化 `gameplay_section.core.*` 区块（含 `gameplay_section.core.version`），支持缺省区块（无玩法快照）加载
   - 调试快照头：写入版本化 `debug_section.net.*` 区块（含 `debug_section.net.version`），并兼容读取旧 `debug_net_*` 字段
   - 配置 `strict_save_mod_fingerprint=true` 时，读档指纹不一致将拒绝启动
 
@@ -106,3 +109,9 @@
 - `F4`：请求 `net` 断开连接（调试）
 - `F5`：注入一次心跳（调试）
 - `F6`：请求 `net` 重新连接（调试）
+- `F7`：采集木材（+5）
+- `F8`：采集石材（+5）
+- `F9`：建造工作台
+- `F10`：制作剑
+- `F11`：攻击基础敌人
+- `F12`：攻击 Boss

@@ -14,6 +14,15 @@ struct WorldSaveState final {
     std::uint64_t tick_index = 0;
     std::uint32_t local_player_id = 0;
     std::string mod_manifest_fingerprint;
+    std::uint32_t gameplay_wood_collected = 0;
+    std::uint32_t gameplay_stone_collected = 0;
+    bool gameplay_workbench_built = false;
+    bool gameplay_sword_crafted = false;
+    std::uint32_t gameplay_enemy_kill_count = 0;
+    std::uint32_t gameplay_boss_health = 0;
+    bool gameplay_boss_defeated = false;
+    bool gameplay_loop_complete = false;
+    bool has_gameplay_snapshot = false;
     std::uint64_t debug_net_session_transitions = 0;
     std::uint64_t debug_net_timeout_disconnects = 0;
     std::uint64_t debug_net_manual_disconnects = 0;

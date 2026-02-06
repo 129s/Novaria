@@ -31,6 +31,11 @@ struct SessionStateChangedPayload {
     std::string reason;
 };
 
+struct GameplayProgressPayload {
+    std::string milestone;
+    std::uint64_t tick_index = 0;
+};
+
 bool TryParseSessionStateChangedPayload(
     std::string_view payload,
     SessionStateChangedPayload& out_payload) {
@@ -82,6 +87,49 @@ bool TryParseSessionStateChangedPayload(
     out_payload.state.assign(state_value);
     out_payload.tick_index = parsed_tick_index;
     out_payload.reason.assign(reason_value);
+    return true;
+}
+
+bool TryParseGameplayProgressPayload(
+    std::string_view payload,
+    GameplayProgressPayload& out_payload) {
+    constexpr std::string_view kMilestonePrefix = "milestone=";
+    constexpr std::string_view kTickPrefix = "tick=";
+
+    const std::size_t separator = payload.find(';');
+    if (separator == std::string_view::npos) {
+        return false;
+    }
+    if (payload.find(';', separator + 1) != std::string_view::npos) {
+        return false;
+    }
+
+    const std::string_view milestone_token = payload.substr(0, separator);
+    const std::string_view tick_token = payload.substr(separator + 1);
+    if (milestone_token.rfind(kMilestonePrefix, 0) != 0 ||
+        tick_token.rfind(kTickPrefix, 0) != 0) {
+        return false;
+    }
+
+    const std::string_view milestone_value = milestone_token.substr(kMilestonePrefix.size());
+    const std::string_view tick_value = tick_token.substr(kTickPrefix.size());
+    if (milestone_value.empty() || tick_value.empty()) {
+        return false;
+    }
+
+    std::uint64_t parsed_tick_index = 0;
+    const std::from_chars_result parse_result =
+        std::from_chars(
+            tick_value.data(),
+            tick_value.data() + tick_value.size(),
+            parsed_tick_index);
+    if (parse_result.ec != std::errc() ||
+        parse_result.ptr != tick_value.data() + tick_value.size()) {
+        return false;
+    }
+
+    out_payload.milestone.assign(milestone_value);
+    out_payload.tick_index = parsed_tick_index;
     return true;
 }
 
@@ -328,6 +376,28 @@ bool TestCommandSchemaPayloadParsing() {
     passed &= Expect(
         !novaria::sim::command::TryParseWorldChunkPayload("8,NaN", chunk_payload),
         "Chunk payload parser should reject non-number tokens.");
+
+    novaria::sim::command::CollectResourcePayload collect_payload{};
+    passed &= Expect(
+        novaria::sim::command::TryParseCollectResourcePayload(
+            novaria::sim::command::BuildCollectResourcePayload(
+                novaria::sim::command::kResourceWood,
+                5),
+            collect_payload),
+        "Collect payload parser should accept valid payload.");
+    passed &= Expect(
+        collect_payload.resource_id == novaria::sim::command::kResourceWood &&
+            collect_payload.amount == 5,
+        "Collect payload parser should parse resource and amount.");
+    passed &= Expect(
+        !novaria::sim::command::TryParseCollectResourcePayload("1,0", collect_payload),
+        "Collect payload parser should reject zero amount.");
+    passed &= Expect(
+        !novaria::sim::command::TryParseCollectResourcePayload("x,3", collect_payload),
+        "Collect payload parser should reject invalid resource id.");
+    passed &= Expect(
+        !novaria::sim::command::TryParseCollectResourcePayload("1,2,3", collect_payload),
+        "Collect payload parser should reject extra tokens.");
 
     return passed;
 }
@@ -1089,6 +1159,97 @@ bool TestWorldCommandExecutionFromLocalQueue() {
     return passed;
 }
 
+bool TestGameplayLoopCommandsReachBossDefeat() {
+    bool passed = true;
+
+    FakeWorldService world;
+    FakeNetService net;
+    FakeScriptHost script;
+    net.auto_progress_connection = false;
+    novaria::sim::SimulationKernel kernel(world, net, script);
+
+    std::string error;
+    passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
+
+    kernel.SubmitLocalCommand({
+        .player_id = 1,
+        .command_type = std::string(novaria::sim::command::kGameplayCollectResource),
+        .payload = novaria::sim::command::BuildCollectResourcePayload(
+            novaria::sim::command::kResourceWood,
+            20),
+    });
+    kernel.SubmitLocalCommand({
+        .player_id = 1,
+        .command_type = std::string(novaria::sim::command::kGameplayCollectResource),
+        .payload = novaria::sim::command::BuildCollectResourcePayload(
+            novaria::sim::command::kResourceStone,
+            20),
+    });
+    kernel.SubmitLocalCommand({
+        .player_id = 1,
+        .command_type = std::string(novaria::sim::command::kGameplayBuildWorkbench),
+        .payload = "",
+    });
+    kernel.SubmitLocalCommand({
+        .player_id = 1,
+        .command_type = std::string(novaria::sim::command::kGameplayCraftSword),
+        .payload = "",
+    });
+    for (int index = 0; index < 3; ++index) {
+        kernel.SubmitLocalCommand({
+            .player_id = 1,
+            .command_type = std::string(novaria::sim::command::kGameplayAttackEnemy),
+            .payload = "",
+        });
+    }
+    for (int index = 0; index < 6; ++index) {
+        kernel.SubmitLocalCommand({
+            .player_id = 1,
+            .command_type = std::string(novaria::sim::command::kGameplayAttackBoss),
+            .payload = "",
+        });
+    }
+
+    kernel.Update(1.0 / 60.0);
+    const novaria::sim::GameplayProgressSnapshot progress = kernel.GameplayProgress();
+
+    passed &= Expect(
+        progress.wood_collected == 2 && progress.stone_collected == 3,
+        "Gameplay resources should deduct build and craft costs.");
+    passed &= Expect(progress.workbench_built, "Gameplay loop should build workbench.");
+    passed &= Expect(progress.sword_crafted, "Gameplay loop should craft sword.");
+    passed &= Expect(progress.enemy_kill_count == 3, "Gameplay loop should record three enemy kills.");
+    passed &= Expect(progress.boss_health == 0 && progress.boss_defeated, "Gameplay loop should defeat boss.");
+    passed &= Expect(progress.playable_loop_complete, "Gameplay loop should mark playable loop completion.");
+    passed &= Expect(
+        net.submitted_commands.size() == 13,
+        "Gameplay commands should still be forwarded to net command stream.");
+
+    bool saw_playable_loop_complete_event = false;
+    for (const auto& event : script.dispatched_events) {
+        if (event.event_name != "gameplay.progress") {
+            continue;
+        }
+
+        GameplayProgressPayload payload{};
+        passed &= Expect(
+            TryParseGameplayProgressPayload(event.payload, payload),
+            "Gameplay progress event payload should be parseable.");
+        if (payload.milestone == "playable_loop_complete") {
+            saw_playable_loop_complete_event = true;
+            passed &= Expect(
+                payload.tick_index == 0,
+                "Playable loop complete milestone should be emitted at processing tick.");
+        }
+    }
+    passed &= Expect(
+        saw_playable_loop_complete_event,
+        "Gameplay loop should emit playable loop completion milestone event.");
+
+    kernel.Shutdown();
+    return passed;
+}
+
 }  // namespace
 
 int main() {
@@ -1108,6 +1269,7 @@ int main() {
     passed &= TestLocalCommandQueueCapAndDroppedCount();
     passed &= TestApplyRemoteChunkPayload();
     passed &= TestWorldCommandExecutionFromLocalQueue();
+    passed &= TestGameplayLoopCommandsReachBossDefeat();
     passed &= TestUpdateConsumesRemoteChunkPayloads();
     passed &= TestUpdateSkipsNetExchangeWhenSessionNotConnected();
 
