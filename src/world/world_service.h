@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace novaria::world {
 
@@ -28,6 +29,7 @@ public:
     virtual void LoadChunk(const ChunkCoord& chunk_coord) = 0;
     virtual void UnloadChunk(const ChunkCoord& chunk_coord) = 0;
     virtual bool ApplyTileMutation(const TileMutation& mutation, std::string& out_error) = 0;
+    virtual std::vector<ChunkCoord> ConsumeDirtyChunks() = 0;
 };
 
 }  // namespace novaria::world

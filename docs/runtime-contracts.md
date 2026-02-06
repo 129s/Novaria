@@ -20,6 +20,7 @@
   - `Tick`
   - `LoadChunk/UnloadChunk`
   - `ApplyTileMutation`
+  - `ConsumeDirtyChunks`
 - 当前实现：`world::WorldServiceBasic`
   - 内存 Chunk 容器
   - 基础地表生成
@@ -31,7 +32,7 @@
   - `Initialize/Shutdown`
   - `Tick`
   - `SubmitLocalCommand`
-  - `PublishWorldSnapshot`
+  - `PublishWorldSnapshot(tick_index, dirty_chunk_count)`
 - 当前实现：`net::NetServiceStub`
   - 本地命令入队
   - Tick 内批处理命令

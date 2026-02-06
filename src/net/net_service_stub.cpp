@@ -8,6 +8,7 @@ bool NetServiceStub::Initialize(std::string& out_error) {
     pending_commands_.clear();
     total_processed_command_count_ = 0;
     last_published_snapshot_tick_ = std::numeric_limits<std::uint64_t>::max();
+    last_published_dirty_chunk_count_ = 0;
     snapshot_publish_count_ = 0;
     initialized_ = true;
     out_error.clear();
@@ -43,12 +44,13 @@ void NetServiceStub::SubmitLocalCommand(const PlayerCommand& command) {
     pending_commands_.push_back(command);
 }
 
-void NetServiceStub::PublishWorldSnapshot(std::uint64_t tick_index) {
+void NetServiceStub::PublishWorldSnapshot(std::uint64_t tick_index, std::size_t dirty_chunk_count) {
     if (!initialized_) {
         return;
     }
 
     last_published_snapshot_tick_ = tick_index;
+    last_published_dirty_chunk_count_ = dirty_chunk_count;
     ++snapshot_publish_count_;
 }
 
@@ -62,6 +64,10 @@ std::size_t NetServiceStub::TotalProcessedCommandCount() const {
 
 std::uint64_t NetServiceStub::LastPublishedSnapshotTick() const {
     return last_published_snapshot_tick_;
+}
+
+std::size_t NetServiceStub::LastPublishedDirtyChunkCount() const {
+    return last_published_dirty_chunk_count_;
 }
 
 std::uint64_t NetServiceStub::SnapshotPublishCount() const {

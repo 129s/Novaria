@@ -70,6 +70,27 @@ bool WorldServiceBasic::ApplyTileMutation(const TileMutation& mutation, std::str
     return true;
 }
 
+std::vector<ChunkCoord> WorldServiceBasic::ConsumeDirtyChunks() {
+    std::vector<ChunkCoord> dirty_chunks;
+    if (!initialized_) {
+        return dirty_chunks;
+    }
+
+    for (auto& [chunk_key, chunk_data] : chunks_) {
+        if (!chunk_data.dirty) {
+            continue;
+        }
+
+        dirty_chunks.push_back(ChunkCoord{
+            .x = chunk_key.x,
+            .y = chunk_key.y,
+        });
+        chunk_data.dirty = false;
+    }
+
+    return dirty_chunks;
+}
+
 bool WorldServiceBasic::IsChunkLoaded(const ChunkCoord& chunk_coord) const {
     return FindChunk(chunk_coord) != nullptr;
 }

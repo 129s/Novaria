@@ -15,11 +15,12 @@ public:
     void Shutdown() override;
     void Tick(const sim::TickContext& tick_context) override;
     void SubmitLocalCommand(const PlayerCommand& command) override;
-    void PublishWorldSnapshot(std::uint64_t tick_index) override;
+    void PublishWorldSnapshot(std::uint64_t tick_index, std::size_t dirty_chunk_count) override;
 
     std::size_t PendingCommandCount() const;
     std::size_t TotalProcessedCommandCount() const;
     std::uint64_t LastPublishedSnapshotTick() const;
+    std::size_t LastPublishedDirtyChunkCount() const;
     std::uint64_t SnapshotPublishCount() const;
 
 private:
@@ -27,6 +28,7 @@ private:
     std::vector<PlayerCommand> pending_commands_;
     std::size_t total_processed_command_count_ = 0;
     std::uint64_t last_published_snapshot_tick_ = std::numeric_limits<std::uint64_t>::max();
+    std::size_t last_published_dirty_chunk_count_ = 0;
     std::uint64_t snapshot_publish_count_ = 0;
 };
 

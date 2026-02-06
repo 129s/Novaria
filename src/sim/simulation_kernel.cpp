@@ -58,7 +58,8 @@ void SimulationKernel::Update(double fixed_delta_seconds) {
     net_service_.Tick(tick_context);
     world_service_.Tick(tick_context);
     script_host_.Tick(tick_context);
-    net_service_.PublishWorldSnapshot(tick_index_);
+    const auto dirty_chunks = world_service_.ConsumeDirtyChunks();
+    net_service_.PublishWorldSnapshot(tick_index_, dirty_chunks.size());
 
     ++tick_index_;
 }
