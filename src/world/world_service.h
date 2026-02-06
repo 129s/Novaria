@@ -38,6 +38,9 @@ public:
         const ChunkCoord& chunk_coord,
         ChunkSnapshot& out_snapshot,
         std::string& out_error) const = 0;
+    virtual bool ApplyChunkSnapshot(
+        const ChunkSnapshot& snapshot,
+        std::string& out_error) = 0;
     virtual std::vector<ChunkCoord> ConsumeDirtyChunks() = 0;
 };
 

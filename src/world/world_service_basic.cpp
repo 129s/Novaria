@@ -91,6 +91,25 @@ bool WorldServiceBasic::BuildChunkSnapshot(
     return true;
 }
 
+bool WorldServiceBasic::ApplyChunkSnapshot(const ChunkSnapshot& snapshot, std::string& out_error) {
+    if (!initialized_) {
+        out_error = "World service is not initialized.";
+        return false;
+    }
+
+    const std::size_t expected_tile_count = static_cast<std::size_t>(kChunkSize * kChunkSize);
+    if (snapshot.tiles.size() != expected_tile_count) {
+        out_error = "Snapshot tile count does not match chunk size.";
+        return false;
+    }
+
+    ChunkData& chunk_data = EnsureChunk(snapshot.chunk_coord);
+    chunk_data.tiles = snapshot.tiles;
+    chunk_data.dirty = false;
+    out_error.clear();
+    return true;
+}
+
 std::vector<ChunkCoord> WorldServiceBasic::ConsumeDirtyChunks() {
     std::vector<ChunkCoord> dirty_chunks;
     if (!initialized_) {

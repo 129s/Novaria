@@ -23,6 +23,7 @@
   - `LoadChunk/UnloadChunk`
   - `ApplyTileMutation`
   - `BuildChunkSnapshot`
+  - `ApplyChunkSnapshot`
   - `ConsumeDirtyChunks`
 - 当前实现：`world::WorldServiceBasic`
   - 内存 Chunk 容器
@@ -61,3 +62,4 @@
 - `world` 已从 Stub 升级为最小可运行实现。
 - 已接入 `CTest` 与 `world_service_basic` 单元测试入口。
 - 已补 `SimulationKernel` 编排与回滚测试。
+- 已补世界快照编解码与复制流测试。

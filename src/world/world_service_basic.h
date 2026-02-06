@@ -23,6 +23,7 @@ public:
         const ChunkCoord& chunk_coord,
         ChunkSnapshot& out_snapshot,
         std::string& out_error) const override;
+    bool ApplyChunkSnapshot(const ChunkSnapshot& snapshot, std::string& out_error) override;
     std::vector<ChunkCoord> ConsumeDirtyChunks() override;
 
     bool IsChunkLoaded(const ChunkCoord& chunk_coord) const;

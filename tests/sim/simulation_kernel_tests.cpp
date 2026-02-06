@@ -75,6 +75,12 @@ public:
         return false;
     }
 
+    bool ApplyChunkSnapshot(const novaria::world::ChunkSnapshot& snapshot, std::string& out_error) override {
+        (void)snapshot;
+        out_error.clear();
+        return true;
+    }
+
     std::vector<novaria::world::ChunkCoord> ConsumeDirtyChunks() override {
         if (dirty_batch_cursor >= dirty_batches.size()) {
             return {};

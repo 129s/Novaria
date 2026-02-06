@@ -37,17 +37,37 @@ int main() {
     world_service.LoadChunk({.x = 0, .y = 0});
     passed &= Expect(world_service.IsChunkLoaded({.x = 0, .y = 0}), "Chunk (0,0) should be loaded.");
     passed &= Expect(world_service.LoadedChunkCount() == 1, "Loaded chunk count should be one.");
+
+    std::uint16_t material_id = 0;
+    passed &= Expect(world_service.TryReadTile(0, 0, material_id), "Tile (0,0) should be readable.");
+    passed &= Expect(material_id == 1, "Tile (0,0) should be initial dirt.");
+
     {
         novaria::world::ChunkSnapshot snapshot{};
         passed &= Expect(
             world_service.BuildChunkSnapshot({.x = 0, .y = 0}, snapshot, error),
             "BuildChunkSnapshot should succeed for loaded chunk.");
         passed &= Expect(!snapshot.tiles.empty(), "Chunk snapshot should contain tile data.");
-    }
 
-    std::uint16_t material_id = 0;
-    passed &= Expect(world_service.TryReadTile(0, 0, material_id), "Tile (0,0) should be readable.");
-    passed &= Expect(material_id == 1, "Tile (0,0) should be initial dirt.");
+        novaria::world::ChunkSnapshot incoming_snapshot{
+            .chunk_coord = {.x = 0, .y = 0},
+            .tiles = std::vector<std::uint16_t>(
+                static_cast<std::size_t>(novaria::world::WorldServiceBasic::kChunkSize *
+                                         novaria::world::WorldServiceBasic::kChunkSize),
+                42),
+        };
+        passed &= Expect(
+            world_service.ApplyChunkSnapshot(incoming_snapshot, error),
+            "ApplyChunkSnapshot should succeed for valid snapshot.");
+        passed &= Expect(
+            world_service.TryReadTile(0, 0, material_id) && material_id == 42,
+            "Tile should reflect applied snapshot data.");
+
+        incoming_snapshot.tiles = {1, 2, 3};
+        passed &= Expect(
+            !world_service.ApplyChunkSnapshot(incoming_snapshot, error),
+            "ApplyChunkSnapshot should fail for invalid tile count.");
+    }
 
     passed &= Expect(
         world_service.ApplyTileMutation({.tile_x = 0, .tile_y = 0, .material_id = 99}, error),
