@@ -54,3 +54,4 @@
 - `GameApp` 已接入 `SimulationKernel` 固定更新入口。
 - `world` 已从 Stub 升级为最小可运行实现。
 - 已接入 `CTest` 与 `world_service_basic` 单元测试入口。
+- 已补 `SimulationKernel` 编排与回滚测试。
