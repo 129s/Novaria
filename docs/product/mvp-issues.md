@@ -2,7 +2,7 @@
 
 - `status`: active
 - `owner`: @novaria-core
-- `last_verified_commit`: 5cba165
+- `last_verified_commit`: 69a8ef7
 - `updated`: 2026-02-06
 
 ## 1. 问题清单
