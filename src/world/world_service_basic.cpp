@@ -2,6 +2,7 @@
 
 #include "core/logger.h"
 
+#include <algorithm>
 #include <string>
 
 namespace novaria::world {
@@ -139,6 +140,15 @@ std::vector<ChunkCoord> WorldServiceBasic::ConsumeDirtyChunks() {
         });
     }
     dirty_chunk_keys_.clear();
+    std::sort(
+        dirty_chunks.begin(),
+        dirty_chunks.end(),
+        [](const ChunkCoord& lhs, const ChunkCoord& rhs) {
+            if (lhs.x != rhs.x) {
+                return lhs.x < rhs.x;
+            }
+            return lhs.y < rhs.y;
+        });
 
     return dirty_chunks;
 }

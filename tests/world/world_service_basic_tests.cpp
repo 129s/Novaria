@@ -101,6 +101,31 @@ int main() {
         passed &= Expect(ContainsChunk(dirty_chunks, {.x = -1, .y = -1}), "Dirty chunk should contain (-1,-1).");
     }
 
+    passed &= Expect(
+        world_service.ApplyTileMutation({.tile_x = 65, .tile_y = 0, .material_id = 3}, error),
+        "Mutation in chunk (2,0) should succeed.");
+    passed &= Expect(
+        world_service.ApplyTileMutation({.tile_x = -33, .tile_y = 0, .material_id = 4}, error),
+        "Mutation in chunk (-2,0) should succeed.");
+    passed &= Expect(
+        world_service.ApplyTileMutation({.tile_x = 0, .tile_y = -33, .material_id = 5}, error),
+        "Mutation in chunk (0,-2) should succeed.");
+    {
+        const auto dirty_chunks = world_service.ConsumeDirtyChunks();
+        passed &= Expect(dirty_chunks.size() == 3, "Three chunks should be reported dirty.");
+        if (dirty_chunks.size() == 3) {
+            passed &= Expect(
+                dirty_chunks[0].x == -2 && dirty_chunks[0].y == 0,
+                "Dirty chunks should be sorted by x then y (entry 0).");
+            passed &= Expect(
+                dirty_chunks[1].x == 0 && dirty_chunks[1].y == -2,
+                "Dirty chunks should be sorted by x then y (entry 1).");
+            passed &= Expect(
+                dirty_chunks[2].x == 2 && dirty_chunks[2].y == 0,
+                "Dirty chunks should be sorted by x then y (entry 2).");
+        }
+    }
+
     world_service.UnloadChunk({.x = 0, .y = 0});
     passed &= Expect(!world_service.IsChunkLoaded({.x = 0, .y = 0}), "Chunk (0,0) should be unloaded.");
     {

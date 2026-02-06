@@ -34,6 +34,7 @@
   - 基础地表生成
   - 负坐标 Tile 写入
   - 增量脏块集合追踪（`ConsumeDirtyChunks` 不扫描全量 Chunk）
+  - `ConsumeDirtyChunks` 按坐标稳定排序，便于复制链路复现
 
 ## `net`
 
