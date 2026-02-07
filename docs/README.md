@@ -2,7 +2,7 @@
 
 - `status`: authoritative
 - `owner`: @novaria-core
-- `last_verified_commit`: 2a59856
+- `last_verified_commit`: 504e174
 - `updated`: 2026-02-07
 
 ## 先看这里
