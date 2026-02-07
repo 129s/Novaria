@@ -425,6 +425,34 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
         scene.hud.wood_sword_crafted ? RgbaColor{.r = 186, .g = 210, .b = 228, .a = 255}
                                      : RgbaColor{.r = 54, .g = 58, .b = 64, .a = 255});
 
+    if (scene.hud.pickup_toast_ticks_remaining > 0) {
+        RgbaColor pickup_color{
+            .r = 196,
+            .g = 196,
+            .b = 196,
+            .a = 240,
+        };
+        if (scene.hud.pickup_toast_material_id == world::WorldServiceBasic::kMaterialDirt ||
+            scene.hud.pickup_toast_material_id == world::WorldServiceBasic::kMaterialGrass) {
+            pickup_color = MaterialColor(world::WorldServiceBasic::kMaterialDirt);
+        } else if (scene.hud.pickup_toast_material_id == world::WorldServiceBasic::kMaterialStone) {
+            pickup_color = MaterialColor(world::WorldServiceBasic::kMaterialStone);
+        } else if (scene.hud.pickup_toast_material_id == world::WorldServiceBasic::kMaterialWood) {
+            pickup_color = MaterialColor(world::WorldServiceBasic::kMaterialWood);
+        }
+
+        const int pickup_bar_width = std::min<int>(
+            220,
+            18 + static_cast<int>(scene.hud.pickup_toast_amount) * 10);
+        DrawFilledRect(
+            renderer_,
+            hud_x + 16,
+            hud_y + hud_height + 8,
+            pickup_bar_width,
+            8,
+            pickup_color);
+    }
+
     SDL_RenderPresent(renderer_);
 }
 

@@ -2,10 +2,14 @@
 
 #include "sim/command_schema.h"
 
+#include <cstddef>
+
 namespace novaria::app {
 
 void PlayerController::Reset() {
     state_ = {};
+    primary_action_progress_ = {};
+    world_drops_.clear();
 }
 
 const LocalPlayerState& PlayerController::State() const {
@@ -17,6 +21,14 @@ void PlayerController::Update(
     world::WorldServiceBasic& world_service,
     sim::SimulationKernel& simulation_kernel,
     std::uint32_t local_player_id) {
+    if (state_.pickup_toast_ticks_remaining > 0) {
+        --state_.pickup_toast_ticks_remaining;
+        if (state_.pickup_toast_ticks_remaining == 0) {
+            state_.pickup_toast_material_id = 0;
+            state_.pickup_toast_amount = 0;
+        }
+    }
+
     auto submit_world_set_tile =
         [&simulation_kernel, local_player_id](int tile_x, int tile_y, std::uint16_t material_id) {
             simulation_kernel.SubmitLocalCommand(net::PlayerCommand{
@@ -229,15 +241,9 @@ void PlayerController::Update(
                             target_tile_x,
                             target_tile_y,
                             world::WorldServiceBasic::kMaterialAir);
-                        if (target_material == world::WorldServiceBasic::kMaterialDirt ||
-                            target_material == world::WorldServiceBasic::kMaterialGrass) {
-                            ++state_.inventory_dirt_count;
-                        } else if (target_material == world::WorldServiceBasic::kMaterialStone) {
-                            ++state_.inventory_stone_count;
-                            submit_collect_resource(sim::command::kResourceStone, 1);
-                        } else if (target_material == world::WorldServiceBasic::kMaterialWood) {
-                            ++state_.inventory_wood_count;
-                            submit_collect_resource(sim::command::kResourceWood, 1);
+                        std::uint16_t drop_material_id = 0;
+                        if (TryResolveHarvestDrop(target_material, drop_material_id)) {
+                            SpawnWorldDrop(target_tile_x, target_tile_y, drop_material_id, 1);
                         }
                     } else {
                         if (place_material_id == world::WorldServiceBasic::kMaterialDirt &&
@@ -258,6 +264,32 @@ void PlayerController::Update(
         }
     } else {
         ResetPrimaryActionProgress();
+    }
+
+    constexpr std::uint16_t kPickupToastTicks = 90;
+    for (std::size_t index = 0; index < world_drops_.size();) {
+        const WorldDrop& drop = world_drops_[index];
+        if (drop.tile_x != state_.tile_x || drop.tile_y != state_.tile_y) {
+            ++index;
+            continue;
+        }
+
+        if (drop.material_id == world::WorldServiceBasic::kMaterialDirt ||
+            drop.material_id == world::WorldServiceBasic::kMaterialGrass) {
+            state_.inventory_dirt_count += drop.amount;
+        } else if (drop.material_id == world::WorldServiceBasic::kMaterialStone) {
+            state_.inventory_stone_count += drop.amount;
+            submit_collect_resource(sim::command::kResourceStone, drop.amount);
+        } else if (drop.material_id == world::WorldServiceBasic::kMaterialWood) {
+            state_.inventory_wood_count += drop.amount;
+            submit_collect_resource(sim::command::kResourceWood, drop.amount);
+        }
+
+        state_.pickup_toast_material_id = drop.material_id;
+        state_.pickup_toast_amount = drop.amount;
+        state_.pickup_toast_ticks_remaining = kPickupToastTicks;
+
+        world_drops_.erase(world_drops_.begin() + static_cast<std::ptrdiff_t>(index));
     }
 
     (void)input_intent.interaction_primary_pressed;
@@ -314,8 +346,54 @@ int PlayerController::RequiredHarvestTicks(std::uint16_t material_id) {
     return 8;
 }
 
+bool PlayerController::TryResolveHarvestDrop(
+    std::uint16_t material_id,
+    std::uint16_t& out_drop_material_id) {
+    if (material_id == world::WorldServiceBasic::kMaterialDirt ||
+        material_id == world::WorldServiceBasic::kMaterialGrass) {
+        out_drop_material_id = world::WorldServiceBasic::kMaterialDirt;
+        return true;
+    }
+    if (material_id == world::WorldServiceBasic::kMaterialStone) {
+        out_drop_material_id = world::WorldServiceBasic::kMaterialStone;
+        return true;
+    }
+    if (material_id == world::WorldServiceBasic::kMaterialWood) {
+        out_drop_material_id = world::WorldServiceBasic::kMaterialWood;
+        return true;
+    }
+
+    return false;
+}
+
 void PlayerController::ResetPrimaryActionProgress() {
     primary_action_progress_ = {};
+}
+
+void PlayerController::SpawnWorldDrop(
+    int tile_x,
+    int tile_y,
+    std::uint16_t material_id,
+    std::uint32_t amount) {
+    if (amount == 0) {
+        return;
+    }
+
+    for (WorldDrop& drop : world_drops_) {
+        if (drop.tile_x == tile_x &&
+            drop.tile_y == tile_y &&
+            drop.material_id == material_id) {
+            drop.amount += amount;
+            return;
+        }
+    }
+
+    world_drops_.push_back(WorldDrop{
+        .tile_x = tile_x,
+        .tile_y = tile_y,
+        .material_id = material_id,
+        .amount = amount,
+    });
 }
 
 }  // namespace novaria::app
