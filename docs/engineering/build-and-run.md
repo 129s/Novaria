@@ -114,3 +114,24 @@ net_udp_remote_port = 0
 cmake --build build --config Debug
 ctest --test-dir build -C Debug --output-on-failure
 ```
+
+## 8. 跨主机 Smoke 工具
+
+可执行文件：`build/Debug/novaria_net_smoke.exe`
+
+Host 端示例：
+
+```powershell
+.\build\Debug\novaria_net_smoke.exe --role host --local-host 0.0.0.0 --local-port 25000 --remote-host 192.168.1.20 --remote-port 25001 --ticks 1200
+```
+
+Client 端示例：
+
+```powershell
+.\build\Debug\novaria_net_smoke.exe --role client --local-host 0.0.0.0 --local-port 25001 --remote-host 192.168.1.10 --remote-port 25000 --ticks 1200
+```
+
+判定标准：
+
+- 两端都输出 `[PASS] novaria_net_smoke` 视为跨主机链路打通。
+- 若失败，优先检查防火墙入站规则与 `remote_host/remote_port` 是否对齐。

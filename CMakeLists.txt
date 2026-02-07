@@ -102,6 +102,19 @@ if(WIN32)
 endif()
 novaria_link_luajit_if_available(novaria)
 
+add_executable(
+    novaria_net_smoke
+    tools/net_smoke.cpp
+    src/net/net_service_runtime.cpp
+    src/net/net_service_udp_loopback.cpp
+    src/net/udp_transport.cpp
+    src/core/logger.cpp
+)
+target_include_directories(novaria_net_smoke PRIVATE src)
+if(WIN32)
+    target_link_libraries(novaria_net_smoke PRIVATE ws2_32)
+endif()
+
 set(NOVARIA_LOCAL_SDL3_DLL "${CMAKE_SOURCE_DIR}/third_party/SDL3-3.2.0/lib/x64/SDL3.dll")
 if(EXISTS "${NOVARIA_LOCAL_SDL3_DLL}")
     add_custom_command(
