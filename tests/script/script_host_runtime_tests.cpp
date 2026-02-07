@@ -117,10 +117,66 @@ int main() {
         passed &= Expect(
             descriptor.instruction_budget_per_call >= 100000,
             "Runtime descriptor should expose instruction budget.");
+        passed &= Expect(
+            descriptor.loaded_module_count == 1,
+            "Runtime descriptor should expose loaded module count.");
+        passed &= Expect(
+            descriptor.active_event_handler_count == 1,
+            "Runtime descriptor should expose active event handler count.");
         runtime.DispatchEvent({.event_name = "runtime.luajit.test", .payload = "payload"});
         runtime.Tick({.tick_index = 3, .fixed_delta_seconds = 1.0 / 60.0});
         runtime.Shutdown();
     }
+
+    novaria::script::ScriptHostRuntime callback_bus_runtime;
+    passed &= Expect(
+        callback_bus_runtime.SetScriptModules(
+            {{
+                .module_name = "mod_callback_a",
+                .api_version = novaria::script::kScriptApiVersion,
+                .source_code =
+                    "function novaria_on_tick(tick_index, delta_seconds)\n"
+                    "  return tick_index + delta_seconds\n"
+                    "end\n"
+                    "function novaria_on_event(event_name, payload)\n"
+                    "  novaria = novaria or {}\n"
+                    "  novaria.callback_a = event_name .. payload\n"
+                    "end\n",
+            },
+             {
+                 .module_name = "mod_callback_b",
+                 .api_version = novaria::script::kScriptApiVersion,
+                 .source_code =
+                     "function novaria_on_tick(tick_index, delta_seconds)\n"
+                     "  return tick_index - delta_seconds\n"
+                     "end\n"
+                     "function novaria_on_event(event_name, payload)\n"
+                     "  novaria = novaria or {}\n"
+                     "  novaria.callback_b = payload .. event_name\n"
+                     "end\n",
+             }},
+            error),
+        "Multi-module callback runtime should accept staged modules.");
+    const bool callback_bus_init_ok = callback_bus_runtime.Initialize(error);
+    passed &= Expect(
+        callback_bus_init_ok,
+        "Multi-module callback runtime should initialize.");
+    if (callback_bus_init_ok) {
+        const novaria::script::ScriptRuntimeDescriptor callback_descriptor =
+            callback_bus_runtime.RuntimeDescriptor();
+        passed &= Expect(
+            callback_descriptor.loaded_module_count == 2,
+            "Multi-module runtime should report two loaded modules.");
+        passed &= Expect(
+            callback_descriptor.active_tick_handler_count == 2,
+            "Multi-module runtime should keep both tick handlers active.");
+        passed &= Expect(
+            callback_descriptor.active_event_handler_count == 2,
+            "Multi-module runtime should keep both event handlers active.");
+        callback_bus_runtime.DispatchEvent({.event_name = "event", .payload = "payload"});
+        callback_bus_runtime.Tick({.tick_index = 5, .fixed_delta_seconds = 1.0 / 60.0});
+    }
+    callback_bus_runtime.Shutdown();
 
     novaria::script::ScriptHostRuntime bad_module_runtime;
     passed &= Expect(

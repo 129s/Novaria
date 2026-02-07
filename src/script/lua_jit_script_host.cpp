@@ -2,6 +2,7 @@
 
 #include "core/logger.h"
 
+#include <algorithm>
 #include <string>
 
 #if defined(NOVARIA_WITH_LUAJIT)
@@ -138,8 +139,10 @@ bool LuaJitScriptHost::LoadScriptModules(
         return false;
     }
 
+    ClearLoadedModules();
     for (const auto& module_source : module_sources) {
         if (!LoadModuleScript(module_source, out_error)) {
+            ClearLoadedModules();
             return false;
         }
     }
@@ -151,6 +154,7 @@ bool LuaJitScriptHost::LoadScriptModules(
 
 bool LuaJitScriptHost::Initialize(std::string& out_error) {
     pending_events_.clear();
+    loaded_modules_.clear();
     total_processed_event_count_ = 0;
     dropped_event_count_ = 0;
 
@@ -199,12 +203,14 @@ void LuaJitScriptHost::Shutdown() {
 
 #if defined(NOVARIA_WITH_LUAJIT)
     if (lua_state_ != nullptr) {
+        ClearLoadedModules();
         lua_close(lua_state_);
         lua_state_ = nullptr;
     }
 #endif
 
     pending_events_.clear();
+    loaded_modules_.clear();
     memory_quota_state_.bytes_in_use = 0;
     initialized_ = false;
     core::Logger::Info("script", "LuaJIT script host shutdown.");
@@ -221,14 +227,23 @@ void LuaJitScriptHost::Tick(const sim::TickContext& tick_context) {
 
 #if defined(NOVARIA_WITH_LUAJIT)
     std::string tick_error;
-    if (!InvokeTickHandler(tick_context, tick_error)) {
-        core::Logger::Warn("script", "LuaJIT tick handler failed: " + tick_error);
+    for (const LoadedModule& module : loaded_modules_) {
+        if (!InvokeModuleTickHandler(module, tick_context, tick_error)) {
+            core::Logger::Warn(
+                "script",
+                "LuaJIT tick handler failed (" + module.module_name + "): " + tick_error);
+        }
     }
 
     std::string event_error;
-    for (const auto& event_data : pending_events_) {
-        if (!InvokeEventHandler(event_data, event_error)) {
-            core::Logger::Warn("script", "LuaJIT event handler failed: " + event_error);
+    for (const ScriptEvent& event_data : pending_events_) {
+        for (const LoadedModule& module : loaded_modules_) {
+            if (!InvokeModuleEventHandler(module, event_data, event_error)) {
+                core::Logger::Warn(
+                    "script",
+                    "LuaJIT event handler failed (" + module.module_name + "): " +
+                        event_error);
+            }
         }
     }
 #endif
@@ -251,6 +266,17 @@ void LuaJitScriptHost::DispatchEvent(const ScriptEvent& event_data) {
 }
 
 ScriptRuntimeDescriptor LuaJitScriptHost::RuntimeDescriptor() const {
+    std::size_t active_tick_handler_count = 0;
+    std::size_t active_event_handler_count = 0;
+    for (const LoadedModule& module : loaded_modules_) {
+        if (module.can_receive_tick && module.has_tick_handler) {
+            ++active_tick_handler_count;
+        }
+        if (module.can_receive_event && module.has_event_handler) {
+            ++active_event_handler_count;
+        }
+    }
+
     return ScriptRuntimeDescriptor{
         .backend_name = "luajit",
         .api_version = kScriptApiVersion,
@@ -258,7 +284,29 @@ ScriptRuntimeDescriptor LuaJitScriptHost::RuntimeDescriptor() const {
         .sandbox_level = "resource_limited",
         .memory_budget_bytes = kMemoryBudgetBytes,
         .instruction_budget_per_call = kInstructionBudgetPerCall,
+        .loaded_module_count = loaded_modules_.size(),
+        .active_tick_handler_count = active_tick_handler_count,
+        .active_event_handler_count = active_event_handler_count,
     };
+}
+
+void LuaJitScriptHost::ClearLoadedModules() {
+#if !defined(NOVARIA_WITH_LUAJIT)
+    loaded_modules_.clear();
+#else
+    if (lua_state_ != nullptr) {
+        for (const LoadedModule& module : loaded_modules_) {
+            if (module.environment_ref == LUA_REFNIL ||
+                module.environment_ref == LUA_NOREF) {
+                continue;
+            }
+
+            luaL_unref(lua_state_, LUA_REGISTRYINDEX, module.environment_ref);
+        }
+    }
+
+    loaded_modules_.clear();
+#endif
 }
 
 bool LuaJitScriptHost::IsVmReady() const {
@@ -385,10 +433,17 @@ bool LuaJitScriptHost::BindModuleEnvironment(
 #endif
 }
 
-void LuaJitScriptHost::ExportModuleHandlersFromEnvironment(int environment_ref) {
+void LuaJitScriptHost::DetectModuleHandlers(
+    int environment_ref,
+    bool& out_has_tick_handler,
+    bool& out_has_event_handler) const {
 #if !defined(NOVARIA_WITH_LUAJIT)
     (void)environment_ref;
+    out_has_tick_handler = false;
+    out_has_event_handler = false;
 #else
+    out_has_tick_handler = false;
+    out_has_event_handler = false;
     if (lua_state_ == nullptr || environment_ref == LUA_REFNIL ||
         environment_ref == LUA_NOREF) {
         return;
@@ -401,18 +456,12 @@ void LuaJitScriptHost::ExportModuleHandlersFromEnvironment(int environment_ref) 
     }
 
     lua_getfield(lua_state_, -1, "novaria_on_tick");
-    if (lua_isfunction(lua_state_, -1)) {
-        lua_setglobal(lua_state_, "novaria_on_tick");
-    } else {
-        lua_pop(lua_state_, 1);
-    }
+    out_has_tick_handler = lua_isfunction(lua_state_, -1);
+    lua_pop(lua_state_, 1);
 
     lua_getfield(lua_state_, -1, "novaria_on_event");
-    if (lua_isfunction(lua_state_, -1)) {
-        lua_setglobal(lua_state_, "novaria_on_event");
-    } else {
-        lua_pop(lua_state_, 1);
-    }
+    out_has_event_handler = lua_isfunction(lua_state_, -1);
+    lua_pop(lua_state_, 1);
 
     lua_pop(lua_state_, 1);
 #endif
@@ -469,27 +518,61 @@ bool LuaJitScriptHost::LoadModuleScript(
         return false;
     }
 
-    ExportModuleHandlersFromEnvironment(environment_ref);
-    luaL_unref(lua_state_, LUA_REGISTRYINDEX, environment_ref);
+    bool has_tick_handler = false;
+    bool has_event_handler = false;
+    DetectModuleHandlers(environment_ref, has_tick_handler, has_event_handler);
+    const bool can_receive_tick =
+        std::find(
+            module_source.capabilities.begin(),
+            module_source.capabilities.end(),
+            "tick.receive") != module_source.capabilities.end();
+    const bool can_receive_event =
+        std::find(
+            module_source.capabilities.begin(),
+            module_source.capabilities.end(),
+            "event.receive") != module_source.capabilities.end();
+    loaded_modules_.push_back(LoadedModule{
+        .module_name = module_source.module_name,
+        .environment_ref = environment_ref,
+        .can_receive_tick = can_receive_tick,
+        .can_receive_event = can_receive_event,
+        .has_tick_handler = has_tick_handler,
+        .has_event_handler = has_event_handler,
+    });
+
     out_error.clear();
     return true;
 #endif
 }
 
-bool LuaJitScriptHost::InvokeTickHandler(const sim::TickContext& tick_context, std::string& out_error) {
+bool LuaJitScriptHost::InvokeModuleTickHandler(
+    const LoadedModule& module,
+    const sim::TickContext& tick_context,
+    std::string& out_error) {
 #if !defined(NOVARIA_WITH_LUAJIT)
+    (void)module;
     (void)tick_context;
     (void)out_error;
     return false;
 #else
-    if (lua_state_ == nullptr) {
-        out_error = "Lua state is null.";
-        return false;
+    if (lua_state_ == nullptr || !module.can_receive_tick ||
+        !module.has_tick_handler || module.environment_ref == LUA_REFNIL ||
+        module.environment_ref == LUA_NOREF) {
+        out_error.clear();
+        return true;
     }
 
-    lua_getglobal(lua_state_, "novaria_on_tick");
-    if (!lua_isfunction(lua_state_, -1)) {
+    lua_rawgeti(lua_state_, LUA_REGISTRYINDEX, module.environment_ref);
+    if (!lua_istable(lua_state_, -1)) {
         lua_pop(lua_state_, 1);
+        out_error.clear();
+        return true;
+    }
+
+    lua_getfield(lua_state_, -1, "novaria_on_tick");
+    if (!lua_isfunction(lua_state_, -1)) {
+        lua_pop(lua_state_, 2);
+        out_error.clear();
         return true;
     }
 
@@ -500,28 +583,44 @@ bool LuaJitScriptHost::InvokeTickHandler(const sim::TickContext& tick_context, s
             static_cast<int>(kInstructionBudgetPerCall),
             2,
             out_error)) {
+        lua_pop(lua_state_, 1);
         return false;
     }
 
+    lua_pop(lua_state_, 1);
     out_error.clear();
     return true;
 #endif
 }
 
-bool LuaJitScriptHost::InvokeEventHandler(const ScriptEvent& event_data, std::string& out_error) {
+bool LuaJitScriptHost::InvokeModuleEventHandler(
+    const LoadedModule& module,
+    const ScriptEvent& event_data,
+    std::string& out_error) {
 #if !defined(NOVARIA_WITH_LUAJIT)
+    (void)module;
     (void)event_data;
     (void)out_error;
     return false;
 #else
-    if (lua_state_ == nullptr) {
-        out_error = "Lua state is null.";
-        return false;
+    if (lua_state_ == nullptr || !module.can_receive_event ||
+        !module.has_event_handler || module.environment_ref == LUA_REFNIL ||
+        module.environment_ref == LUA_NOREF) {
+        out_error.clear();
+        return true;
     }
 
-    lua_getglobal(lua_state_, "novaria_on_event");
-    if (!lua_isfunction(lua_state_, -1)) {
+    lua_rawgeti(lua_state_, LUA_REGISTRYINDEX, module.environment_ref);
+    if (!lua_istable(lua_state_, -1)) {
         lua_pop(lua_state_, 1);
+        out_error.clear();
+        return true;
+    }
+
+    lua_getfield(lua_state_, -1, "novaria_on_event");
+    if (!lua_isfunction(lua_state_, -1)) {
+        lua_pop(lua_state_, 2);
+        out_error.clear();
         return true;
     }
 
@@ -532,9 +631,11 @@ bool LuaJitScriptHost::InvokeEventHandler(const ScriptEvent& event_data, std::st
             static_cast<int>(kInstructionBudgetPerCall),
             2,
             out_error)) {
+        lua_pop(lua_state_, 1);
         return false;
     }
 
+    lua_pop(lua_state_, 1);
     out_error.clear();
     return true;
 #endif

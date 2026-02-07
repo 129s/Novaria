@@ -29,6 +29,9 @@ struct ScriptRuntimeDescriptor final {
     std::string sandbox_level = "none";
     std::uint64_t memory_budget_bytes = 0;
     std::uint64_t instruction_budget_per_call = 0;
+    std::size_t loaded_module_count = 0;
+    std::size_t active_tick_handler_count = 0;
+    std::size_t active_event_handler_count = 0;
 };
 
 class IScriptHost {
