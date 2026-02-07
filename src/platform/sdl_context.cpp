@@ -177,7 +177,7 @@ bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
             quit_requested = true;
         }
 
-        if (event.type == SDL_EVENT_KEY_DOWN) {
+        if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
             if (event.key.scancode == SDL_SCANCODE_SPACE) {
                 out_actions.jump_pressed = true;
             }
@@ -198,6 +198,30 @@ bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
                 out_actions.hotbar_select_slot_4 = true;
             }
 
+            if (event.key.scancode == SDL_SCANCODE_5) {
+                out_actions.hotbar_select_slot_5 = true;
+            }
+
+            if (event.key.scancode == SDL_SCANCODE_6) {
+                out_actions.hotbar_select_slot_6 = true;
+            }
+
+            if (event.key.scancode == SDL_SCANCODE_7) {
+                out_actions.hotbar_select_slot_7 = true;
+            }
+
+            if (event.key.scancode == SDL_SCANCODE_8) {
+                out_actions.hotbar_select_slot_8 = true;
+            }
+
+            if (event.key.scancode == SDL_SCANCODE_9) {
+                out_actions.hotbar_select_slot_9 = true;
+            }
+
+            if (event.key.scancode == SDL_SCANCODE_0) {
+                out_actions.hotbar_select_slot_10 = true;
+            }
+
             if (event.key.scancode == SDL_SCANCODE_ESCAPE) {
                 out_actions.ui_inventory_toggle_pressed = true;
             }
@@ -215,6 +239,14 @@ bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
         if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
             if (event.button.button == SDL_BUTTON_RIGHT) {
                 out_actions.interaction_primary_pressed = true;
+            }
+        }
+
+        if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+            if (event.wheel.y > 0.0F) {
+                out_actions.hotbar_cycle_prev = true;
+            } else if (event.wheel.y < 0.0F) {
+                out_actions.hotbar_cycle_next = true;
             }
         }
     }

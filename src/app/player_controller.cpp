@@ -168,19 +168,49 @@ void PlayerController::Update(
         ++state_.tile_y;
     }
 
+    auto apply_hotbar_slot = [this](std::uint8_t slot_index) {
+        state_.selected_hotbar_slot = slot_index;
+        if (slot_index == 2) {
+            state_.selected_place_material_id = world::WorldServiceBasic::kMaterialDirt;
+        } else if (slot_index == 3) {
+            state_.selected_place_material_id = world::WorldServiceBasic::kMaterialStone;
+        }
+    };
+
     if (input_intent.hotbar_select_slot_1) {
-        state_.selected_hotbar_slot = 0;
+        apply_hotbar_slot(0);
     }
     if (input_intent.hotbar_select_slot_2) {
-        state_.selected_hotbar_slot = 1;
+        apply_hotbar_slot(1);
     }
     if (input_intent.hotbar_select_slot_3) {
-        state_.selected_hotbar_slot = 2;
-        state_.selected_place_material_id = world::WorldServiceBasic::kMaterialDirt;
+        apply_hotbar_slot(2);
     }
     if (input_intent.hotbar_select_slot_4) {
-        state_.selected_hotbar_slot = 3;
-        state_.selected_place_material_id = world::WorldServiceBasic::kMaterialStone;
+        apply_hotbar_slot(3);
+    }
+    if (input_intent.hotbar_select_slot_5) {
+        apply_hotbar_slot(4);
+    }
+    if (input_intent.hotbar_select_slot_6) {
+        apply_hotbar_slot(5);
+    }
+    if (input_intent.hotbar_select_slot_7) {
+        apply_hotbar_slot(6);
+    }
+    if (input_intent.hotbar_select_slot_8) {
+        apply_hotbar_slot(7);
+    }
+    if (input_intent.hotbar_select_slot_9) {
+        apply_hotbar_slot(8);
+    }
+    if (input_intent.hotbar_select_slot_10) {
+        apply_hotbar_slot(9);
+    }
+    if (input_intent.hotbar_cycle_prev) {
+        apply_hotbar_slot(static_cast<std::uint8_t>((state_.selected_hotbar_slot + 9) % 10));
+    } else if (input_intent.hotbar_cycle_next) {
+        apply_hotbar_slot(static_cast<std::uint8_t>((state_.selected_hotbar_slot + 1) % 10));
     }
 
     const int target_tile_x = state_.tile_x + state_.facing_x;

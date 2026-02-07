@@ -14,6 +14,14 @@ struct PlayerInputIntent final {
     bool hotbar_select_slot_2 = false;
     bool hotbar_select_slot_3 = false;
     bool hotbar_select_slot_4 = false;
+    bool hotbar_select_slot_5 = false;
+    bool hotbar_select_slot_6 = false;
+    bool hotbar_select_slot_7 = false;
+    bool hotbar_select_slot_8 = false;
+    bool hotbar_select_slot_9 = false;
+    bool hotbar_select_slot_10 = false;
+    bool hotbar_cycle_prev = false;
+    bool hotbar_cycle_next = false;
     bool ui_inventory_toggle_pressed = false;
     bool hotbar_select_next_row = false;
     bool smart_mode_toggle_pressed = false;
