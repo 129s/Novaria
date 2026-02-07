@@ -119,6 +119,26 @@ function(novaria_link_entt target_name)
     endif()
 endfunction()
 
+function(novaria_link_winsock_if_needed target_name)
+    if(WIN32)
+        target_link_libraries(${target_name} PRIVATE ws2_32)
+    endif()
+endfunction()
+
+function(novaria_enable_default_warnings target_name)
+    if(MSVC)
+        target_compile_options(${target_name} PRIVATE /W4 /permissive- /Zc:__cplusplus)
+        if(NOVARIA_WARNINGS_AS_ERRORS)
+            target_compile_options(${target_name} PRIVATE /WX)
+        endif()
+    else()
+        target_compile_options(${target_name} PRIVATE -Wall -Wextra -Wpedantic)
+        if(NOVARIA_WARNINGS_AS_ERRORS)
+            target_compile_options(${target_name} PRIVATE -Werror)
+        endif()
+    endif()
+endfunction()
+
 add_executable(
     novaria
     src/main.cpp
@@ -147,9 +167,7 @@ add_executable(
 target_include_directories(novaria PRIVATE src)
 target_link_libraries(novaria PRIVATE ${NOVARIA_SDL3_TARGET})
 novaria_link_entt(novaria)
-if(WIN32)
-    target_link_libraries(novaria PRIVATE ws2_32)
-endif()
+novaria_link_winsock_if_needed(novaria)
 novaria_link_luajit_if_available(novaria)
 
 add_executable(
@@ -161,9 +179,7 @@ add_executable(
     src/core/logger.cpp
 )
 target_include_directories(novaria_net_smoke PRIVATE src)
-if(WIN32)
-    target_link_libraries(novaria_net_smoke PRIVATE ws2_32)
-endif()
+novaria_link_winsock_if_needed(novaria_net_smoke)
 
 add_executable(
     novaria_net_soak
@@ -174,9 +190,7 @@ add_executable(
     src/core/logger.cpp
 )
 target_include_directories(novaria_net_soak PRIVATE src)
-if(WIN32)
-    target_link_libraries(novaria_net_soak PRIVATE ws2_32)
-endif()
+novaria_link_winsock_if_needed(novaria_net_soak)
 
 add_executable(
     novaria_server
@@ -198,9 +212,7 @@ add_executable(
 target_include_directories(novaria_server PRIVATE src)
 novaria_link_entt(novaria_server)
 novaria_link_luajit_if_available(novaria_server)
-if(WIN32)
-    target_link_libraries(novaria_server PRIVATE ws2_32)
-endif()
+novaria_link_winsock_if_needed(novaria_server)
 
 set(NOVARIA_LOCAL_SDL3_DLL "${CMAKE_SOURCE_DIR}/third_party/SDL3-3.2.0/lib/x64/SDL3.dll")
 if(EXISTS "${NOVARIA_LOCAL_SDL3_DLL}")
@@ -213,21 +225,15 @@ if(EXISTS "${NOVARIA_LOCAL_SDL3_DLL}")
     )
 endif()
 
-if(MSVC)
-    target_compile_options(novaria PRIVATE /W4 /permissive- /Zc:__cplusplus)
-    target_compile_options(novaria_server PRIVATE /W4 /permissive- /Zc:__cplusplus)
-    if(NOVARIA_WARNINGS_AS_ERRORS)
-        target_compile_options(novaria PRIVATE /WX)
-        target_compile_options(novaria_server PRIVATE /WX)
-    endif()
-else()
-    target_compile_options(novaria PRIVATE -Wall -Wextra -Wpedantic)
-    target_compile_options(novaria_server PRIVATE -Wall -Wextra -Wpedantic)
-    if(NOVARIA_WARNINGS_AS_ERRORS)
-        target_compile_options(novaria PRIVATE -Werror)
-        target_compile_options(novaria_server PRIVATE -Werror)
-    endif()
-endif()
+set(NOVARIA_RUNTIME_TARGETS
+    novaria
+    novaria_server
+    novaria_net_smoke
+    novaria_net_soak
+)
+foreach(runtime_target IN LISTS NOVARIA_RUNTIME_TARGETS)
+    novaria_enable_default_warnings(${runtime_target})
+endforeach()
 
 if(NOVARIA_BUILD_TESTS)
     enable_testing()
@@ -247,9 +253,7 @@ if(NOVARIA_BUILD_TESTS)
         src/core/logger.cpp
     )
     target_include_directories(novaria_net_service_udp_loopback_tests PRIVATE src)
-    if(WIN32)
-        target_link_libraries(novaria_net_service_udp_loopback_tests PRIVATE ws2_32)
-    endif()
+    novaria_link_winsock_if_needed(novaria_net_service_udp_loopback_tests)
 
     add_executable(
         novaria_net_service_runtime_tests
@@ -260,9 +264,7 @@ if(NOVARIA_BUILD_TESTS)
         src/core/logger.cpp
     )
     target_include_directories(novaria_net_service_runtime_tests PRIVATE src)
-    if(WIN32)
-        target_link_libraries(novaria_net_service_runtime_tests PRIVATE ws2_32)
-    endif()
+    novaria_link_winsock_if_needed(novaria_net_service_runtime_tests)
 
     add_executable(
         novaria_udp_transport_tests
@@ -270,9 +272,7 @@ if(NOVARIA_BUILD_TESTS)
         src/net/udp_transport.cpp
     )
     target_include_directories(novaria_udp_transport_tests PRIVATE src)
-    if(WIN32)
-        target_link_libraries(novaria_udp_transport_tests PRIVATE ws2_32)
-    endif()
+    novaria_link_winsock_if_needed(novaria_udp_transport_tests)
 
     add_executable(
         novaria_world_service_tests
@@ -307,9 +307,7 @@ if(NOVARIA_BUILD_TESTS)
     )
     target_include_directories(novaria_simulation_kernel_tests PRIVATE src)
     novaria_link_entt(novaria_simulation_kernel_tests)
-    if(WIN32)
-        target_link_libraries(novaria_simulation_kernel_tests PRIVATE ws2_32)
-    endif()
+    novaria_link_winsock_if_needed(novaria_simulation_kernel_tests)
 
     add_executable(
         novaria_ecs_runtime_tests
@@ -367,81 +365,25 @@ if(NOVARIA_BUILD_TESTS)
     )
     target_include_directories(novaria_mvp_acceptance_tests PRIVATE src)
     novaria_link_entt(novaria_mvp_acceptance_tests)
-    if(WIN32)
-        target_link_libraries(novaria_mvp_acceptance_tests PRIVATE ws2_32)
-    endif()
+    novaria_link_winsock_if_needed(novaria_mvp_acceptance_tests)
 
-    if(MSVC)
-        target_compile_options(novaria_config_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
-        target_compile_options(novaria_net_service_udp_loopback_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
-        target_compile_options(novaria_net_service_runtime_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
-        target_compile_options(novaria_udp_transport_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
-        target_compile_options(novaria_world_service_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
-        target_compile_options(novaria_script_host_runtime_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
-        target_compile_options(novaria_simulation_kernel_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
-        target_compile_options(novaria_ecs_runtime_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
-        target_compile_options(novaria_save_repository_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
-        target_compile_options(novaria_mod_loader_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
-        target_compile_options(novaria_world_snapshot_codec_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
-        target_compile_options(novaria_world_replication_flow_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
-        target_compile_options(novaria_mvp_acceptance_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
-        if(NOVARIA_WARNINGS_AS_ERRORS)
-            target_compile_options(novaria_config_tests PRIVATE /WX)
-            target_compile_options(novaria_net_service_udp_loopback_tests PRIVATE /WX)
-            target_compile_options(novaria_net_service_runtime_tests PRIVATE /WX)
-            target_compile_options(novaria_udp_transport_tests PRIVATE /WX)
-            target_compile_options(novaria_world_service_tests PRIVATE /WX)
-            target_compile_options(novaria_script_host_runtime_tests PRIVATE /WX)
-            target_compile_options(novaria_simulation_kernel_tests PRIVATE /WX)
-            target_compile_options(novaria_ecs_runtime_tests PRIVATE /WX)
-            target_compile_options(novaria_save_repository_tests PRIVATE /WX)
-            target_compile_options(novaria_mod_loader_tests PRIVATE /WX)
-            target_compile_options(novaria_world_snapshot_codec_tests PRIVATE /WX)
-            target_compile_options(novaria_world_replication_flow_tests PRIVATE /WX)
-            target_compile_options(novaria_mvp_acceptance_tests PRIVATE /WX)
-        endif()
-    else()
-        target_compile_options(novaria_config_tests PRIVATE -Wall -Wextra -Wpedantic)
-        target_compile_options(novaria_net_service_udp_loopback_tests PRIVATE -Wall -Wextra -Wpedantic)
-        target_compile_options(novaria_net_service_runtime_tests PRIVATE -Wall -Wextra -Wpedantic)
-        target_compile_options(novaria_udp_transport_tests PRIVATE -Wall -Wextra -Wpedantic)
-        target_compile_options(novaria_world_service_tests PRIVATE -Wall -Wextra -Wpedantic)
-        target_compile_options(novaria_script_host_runtime_tests PRIVATE -Wall -Wextra -Wpedantic)
-        target_compile_options(novaria_simulation_kernel_tests PRIVATE -Wall -Wextra -Wpedantic)
-        target_compile_options(novaria_ecs_runtime_tests PRIVATE -Wall -Wextra -Wpedantic)
-        target_compile_options(novaria_save_repository_tests PRIVATE -Wall -Wextra -Wpedantic)
-        target_compile_options(novaria_mod_loader_tests PRIVATE -Wall -Wextra -Wpedantic)
-        target_compile_options(novaria_world_snapshot_codec_tests PRIVATE -Wall -Wextra -Wpedantic)
-        target_compile_options(novaria_world_replication_flow_tests PRIVATE -Wall -Wextra -Wpedantic)
-        target_compile_options(novaria_mvp_acceptance_tests PRIVATE -Wall -Wextra -Wpedantic)
-        if(NOVARIA_WARNINGS_AS_ERRORS)
-            target_compile_options(novaria_config_tests PRIVATE -Werror)
-            target_compile_options(novaria_net_service_udp_loopback_tests PRIVATE -Werror)
-            target_compile_options(novaria_net_service_runtime_tests PRIVATE -Werror)
-            target_compile_options(novaria_udp_transport_tests PRIVATE -Werror)
-            target_compile_options(novaria_world_service_tests PRIVATE -Werror)
-            target_compile_options(novaria_script_host_runtime_tests PRIVATE -Werror)
-            target_compile_options(novaria_simulation_kernel_tests PRIVATE -Werror)
-            target_compile_options(novaria_ecs_runtime_tests PRIVATE -Werror)
-            target_compile_options(novaria_save_repository_tests PRIVATE -Werror)
-            target_compile_options(novaria_mod_loader_tests PRIVATE -Werror)
-            target_compile_options(novaria_world_snapshot_codec_tests PRIVATE -Werror)
-            target_compile_options(novaria_world_replication_flow_tests PRIVATE -Werror)
-            target_compile_options(novaria_mvp_acceptance_tests PRIVATE -Werror)
-        endif()
-    endif()
-
-    add_test(NAME novaria_config_tests COMMAND novaria_config_tests)
-    add_test(NAME novaria_net_service_udp_loopback_tests COMMAND novaria_net_service_udp_loopback_tests)
-    add_test(NAME novaria_net_service_runtime_tests COMMAND novaria_net_service_runtime_tests)
-    add_test(NAME novaria_udp_transport_tests COMMAND novaria_udp_transport_tests)
-    add_test(NAME novaria_world_service_tests COMMAND novaria_world_service_tests)
-    add_test(NAME novaria_script_host_runtime_tests COMMAND novaria_script_host_runtime_tests)
-    add_test(NAME novaria_simulation_kernel_tests COMMAND novaria_simulation_kernel_tests)
-    add_test(NAME novaria_ecs_runtime_tests COMMAND novaria_ecs_runtime_tests)
-    add_test(NAME novaria_save_repository_tests COMMAND novaria_save_repository_tests)
-    add_test(NAME novaria_mod_loader_tests COMMAND novaria_mod_loader_tests)
-    add_test(NAME novaria_world_snapshot_codec_tests COMMAND novaria_world_snapshot_codec_tests)
-    add_test(NAME novaria_world_replication_flow_tests COMMAND novaria_world_replication_flow_tests)
-    add_test(NAME novaria_mvp_acceptance_tests COMMAND novaria_mvp_acceptance_tests)
+    set(NOVARIA_TEST_TARGETS
+        novaria_config_tests
+        novaria_net_service_udp_loopback_tests
+        novaria_net_service_runtime_tests
+        novaria_udp_transport_tests
+        novaria_world_service_tests
+        novaria_script_host_runtime_tests
+        novaria_simulation_kernel_tests
+        novaria_ecs_runtime_tests
+        novaria_save_repository_tests
+        novaria_mod_loader_tests
+        novaria_world_snapshot_codec_tests
+        novaria_world_replication_flow_tests
+        novaria_mvp_acceptance_tests
+    )
+    foreach(test_target IN LISTS NOVARIA_TEST_TARGETS)
+        novaria_enable_default_warnings(${test_target})
+        add_test(NAME ${test_target} COMMAND ${test_target})
+    endforeach()
 endif()
