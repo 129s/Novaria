@@ -189,11 +189,15 @@ add_executable(
     src/net/net_service_runtime.cpp
     src/net/net_service_udp_loopback.cpp
     src/net/udp_transport.cpp
+    src/script/script_host_runtime.cpp
+    src/script/lua_jit_script_host.cpp
+    src/mod/mod_loader.cpp
     src/core/logger.cpp
     src/core/config.cpp
 )
 target_include_directories(novaria_server PRIVATE src)
 novaria_link_entt(novaria_server)
+novaria_link_luajit_if_available(novaria_server)
 if(WIN32)
     target_link_libraries(novaria_server PRIVATE ws2_32)
 endif()

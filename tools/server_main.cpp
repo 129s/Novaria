@@ -1,7 +1,8 @@
 #include "core/config.h"
 #include "core/logger.h"
+#include "mod/mod_loader.h"
 #include "net/net_service_runtime.h"
-#include "script/script_host.h"
+#include "script/script_host_runtime.h"
 #include "sim/command_schema.h"
 #include "sim/simulation_kernel.h"
 #include "world/world_service_basic.h"
@@ -11,15 +12,19 @@
 #include <csignal>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <vector>
 
 namespace {
 
 struct ServerOptions final {
     std::filesystem::path config_path = "config/game.toml";
+    std::filesystem::path mod_root = "mods";
     std::uint64_t ticks = 0;
     double fixed_delta_seconds = 1.0 / 60.0;
     std::uint64_t log_interval_ticks = 300;
@@ -32,31 +37,93 @@ void OnSignal(int signal_code) {
     g_keep_running.store(false);
 }
 
-class ServerScriptHost final : public novaria::script::IScriptHost {
-public:
-    bool Initialize(std::string& out_error) override {
-        out_error.clear();
-        return true;
+novaria::script::ScriptBackendPreference ToScriptBackendPreference(
+    novaria::core::ScriptBackendMode mode) {
+    switch (mode) {
+        case novaria::core::ScriptBackendMode::LuaJit:
+            return novaria::script::ScriptBackendPreference::LuaJit;
     }
 
-    void Shutdown() override {}
+    return novaria::script::ScriptBackendPreference::LuaJit;
+}
 
-    void Tick(const novaria::sim::TickContext& tick_context) override {
-        (void)tick_context;
+bool ReadTextFile(
+    const std::filesystem::path& file_path,
+    std::string& out_text,
+    std::string& out_error) {
+    std::ifstream file(file_path, std::ios::binary);
+    if (!file.is_open()) {
+        out_error = "cannot open file: " + file_path.string();
+        return false;
     }
 
-    void DispatchEvent(const novaria::script::ScriptEvent& event_data) override {
-        (void)event_data;
+    out_text.assign(
+        std::istreambuf_iterator<char>(file),
+        std::istreambuf_iterator<char>());
+    out_error.clear();
+    return true;
+}
+
+bool IsSafeRelativePath(const std::filesystem::path& path) {
+    if (path.empty() || path.is_absolute()) {
+        return false;
     }
 
-    novaria::script::ScriptRuntimeDescriptor RuntimeDescriptor() const override {
-        return novaria::script::ScriptRuntimeDescriptor{
-            .backend_name = "server_null",
-            .api_version = novaria::script::kScriptApiVersion,
-            .sandbox_enabled = true,
-        };
+    for (const auto& part : path) {
+        if (part == "..") {
+            return false;
+        }
     }
-};
+
+    return true;
+}
+
+bool BuildModScriptModules(
+    const std::vector<novaria::mod::ModManifest>& manifests,
+    std::vector<novaria::script::ScriptModuleSource>& out_modules,
+    std::string& out_error) {
+    out_modules.clear();
+    for (const auto& manifest : manifests) {
+        if (manifest.script_entry.empty()) {
+            continue;
+        }
+
+        const std::filesystem::path script_entry_path =
+            std::filesystem::path(manifest.script_entry).lexically_normal();
+        if (!IsSafeRelativePath(script_entry_path)) {
+            out_error =
+                "Invalid script entry path in mod '" + manifest.name +
+                "': " + manifest.script_entry;
+            return false;
+        }
+
+        const std::filesystem::path module_file_path =
+            (manifest.root_path / script_entry_path).lexically_normal();
+        std::string module_source;
+        if (!ReadTextFile(module_file_path, module_source, out_error)) {
+            out_error =
+                "Failed to load script entry for mod '" + manifest.name +
+                "': " + out_error;
+            return false;
+        }
+
+        out_modules.push_back(novaria::script::ScriptModuleSource{
+            .module_name = manifest.name,
+            .api_version =
+                manifest.script_api_version.empty()
+                    ? std::string(novaria::script::kScriptApiVersion)
+                    : manifest.script_api_version,
+            .capabilities =
+                manifest.script_capabilities.empty()
+                    ? std::vector<std::string>{"event.receive", "tick.receive"}
+                    : manifest.script_capabilities,
+            .source_code = std::move(module_source),
+        });
+    }
+
+    out_error.clear();
+    return true;
+}
 
 bool ParseUInt64(std::string_view text, std::uint64_t& out_value) {
     try {
@@ -113,6 +180,15 @@ bool ParseArguments(
             continue;
         }
 
+        if (arg == "--mods") {
+            const std::string value = read_value("--mods");
+            if (value.empty()) {
+                return false;
+            }
+            out_options.mod_root = value;
+            continue;
+        }
+
         if (arg == "--fixed-delta") {
             const std::string value = read_value("--fixed-delta");
             if (value.empty()) {
@@ -154,10 +230,10 @@ void PrintUsage() {
     std::cout
         << "Usage:\n"
         << "  novaria_server [--config <path>] [--ticks <count>] "
-        << "[--fixed-delta <seconds>] [--log-interval <ticks>]\n"
+        << "[--mods <path>] [--fixed-delta <seconds>] [--log-interval <ticks>]\n"
         << "\n"
         << "Examples:\n"
-        << "  novaria_server --config config/game.toml --ticks 7200\n"
+        << "  novaria_server --config config/game.toml --mods mods --ticks 7200\n"
         << "  novaria_server --config config/game.toml --fixed-delta 0.0166667\n";
 }
 
@@ -188,8 +264,9 @@ int main(int argc, char** argv) {
 
     novaria::world::WorldServiceBasic world_service;
     novaria::net::NetServiceRuntime net_service;
-    ServerScriptHost script_host;
+    novaria::script::ScriptHostRuntime script_host;
     novaria::sim::SimulationKernel simulation_kernel(world_service, net_service, script_host);
+    simulation_kernel.SetAuthorityMode(novaria::sim::SimulationAuthorityMode::Authority);
 
     net_service.SetBackendPreference(novaria::net::NetBackendPreference::UdpLoopback);
     net_service.ConfigureUdpBackend(
@@ -199,11 +276,45 @@ int main(int argc, char** argv) {
             .host = config.net_udp_remote_host,
             .port = static_cast<std::uint16_t>(config.net_udp_remote_port),
         });
+    script_host.SetBackendPreference(ToScriptBackendPreference(config.script_backend_mode));
+
+    novaria::mod::ModLoader mod_loader;
+    std::vector<novaria::mod::ModManifest> loaded_mods;
+    std::string mod_error;
+    if (!mod_loader.Initialize(options.mod_root, mod_error)) {
+        novaria::core::Logger::Warn("mod", "Mod loader initialize failed: " + mod_error);
+    } else if (!mod_loader.LoadAll(loaded_mods, mod_error)) {
+        novaria::core::Logger::Warn("mod", "Mod loading failed: " + mod_error);
+    } else {
+        novaria::core::Logger::Info("mod", "Loaded mods: " + std::to_string(loaded_mods.size()));
+        novaria::core::Logger::Info(
+            "mod",
+            "Manifest fingerprint: " + novaria::mod::ModLoader::BuildManifestFingerprint(loaded_mods));
+    }
+
+    std::vector<novaria::script::ScriptModuleSource> script_modules;
+    if (!BuildModScriptModules(loaded_mods, script_modules, error)) {
+        std::cerr << "[ERROR] build mod script modules failed: " << error << '\n';
+        mod_loader.Shutdown();
+        return 1;
+    }
+    if (!script_host.SetScriptModules(std::move(script_modules), error)) {
+        std::cerr << "[ERROR] load mod script modules failed: " << error << '\n';
+        mod_loader.Shutdown();
+        return 1;
+    }
 
     if (!simulation_kernel.Initialize(error)) {
         std::cerr << "[ERROR] server initialize failed: " << error << '\n';
+        mod_loader.Shutdown();
         return 1;
     }
+    const novaria::script::ScriptRuntimeDescriptor script_runtime_descriptor = script_host.RuntimeDescriptor();
+    novaria::core::Logger::Info(
+        "script",
+        "Script runtime active: backend=" + script_runtime_descriptor.backend_name +
+            ", api_version=" + script_runtime_descriptor.api_version +
+            ", sandbox=" + (script_runtime_descriptor.sandbox_enabled ? "true" : "false"));
 
     const int preload_chunk_radius = 2;
     for (int chunk_y = -preload_chunk_radius; chunk_y <= preload_chunk_radius; ++chunk_y) {
@@ -253,6 +364,7 @@ int main(int argc, char** argv) {
     }
 
     simulation_kernel.Shutdown();
+    mod_loader.Shutdown();
     novaria::core::Logger::Info("server", "Server stopped.");
     return 0;
 }
