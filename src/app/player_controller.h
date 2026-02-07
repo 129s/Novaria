@@ -11,8 +11,9 @@ namespace novaria::app {
 
 struct LocalPlayerState final {
     int tile_x = 0;
-    int tile_y = -1;
+    int tile_y = -2;
     int facing_x = 1;
+    std::uint8_t jump_ticks_remaining = 0;
     std::uint32_t inventory_dirt_count = 0;
     std::uint32_t inventory_stone_count = 0;
     std::uint32_t inventory_wood_count = 0;

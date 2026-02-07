@@ -127,32 +127,45 @@ void PlayerController::Update(
         state_.loaded_chunk_window_center_y = player_chunk.y;
     }
 
-    auto try_move_player = [this, &world_service](int delta_x, int delta_y) {
-        const int next_x = state_.tile_x + delta_x;
-        const int next_y = state_.tile_y + delta_y;
+    auto can_move_to = [&world_service](int tile_x, int tile_y) {
         std::uint16_t destination_material = 0;
-        if (world_service.TryReadTile(next_x, next_y, destination_material) &&
-            IsSolidMaterial(destination_material)) {
-            return;
+        if (!world_service.TryReadTile(tile_x, tile_y, destination_material)) {
+            return false;
         }
 
-        state_.tile_x = next_x;
-        state_.tile_y = next_y;
+        return !IsSolidMaterial(destination_material);
     };
 
     if (input_intent.move_left) {
         state_.facing_x = -1;
-        try_move_player(-1, 0);
+        if (can_move_to(state_.tile_x - 1, state_.tile_y)) {
+            --state_.tile_x;
+        }
     }
     if (input_intent.move_right) {
         state_.facing_x = 1;
-        try_move_player(1, 0);
+        if (can_move_to(state_.tile_x + 1, state_.tile_y)) {
+            ++state_.tile_x;
+        }
     }
-    if (input_intent.move_up) {
-        try_move_player(0, -1);
+
+    auto is_on_ground = [&can_move_to, this]() {
+        return !can_move_to(state_.tile_x, state_.tile_y + 1);
+    };
+
+    if (input_intent.jump_pressed && is_on_ground()) {
+        state_.jump_ticks_remaining = 4;
     }
-    if (input_intent.move_down) {
-        try_move_player(0, 1);
+
+    if (state_.jump_ticks_remaining > 0) {
+        if (can_move_to(state_.tile_x, state_.tile_y - 1)) {
+            --state_.tile_y;
+            --state_.jump_ticks_remaining;
+        } else {
+            state_.jump_ticks_remaining = 0;
+        }
+    } else if (can_move_to(state_.tile_x, state_.tile_y + 1)) {
+        ++state_.tile_y;
     }
 
     if (input_intent.hotbar_select_slot_1) {

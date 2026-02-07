@@ -6,8 +6,7 @@ PlayerInputIntent InputCommandMapper::Map(const platform::InputActions& frame_ac
     PlayerInputIntent intent{
         .move_left = frame_actions.move_left,
         .move_right = frame_actions.move_right,
-        .move_up = frame_actions.move_up,
-        .move_down = frame_actions.move_down,
+        .jump_pressed = frame_actions.jump_pressed,
         .action_primary_held = frame_actions.action_primary_held,
         .interaction_primary_pressed = frame_actions.interaction_primary_pressed,
         .hotbar_select_slot_1 = frame_actions.hotbar_select_slot_1,
@@ -23,10 +22,6 @@ PlayerInputIntent InputCommandMapper::Map(const platform::InputActions& frame_ac
     if (intent.move_left && intent.move_right) {
         intent.move_left = false;
         intent.move_right = false;
-    }
-    if (intent.move_up && intent.move_down) {
-        intent.move_up = false;
-        intent.move_down = false;
     }
 
     return intent;

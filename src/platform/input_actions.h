@@ -5,8 +5,7 @@ namespace novaria::platform {
 struct InputActions final {
     bool move_left = false;
     bool move_right = false;
-    bool move_up = false;
-    bool move_down = false;
+    bool jump_pressed = false;
     bool action_primary_held = false;
     bool interaction_primary_pressed = false;
     bool hotbar_select_slot_1 = false;

@@ -352,7 +352,7 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
     last_net_diagnostics_tick_ = 0;
     core::Logger::Info(
         "input",
-        "Player controls active: WASD/arrow move, mouse-left action hold, mouse-right interaction, 1-4 hotbar, Esc inventory, Tab row, Ctrl smart toggle, Shift smart context.");
+        "Player controls active: A/D move, Space jump, mouse-left action hold, mouse-right interaction, 1-4 hotbar, Esc inventory, Tab row, Ctrl smart toggle, Shift smart context.");
     core::Logger::Info("app", "Novaria started.");
     return true;
 }

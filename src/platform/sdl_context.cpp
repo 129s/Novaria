@@ -178,6 +178,10 @@ bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
         }
 
         if (event.type == SDL_EVENT_KEY_DOWN) {
+            if (event.key.scancode == SDL_SCANCODE_SPACE) {
+                out_actions.jump_pressed = true;
+            }
+
             if (event.key.scancode == SDL_SCANCODE_1) {
                 out_actions.hotbar_select_slot_1 = true;
             }
@@ -225,22 +229,8 @@ bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
 
     const bool* keyboard_state = SDL_GetKeyboardState(nullptr);
     if (keyboard_state != nullptr) {
-        const bool move_left_wasd = keyboard_state[SDL_SCANCODE_A];
-        const bool move_right_wasd = keyboard_state[SDL_SCANCODE_D];
-        const bool move_up_wasd = keyboard_state[SDL_SCANCODE_W];
-        const bool move_down_wasd = keyboard_state[SDL_SCANCODE_S];
-        bool move_left_arrow = false;
-        bool move_right_arrow = false;
-        bool move_up_arrow = false;
-        bool move_down_arrow = false;
-        move_left_arrow = keyboard_state[SDL_SCANCODE_LEFT];
-        move_right_arrow = keyboard_state[SDL_SCANCODE_RIGHT];
-        move_up_arrow = keyboard_state[SDL_SCANCODE_UP];
-        move_down_arrow = keyboard_state[SDL_SCANCODE_DOWN];
-        out_actions.move_left = move_left_wasd || move_left_arrow;
-        out_actions.move_right = move_right_wasd || move_right_arrow;
-        out_actions.move_up = move_up_wasd || move_up_arrow;
-        out_actions.move_down = move_down_wasd || move_down_arrow;
+        out_actions.move_left = keyboard_state[SDL_SCANCODE_A];
+        out_actions.move_right = keyboard_state[SDL_SCANCODE_D];
         out_actions.smart_context_held = keyboard_state[SDL_SCANCODE_LSHIFT] ||
             keyboard_state[SDL_SCANCODE_RSHIFT];
     }
