@@ -49,6 +49,20 @@ bool TestRejectInvalidScriptModuleMetadata() {
         !error.empty(),
         "Duplicate script module names should return readable error.");
 
+    passed &= Expect(
+        !runtime.SetScriptModules(
+            {{
+                .module_name = "mod_bad_capability",
+                .api_version = novaria::script::kScriptApiVersion,
+                .capabilities = {"filesystem.write"},
+                .source_code = "novaria = novaria or {}",
+            }},
+            error),
+        "Unsupported script capability should be rejected.");
+    passed &= Expect(
+        !error.empty(),
+        "Unsupported script capability should return readable error.");
+
     return passed;
 }
 
@@ -94,6 +108,15 @@ int main() {
         passed &= Expect(
             descriptor.sandbox_enabled,
             "Runtime descriptor should expose enabled sandbox mode.");
+        passed &= Expect(
+            descriptor.sandbox_level == "resource_limited",
+            "Runtime descriptor should expose resource-limited sandbox level.");
+        passed &= Expect(
+            descriptor.memory_budget_bytes >= 32 * 1024 * 1024,
+            "Runtime descriptor should expose non-trivial memory budget.");
+        passed &= Expect(
+            descriptor.instruction_budget_per_call >= 100000,
+            "Runtime descriptor should expose instruction budget.");
         runtime.DispatchEvent({.event_name = "runtime.luajit.test", .payload = "payload"});
         runtime.Tick({.tick_index = 3, .fixed_delta_seconds = 1.0 / 60.0});
         runtime.Shutdown();
@@ -132,6 +155,50 @@ int main() {
     passed &= Expect(
         error.find("instruction budget exceeded") != std::string::npos,
         "Runaway script failure should include instruction budget reason.");
+
+    novaria::script::ScriptHostRuntime isolated_modules_runtime;
+    passed &= Expect(
+        isolated_modules_runtime.SetScriptModules(
+            {{
+                .module_name = "mod_isolated_a",
+                .api_version = novaria::script::kScriptApiVersion,
+                .source_code = "sandbox_internal = 42",
+            },
+             {
+                 .module_name = "mod_isolated_b",
+                 .api_version = novaria::script::kScriptApiVersion,
+                 .source_code =
+                     "if sandbox_internal ~= nil then error(\"module leaked global state\") end",
+             }},
+            error),
+        "Isolated modules should pass metadata staging.");
+    const bool isolated_runtime_init_ok = isolated_modules_runtime.Initialize(error);
+    passed &= Expect(
+        isolated_runtime_init_ok,
+        "Module environments should isolate transient globals.");
+    isolated_modules_runtime.Shutdown();
+
+    novaria::script::ScriptHostRuntime memory_pressure_runtime;
+    passed &= Expect(
+        memory_pressure_runtime.SetScriptModules(
+            {{
+                .module_name = "mod_memory_pressure",
+                .api_version = novaria::script::kScriptApiVersion,
+                .source_code =
+                    "local huge_blob = string.rep(\"x\", 80 * 1024 * 1024)\n"
+                    "novaria = novaria or {}\n"
+                    "novaria.huge_blob = huge_blob\n",
+            }},
+            error),
+        "Memory pressure module should pass metadata staging.");
+    passed &= Expect(
+        !memory_pressure_runtime.Initialize(error),
+        "Memory pressure module should fail within sandbox budget.");
+    passed &= Expect(
+        error.find("memory") != std::string::npos ||
+            error.find("not enough") != std::string::npos,
+        "Memory pressure failure should expose memory-related reason.");
+    memory_pressure_runtime.Shutdown();
 #else
     passed &= Expect(!luajit_init_ok, "LuaJIT backend should fail-fast when LuaJIT is unavailable.");
     passed &= Expect(

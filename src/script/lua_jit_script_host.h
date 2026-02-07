@@ -12,6 +12,8 @@ namespace novaria::script {
 class LuaJitScriptHost final : public IScriptHost {
 public:
     static constexpr std::size_t kMaxPendingEvents = 1024;
+    static constexpr std::size_t kInstructionBudgetPerCall = 200000;
+    static constexpr std::size_t kMemoryBudgetBytes = 64 * 1024 * 1024;
 
     bool LoadScriptModules(
         const std::vector<ScriptModuleSource>& module_sources,
@@ -29,8 +31,16 @@ public:
     std::size_t DroppedEventCount() const;
 
 private:
+    struct MemoryQuotaState final {
+        std::size_t bytes_in_use = 0;
+        std::size_t limit_bytes = kMemoryBudgetBytes;
+    };
+
+    static void* QuotaAllocator(void* user_data, void* pointer, size_t old_size, size_t new_size);
     bool ApplyMvpSandbox(std::string& out_error);
     bool LoadBootstrapScript(std::string& out_error);
+    bool BindModuleEnvironment(int& out_environment_ref, std::string& out_error);
+    void ExportModuleHandlersFromEnvironment(int environment_ref);
     bool LoadModuleScript(
         const ScriptModuleSource& module_source,
         std::string& out_error);
@@ -39,6 +49,7 @@ private:
 
     bool initialized_ = false;
     lua_State* lua_state_ = nullptr;
+    MemoryQuotaState memory_quota_state_{};
     std::vector<ScriptEvent> pending_events_;
     std::size_t total_processed_event_count_ = 0;
     std::size_t dropped_event_count_ = 0;

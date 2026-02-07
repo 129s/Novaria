@@ -2,7 +2,7 @@
 
 - `status`: authoritative
 - `owner`: @novaria-core
-- `last_verified_commit`: cd15573
+- `last_verified_commit`: 2a59856
 - `updated`: 2026-02-07
 
 ## 1. 目标
@@ -104,9 +104,11 @@
 - `LuaJitScriptHost` 已完成 VM 生命周期与事件回调骨架（`novaria_on_tick` / `novaria_on_event`）。
 - `LuaJitScriptHost` 已启用 MVP 最小沙箱（禁用 `io/os/debug/package/dofile/loadfile/load/require/collectgarbage`）。
 - 脚本执行已加每次调用指令预算保护，超预算直接 fail-fast（避免死循环拖垮主线程）。
+- 脚本 VM 已启用内存配额分配器（固定预算上限），超配额会在 Lua 调用边界 fail-fast。
+- 模组脚本按模块独立环境装载，仅导出受控回调（`novaria_on_tick/novaria_on_event`）。
 - `IScriptHost::RuntimeDescriptor` 已统一暴露 `backend/api_version/sandbox` 元信息（当前 API 版本 `0.1.0`）。
 - 已支持按模组清单字段 `script_entry/script_api_version` 装载内容脚本并进行 API 版本 fail-fast 校验。
-- 当前仍未完成生产级脚本沙箱策略（资源配额、隔离等级等）。
+- 当前仍未完成最终形态沙箱策略（细粒度 capability 白名单、跨模组权限配置、配额可配置化）。
 
 ### 3.5 `save`
 
@@ -121,7 +123,9 @@
 - `FileSaveRepository`：
   - `format_version` 版本字段，支持旧档兼容与前向版本拒绝。
   - 按需写入 `gameplay_section.core.*`（含 `gameplay_section.core.version`）。
+  - 按需写入 `world_section.core.*`（含 `world_section.core.version/chunk_count/chunk.<index>`）。
   - 写入 `debug_section.net.*`（含 `debug_section.net.version`），并兼容旧 `debug_net_*` 字段。
+  - 存档写入采用 `world.sav.tmp -> world.sav` 原子替换，并保留 `world.sav.bak` 回档副本。
   - 存档指纹校验受 `strict_save_mod_fingerprint` 控制。
 
 ### 3.6 `mod`
@@ -142,7 +146,8 @@
   - `content/recipes.csv`
   - `content/npcs.csv`
 - 可选解析脚本入口元信息：`script_entry`、`script_api_version`（用于脚本运行时装载与一致性校验）。
-- 指纹已纳入依赖、内容定义与脚本元信息，支持联机一致性校验。
+- 可选解析脚本能力声明：`script_capabilities`（用于运行时能力校验）。
+- 指纹已纳入依赖、内容定义与脚本元信息（含能力声明），支持联机一致性校验。
 
 ## 4. 输入映射（当前）
 

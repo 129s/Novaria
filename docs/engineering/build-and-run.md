@@ -2,7 +2,7 @@
 
 - `status`: authoritative
 - `owner`: @novaria-core
-- `last_verified_commit`: cd15573
+- `last_verified_commit`: 2a59856
 - `updated`: 2026-02-07
 
 ## 1. 前置条件
@@ -81,9 +81,13 @@ script_backend = "luajit"
 ```toml
 script_entry = "content/scripts/main.lua"
 script_api_version = "0.1.0"
+script_capabilities = ["event.receive", "tick.receive"]
 ```
 
-说明：`script_api_version` 与运行时 API 不一致会在初始化阶段 fail-fast。
+说明：
+
+- `script_api_version` 与运行时 API 不一致会在初始化阶段 fail-fast。
+- `script_capabilities` 声明超出运行时支持范围会在初始化阶段 fail-fast。
 
 运行时网络后端配置（`config/game.toml`）：
 
@@ -156,3 +160,37 @@ Client 端示例：
 
 - 两端都输出 `[PASS] novaria_net_smoke` 视为跨主机链路打通。
 - 若失败，优先检查防火墙入站规则与 `remote_host/remote_port` 是否对齐。
+
+## 9. 跨主机 Soak 工具（30 分钟稳定性）
+
+可执行文件：`build/Debug/novaria_net_soak.exe`
+
+Host 端示例（30 分钟）：
+
+```powershell
+.\build\Debug\novaria_net_soak.exe --role host --local-host 0.0.0.0 --local-port 25000 --remote-host 192.168.1.20 --remote-port 25001 --ticks 108000 --payload-interval 30
+```
+
+Client 端示例（30 分钟）：
+
+```powershell
+.\build\Debug\novaria_net_soak.exe --role client --local-host 0.0.0.0 --local-port 25001 --remote-host 192.168.1.10 --remote-port 25000 --ticks 108000 --payload-interval 30
+```
+
+判定标准：
+
+- 两端都输出 `[PASS] novaria_net_soak`。
+- 汇总信息中 `timeout_disconnects=0`。
+- `received_payload_count > 0` 且会话至少进入过一次 `Connected`。
+
+四节点并行 Soak（两组独立链路）：
+
+```powershell
+.\tools\net_soak_four_nodes.ps1 -BinaryPath .\build\Debug\novaria_net_soak.exe -Ticks 108000
+```
+
+故障注入 Soak（客户端暂停注入）：
+
+```powershell
+.\tools\net_soak_fault_injection.ps1 -BinaryPath .\build\Debug\novaria_net_soak.exe -Ticks 6000
+```

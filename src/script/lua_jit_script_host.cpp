@@ -6,6 +6,7 @@
 
 #if defined(NOVARIA_WITH_LUAJIT)
 #include <cstring>
+#include <cstdlib>
 
 extern "C" {
 #include <lauxlib.h>
@@ -36,8 +37,6 @@ end
 )lua";
 
 #if defined(NOVARIA_WITH_LUAJIT)
-constexpr int kInstructionBudgetPerCall = 200000;
-
 std::string ReadLuaError(lua_State* lua_state) {
     const char* error_message = lua_tostring(lua_state, -1);
     std::string output = error_message != nullptr ? error_message : "unknown LuaJIT error";
@@ -57,9 +56,10 @@ void InstructionBudgetHook(lua_State* lua_state, lua_Debug* debug) {
 
 bool RunProtectedLuaCall(
     lua_State* lua_state,
+    int instruction_budget_per_call,
     int argument_count,
     std::string& out_error) {
-    lua_sethook(lua_state, InstructionBudgetHook, LUA_MASKCOUNT, kInstructionBudgetPerCall);
+    lua_sethook(lua_state, InstructionBudgetHook, LUA_MASKCOUNT, instruction_budget_per_call);
     const int run_status = lua_pcall(lua_state, argument_count, 0, 0);
     lua_sethook(lua_state, nullptr, 0, 0);
     if (run_status != LUA_OK) {
@@ -73,6 +73,57 @@ bool RunProtectedLuaCall(
 #endif
 
 }  // namespace
+
+void* LuaJitScriptHost::QuotaAllocator(
+    void* user_data,
+    void* pointer,
+    size_t old_size,
+    size_t new_size) {
+#if !defined(NOVARIA_WITH_LUAJIT)
+    (void)user_data;
+    (void)pointer;
+    (void)old_size;
+    (void)new_size;
+    return nullptr;
+#else
+    auto* quota_state = static_cast<MemoryQuotaState*>(user_data);
+    if (quota_state == nullptr) {
+        return nullptr;
+    }
+
+    if (new_size == 0) {
+        if (pointer != nullptr) {
+            std::free(pointer);
+        }
+        if (old_size <= quota_state->bytes_in_use) {
+            quota_state->bytes_in_use -= old_size;
+        } else {
+            quota_state->bytes_in_use = 0;
+        }
+        return nullptr;
+    }
+
+    if (new_size > old_size) {
+        const std::size_t growth_size = new_size - old_size;
+        if (quota_state->bytes_in_use + growth_size > quota_state->limit_bytes) {
+            return nullptr;
+        }
+    }
+
+    void* new_pointer = std::realloc(pointer, new_size);
+    if (new_pointer == nullptr) {
+        return nullptr;
+    }
+
+    if (new_size >= old_size) {
+        quota_state->bytes_in_use += (new_size - old_size);
+    } else {
+        quota_state->bytes_in_use -= (old_size - new_size);
+    }
+
+    return new_pointer;
+#endif
+}
 
 bool LuaJitScriptHost::LoadScriptModules(
     const std::vector<ScriptModuleSource>& module_sources,
@@ -109,10 +160,14 @@ bool LuaJitScriptHost::Initialize(std::string& out_error) {
     out_error = "LuaJIT support is disabled at build time.";
     return false;
 #else
-    lua_state_ = luaL_newstate();
+    memory_quota_state_.bytes_in_use = 0;
+    memory_quota_state_.limit_bytes = kMemoryBudgetBytes;
+    lua_state_ = lua_newstate(QuotaAllocator, &memory_quota_state_);
     if (lua_state_ == nullptr) {
         initialized_ = false;
-        out_error = "luaL_newstate failed.";
+        out_error =
+            "lua_newstate failed (memory budget=" +
+            std::to_string(memory_quota_state_.limit_bytes) + ").";
         return false;
     }
 
@@ -150,6 +205,7 @@ void LuaJitScriptHost::Shutdown() {
 #endif
 
     pending_events_.clear();
+    memory_quota_state_.bytes_in_use = 0;
     initialized_ = false;
     core::Logger::Info("script", "LuaJIT script host shutdown.");
 }
@@ -199,6 +255,9 @@ ScriptRuntimeDescriptor LuaJitScriptHost::RuntimeDescriptor() const {
         .backend_name = "luajit",
         .api_version = kScriptApiVersion,
         .sandbox_enabled = true,
+        .sandbox_level = "resource_limited",
+        .memory_budget_bytes = kMemoryBudgetBytes,
+        .instruction_budget_per_call = kInstructionBudgetPerCall,
     };
 }
 
@@ -237,6 +296,14 @@ bool LuaJitScriptHost::ApplyMvpSandbox(std::string& out_error) {
     ClearGlobal(lua_state_, "load");
     ClearGlobal(lua_state_, "require");
     ClearGlobal(lua_state_, "collectgarbage");
+    ClearGlobal(lua_state_, "jit");
+
+    lua_getglobal(lua_state_, "string");
+    if (lua_istable(lua_state_, -1)) {
+        lua_pushnil(lua_state_);
+        lua_setfield(lua_state_, -2, "dump");
+    }
+    lua_pop(lua_state_, 1);
 
     out_error.clear();
     return true;
@@ -264,13 +331,90 @@ bool LuaJitScriptHost::LoadBootstrapScript(std::string& out_error) {
         return false;
     }
 
-    if (!RunProtectedLuaCall(lua_state_, 0, out_error)) {
+    if (!RunProtectedLuaCall(
+            lua_state_,
+            static_cast<int>(kInstructionBudgetPerCall),
+            0,
+            out_error)) {
         out_error = "Failed to run bootstrap script: " + out_error;
         return false;
     }
 
     out_error.clear();
     return true;
+#endif
+}
+
+bool LuaJitScriptHost::BindModuleEnvironment(
+    int& out_environment_ref,
+    std::string& out_error) {
+#if !defined(NOVARIA_WITH_LUAJIT)
+    (void)out_environment_ref;
+    (void)out_error;
+    return false;
+#else
+    if (lua_state_ == nullptr) {
+        out_error = "Lua state is null.";
+        return false;
+    }
+
+    if (!lua_isfunction(lua_state_, -1)) {
+        out_error = "Module chunk is not on stack.";
+        return false;
+    }
+
+    lua_newtable(lua_state_);
+    lua_pushvalue(lua_state_, -1);
+    lua_setfield(lua_state_, -2, "_G");
+
+    lua_newtable(lua_state_);
+    lua_pushvalue(lua_state_, LUA_GLOBALSINDEX);
+    lua_setfield(lua_state_, -2, "__index");
+    lua_setmetatable(lua_state_, -2);
+
+    lua_pushvalue(lua_state_, -1);
+    if (lua_setfenv(lua_state_, -3) == 0) {
+        lua_pop(lua_state_, 1);
+        out_error = "Failed to bind module environment.";
+        return false;
+    }
+
+    out_environment_ref = luaL_ref(lua_state_, LUA_REGISTRYINDEX);
+    out_error.clear();
+    return true;
+#endif
+}
+
+void LuaJitScriptHost::ExportModuleHandlersFromEnvironment(int environment_ref) {
+#if !defined(NOVARIA_WITH_LUAJIT)
+    (void)environment_ref;
+#else
+    if (lua_state_ == nullptr || environment_ref == LUA_REFNIL ||
+        environment_ref == LUA_NOREF) {
+        return;
+    }
+
+    lua_rawgeti(lua_state_, LUA_REGISTRYINDEX, environment_ref);
+    if (!lua_istable(lua_state_, -1)) {
+        lua_pop(lua_state_, 1);
+        return;
+    }
+
+    lua_getfield(lua_state_, -1, "novaria_on_tick");
+    if (lua_isfunction(lua_state_, -1)) {
+        lua_setglobal(lua_state_, "novaria_on_tick");
+    } else {
+        lua_pop(lua_state_, 1);
+    }
+
+    lua_getfield(lua_state_, -1, "novaria_on_event");
+    if (lua_isfunction(lua_state_, -1)) {
+        lua_setglobal(lua_state_, "novaria_on_event");
+    } else {
+        lua_pop(lua_state_, 1);
+    }
+
+    lua_pop(lua_state_, 1);
 #endif
 }
 
@@ -300,12 +444,33 @@ bool LuaJitScriptHost::LoadModuleScript(
         return false;
     }
 
-    if (!RunProtectedLuaCall(lua_state_, 0, out_error)) {
+    int environment_ref = LUA_REFNIL;
+    if (!BindModuleEnvironment(environment_ref, out_error)) {
+        lua_pop(lua_state_, 1);
         out_error =
-            "Failed to run module '" + module_source.module_name + "': " + out_error;
+            "Failed to isolate module '" + module_source.module_name +
+            "': " + out_error;
         return false;
     }
 
+    if (!RunProtectedLuaCall(
+            lua_state_,
+            static_cast<int>(kInstructionBudgetPerCall),
+            0,
+            out_error)) {
+        luaL_unref(lua_state_, LUA_REGISTRYINDEX, environment_ref);
+        out_error =
+            "Failed to run module '" + module_source.module_name + "': " + out_error;
+        if (out_error.find("memory") != std::string::npos) {
+            out_error +=
+                " (usage=" + std::to_string(memory_quota_state_.bytes_in_use) +
+                "/" + std::to_string(memory_quota_state_.limit_bytes) + ")";
+        }
+        return false;
+    }
+
+    ExportModuleHandlersFromEnvironment(environment_ref);
+    luaL_unref(lua_state_, LUA_REGISTRYINDEX, environment_ref);
     out_error.clear();
     return true;
 #endif
@@ -330,7 +495,11 @@ bool LuaJitScriptHost::InvokeTickHandler(const sim::TickContext& tick_context, s
 
     lua_pushinteger(lua_state_, static_cast<lua_Integer>(tick_context.tick_index));
     lua_pushnumber(lua_state_, static_cast<lua_Number>(tick_context.fixed_delta_seconds));
-    if (!RunProtectedLuaCall(lua_state_, 2, out_error)) {
+    if (!RunProtectedLuaCall(
+            lua_state_,
+            static_cast<int>(kInstructionBudgetPerCall),
+            2,
+            out_error)) {
         return false;
     }
 
@@ -358,7 +527,11 @@ bool LuaJitScriptHost::InvokeEventHandler(const ScriptEvent& event_data, std::st
 
     lua_pushstring(lua_state_, event_data.event_name.c_str());
     lua_pushstring(lua_state_, event_data.payload.c_str());
-    if (!RunProtectedLuaCall(lua_state_, 2, out_error)) {
+    if (!RunProtectedLuaCall(
+            lua_state_,
+            static_cast<int>(kInstructionBudgetPerCall),
+            2,
+            out_error)) {
         return false;
     }
 

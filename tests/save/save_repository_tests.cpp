@@ -51,6 +51,11 @@ int main() {
         .gameplay_boss_defeated = true,
         .gameplay_loop_complete = true,
         .has_gameplay_snapshot = true,
+        .world_chunk_payloads = {
+            "0,0,4,1,2,3,4",
+            "1,0,4,4,3,2,1",
+        },
+        .has_world_snapshot = true,
         .debug_net_session_transitions = 7,
         .debug_net_timeout_disconnects = 2,
         .debug_net_manual_disconnects = 3,
@@ -65,6 +70,9 @@ int main() {
     std::ifstream saved_file(test_dir / "world.sav");
     bool found_gameplay_section_version = false;
     bool found_gameplay_section_field = false;
+    bool found_world_section_version = false;
+    bool found_world_section_count = false;
+    bool found_world_section_chunk_entry = false;
     bool found_debug_section_version = false;
     bool found_debug_section_counter = false;
     bool found_legacy_debug_counter = false;
@@ -76,6 +84,18 @@ int main() {
 
         if (saved_line.rfind("gameplay_section.core.enemy_kill_count=", 0) == 0) {
             found_gameplay_section_field = true;
+        }
+
+        if (saved_line == "world_section.core.version=1") {
+            found_world_section_version = true;
+        }
+
+        if (saved_line == "world_section.core.chunk_count=2") {
+            found_world_section_count = true;
+        }
+
+        if (saved_line.rfind("world_section.core.chunk.0=", 0) == 0) {
+            found_world_section_chunk_entry = true;
         }
 
         if (saved_line == "debug_section.net.version=" +
@@ -91,12 +111,22 @@ int main() {
             found_legacy_debug_counter = true;
         }
     }
+    saved_file.close();
     passed &= Expect(
         found_gameplay_section_version,
         "Saved file should include gameplay_section.core.version.");
     passed &= Expect(
         found_gameplay_section_field,
         "Saved file should include gameplay section fields.");
+    passed &= Expect(
+        found_world_section_version,
+        "Saved file should include world_section.core.version.");
+    passed &= Expect(
+        found_world_section_count,
+        "Saved file should include world_section.core.chunk_count.");
+    passed &= Expect(
+        found_world_section_chunk_entry,
+        "Saved file should include world section chunk entries.");
     passed &= Expect(
         found_debug_section_version,
         "Saved file should include debug_section.net.version.");
@@ -138,6 +168,12 @@ int main() {
         actual.has_gameplay_snapshot,
         "Loaded state should mark gameplay snapshot as present.");
     passed &= Expect(
+        actual.has_world_snapshot,
+        "Loaded state should mark world snapshot as present.");
+    passed &= Expect(
+        actual.world_chunk_payloads == expected.world_chunk_payloads,
+        "Loaded world chunk payloads should match saved values.");
+    passed &= Expect(
         actual.debug_net_session_transitions == expected.debug_net_session_transitions,
         "Loaded debug net session transitions should match saved value.");
     passed &= Expect(
@@ -158,6 +194,29 @@ int main() {
     passed &= Expect(
         actual.debug_net_last_transition_reason == expected.debug_net_last_transition_reason,
         "Loaded debug net last transition reason should match saved value.");
+
+    novaria::save::WorldSaveState updated_save = expected;
+    updated_save.tick_index = expected.tick_index + 1;
+    passed &= Expect(
+        repository.SaveWorldState(updated_save, error),
+        "Second save should succeed and generate backup.");
+    passed &= Expect(error.empty(), "Second save should not return error.");
+
+    const std::filesystem::path backup_path = test_dir / "world.sav.bak";
+    passed &= Expect(
+        std::filesystem::exists(backup_path),
+        "Second save should generate world.sav.bak.");
+    std::ifstream backup_file(backup_path);
+    bool backup_kept_old_tick = false;
+    while (std::getline(backup_file, saved_line)) {
+        if (saved_line == "tick_index=12345") {
+            backup_kept_old_tick = true;
+            break;
+        }
+    }
+    passed &= Expect(
+        backup_kept_old_tick,
+        "Backup save should keep previous world.sav content.");
 
     std::ofstream legacy_file(test_dir / "world.sav", std::ios::trunc);
     legacy_file << "tick_index=77\n";
@@ -302,6 +361,41 @@ int main() {
     passed &= Expect(
         !error.empty(),
         "Missing gameplay section version should include reason.");
+
+    std::ofstream missing_world_version_file(test_dir / "world.sav", std::ios::trunc);
+    missing_world_version_file
+        << "format_version=" << novaria::save::kCurrentWorldSaveFormatVersion << "\n";
+    missing_world_version_file << "tick_index=1\n";
+    missing_world_version_file << "local_player_id=1\n";
+    missing_world_version_file << "world_section.core.chunk_count=1\n";
+    missing_world_version_file << "world_section.core.chunk.0=0,0,4,1,2,3,4\n";
+    missing_world_version_file.close();
+
+    novaria::save::WorldSaveState missing_world_version_loaded{};
+    passed &= Expect(
+        !repository.LoadWorldState(missing_world_version_loaded, error),
+        "World section fields without version should be rejected.");
+    passed &= Expect(
+        !error.empty(),
+        "Missing world section version should include reason.");
+
+    std::ofstream mismatched_world_chunk_count_file(test_dir / "world.sav", std::ios::trunc);
+    mismatched_world_chunk_count_file
+        << "format_version=" << novaria::save::kCurrentWorldSaveFormatVersion << "\n";
+    mismatched_world_chunk_count_file << "tick_index=1\n";
+    mismatched_world_chunk_count_file << "local_player_id=1\n";
+    mismatched_world_chunk_count_file << "world_section.core.version=1\n";
+    mismatched_world_chunk_count_file << "world_section.core.chunk_count=2\n";
+    mismatched_world_chunk_count_file << "world_section.core.chunk.0=0,0,4,1,2,3,4\n";
+    mismatched_world_chunk_count_file.close();
+
+    novaria::save::WorldSaveState mismatched_world_chunk_count_loaded{};
+    passed &= Expect(
+        !repository.LoadWorldState(mismatched_world_chunk_count_loaded, error),
+        "Mismatched world chunk count should fail save load.");
+    passed &= Expect(
+        !error.empty(),
+        "Mismatched world chunk count should include reason.");
 
     std::ofstream invalid_debug_file(test_dir / "world.sav", std::ios::trunc);
     invalid_debug_file << "format_version=" << novaria::save::kCurrentWorldSaveFormatVersion << "\n";

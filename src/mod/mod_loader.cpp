@@ -136,6 +136,9 @@ std::string ModLoader::BuildManifestFingerprint(const std::vector<ModManifest>& 
         std::vector<std::string> normalized_dependencies = manifest.dependencies;
         std::sort(normalized_dependencies.begin(), normalized_dependencies.end());
 
+        std::vector<std::string> normalized_capabilities = manifest.script_capabilities;
+        std::sort(normalized_capabilities.begin(), normalized_capabilities.end());
+
         std::vector<std::string> normalized_items;
         normalized_items.reserve(manifest.items.size());
         for (const auto& item : manifest.items) {
@@ -164,6 +167,14 @@ std::string ModLoader::BuildManifestFingerprint(const std::vector<ModManifest>& 
             manifest.name + "|" + manifest.version + "|" + manifest.description +
             "|script_entry=" + manifest.script_entry +
             "|script_api_version=" + manifest.script_api_version +
+            "|script_capabilities=";
+        for (std::size_t index = 0; index < normalized_capabilities.size(); ++index) {
+            if (index > 0) {
+                canonical_entry += ",";
+            }
+            canonical_entry += normalized_capabilities[index];
+        }
+        canonical_entry +=
             "|deps=";
         for (std::size_t dependency_index = 0;
              dependency_index < normalized_dependencies.size();
@@ -533,6 +544,14 @@ bool ModLoader::ParseManifestFile(
         if (key == "script_api_version") {
             if (!ParseQuotedString(value, out_manifest.script_api_version)) {
                 out_error = "script_api_version must be quoted string";
+                return false;
+            }
+            continue;
+        }
+
+        if (key == "script_capabilities") {
+            if (!ParseQuotedStringArray(value, out_manifest.script_capabilities)) {
+                out_error = "script_capabilities must be quoted string array";
                 return false;
             }
             continue;

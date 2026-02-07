@@ -2,8 +2,8 @@
 
 - `status`: authoritative
 - `owner`: @novaria-core
-- `last_verified_commit`: 1937135
-- `updated`: 2026-02-06
+- `last_verified_commit`: 2a59856
+- `updated`: 2026-02-07
 
 ## 先看这里
 
@@ -14,6 +14,8 @@
 - 查模块边界与契约：`docs/architecture/runtime-contracts.md`
 - 查构建运行命令：`docs/engineering/build-and-run.md`
 - 查测试策略与验收映射：`docs/engineering/testing.md`
+- 查发布与诊断流程：`docs/engineering/release-and-diagnostics.md`
+- 查 Mod 兼容性矩阵：`docs/engineering/mod-compatibility-matrix.md`
 - 查架构决策记录：`docs/adr/README.md`
 
 ## 文档分层（强约束）

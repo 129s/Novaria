@@ -3,10 +3,12 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace novaria::save {
 
 inline constexpr std::uint32_t kCurrentWorldSaveFormatVersion = 1;
+inline constexpr std::uint32_t kCurrentWorldSectionVersion = 1;
 inline constexpr std::uint32_t kCurrentNetDebugSectionVersion = 1;
 
 struct WorldSaveState final {
@@ -23,6 +25,8 @@ struct WorldSaveState final {
     bool gameplay_boss_defeated = false;
     bool gameplay_loop_complete = false;
     bool has_gameplay_snapshot = false;
+    std::vector<std::string> world_chunk_payloads;
+    bool has_world_snapshot = false;
     std::uint64_t debug_net_session_transitions = 0;
     std::uint64_t debug_net_timeout_disconnects = 0;
     std::uint64_t debug_net_manual_disconnects = 0;
@@ -53,6 +57,7 @@ private:
     bool initialized_ = false;
     std::filesystem::path save_root_;
     std::filesystem::path world_save_path_;
+    std::filesystem::path world_save_backup_path_;
 };
 
 }  // namespace novaria::save

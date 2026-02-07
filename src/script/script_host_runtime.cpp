@@ -2,10 +2,19 @@
 
 #include "core/logger.h"
 
+#include <algorithm>
 #include <unordered_set>
 #include <utility>
 
 namespace novaria::script {
+namespace {
+
+const std::unordered_set<std::string> kSupportedScriptCapabilities = {
+    "event.receive",
+    "tick.receive",
+};
+
+}  // namespace
 
 const char* ScriptBackendKindName(ScriptBackendKind backend_kind) {
     switch (backend_kind) {
@@ -68,6 +77,26 @@ bool ScriptHostRuntime::SetScriptModules(
                 ", required=" + module_source.api_version +
                 ", runtime=" + std::string(kScriptApiVersion);
             return false;
+        }
+
+        if (module_source.capabilities.empty()) {
+            module_source.capabilities = {"event.receive", "tick.receive"};
+        }
+
+        std::sort(module_source.capabilities.begin(), module_source.capabilities.end());
+        module_source.capabilities.erase(
+            std::unique(
+                module_source.capabilities.begin(),
+                module_source.capabilities.end()),
+            module_source.capabilities.end());
+
+        for (const std::string& capability : module_source.capabilities) {
+            if (!kSupportedScriptCapabilities.contains(capability)) {
+                out_error =
+                    "Unsupported script capability: module=" +
+                    module_source.module_name + ", capability=" + capability;
+                return false;
+            }
         }
     }
 
@@ -141,6 +170,9 @@ ScriptRuntimeDescriptor ScriptHostRuntime::RuntimeDescriptor() const {
         .backend_name = ScriptBackendPreferenceName(backend_preference_),
         .api_version = kScriptApiVersion,
         .sandbox_enabled = false,
+        .sandbox_level = "none",
+        .memory_budget_bytes = 0,
+        .instruction_budget_per_call = 0,
     };
 }
 

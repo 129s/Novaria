@@ -2,7 +2,9 @@
 
 #include "sim/tick_context.h"
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 namespace novaria::script {
 
@@ -16,6 +18,7 @@ struct ScriptEvent final {
 struct ScriptModuleSource final {
     std::string module_name;
     std::string api_version = kScriptApiVersion;
+    std::vector<std::string> capabilities;
     std::string source_code;
 };
 
@@ -23,6 +26,9 @@ struct ScriptRuntimeDescriptor final {
     std::string backend_name = "unknown";
     std::string api_version = kScriptApiVersion;
     bool sandbox_enabled = false;
+    std::string sandbox_level = "none";
+    std::uint64_t memory_budget_bytes = 0;
+    std::uint64_t instruction_budget_per_call = 0;
 };
 
 class IScriptHost {

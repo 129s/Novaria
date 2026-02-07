@@ -33,6 +33,7 @@ struct ModManifest final {
     std::vector<std::string> dependencies;
     std::string script_entry;
     std::string script_api_version;
+    std::vector<std::string> script_capabilities;
     std::vector<ModItemDefinition> items;
     std::vector<ModRecipeDefinition> recipes;
     std::vector<ModNpcDefinition> npcs;

@@ -116,6 +116,19 @@ if(WIN32)
 endif()
 
 add_executable(
+    novaria_net_soak
+    tools/net_soak.cpp
+    src/net/net_service_runtime.cpp
+    src/net/net_service_udp_loopback.cpp
+    src/net/udp_transport.cpp
+    src/core/logger.cpp
+)
+target_include_directories(novaria_net_soak PRIVATE src)
+if(WIN32)
+    target_link_libraries(novaria_net_soak PRIVATE ws2_32)
+endif()
+
+add_executable(
     novaria_server
     tools/server_main.cpp
     src/sim/simulation_kernel.cpp

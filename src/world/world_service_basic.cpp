@@ -161,6 +161,29 @@ std::size_t WorldServiceBasic::LoadedChunkCount() const {
     return chunks_.size();
 }
 
+std::vector<ChunkCoord> WorldServiceBasic::LoadedChunkCoords() const {
+    std::vector<ChunkCoord> chunk_coords;
+    chunk_coords.reserve(chunks_.size());
+    for (const auto& [chunk_key, chunk_data] : chunks_) {
+        (void)chunk_data;
+        chunk_coords.push_back(ChunkCoord{
+            .x = chunk_key.x,
+            .y = chunk_key.y,
+        });
+    }
+
+    std::sort(
+        chunk_coords.begin(),
+        chunk_coords.end(),
+        [](const ChunkCoord& lhs, const ChunkCoord& rhs) {
+            if (lhs.x != rhs.x) {
+                return lhs.x < rhs.x;
+            }
+            return lhs.y < rhs.y;
+        });
+    return chunk_coords;
+}
+
 bool WorldServiceBasic::TryReadTile(int tile_x, int tile_y, std::uint16_t& out_material_id) const {
     const ChunkCoord chunk_coord = WorldToChunkCoord(tile_x, tile_y);
     const ChunkData* chunk_data = FindChunk(chunk_coord);

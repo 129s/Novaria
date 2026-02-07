@@ -3,6 +3,7 @@
 #include "app/game_loop.h"
 #include "core/logger.h"
 #include "sim/command_schema.h"
+#include "world/snapshot_codec.h"
 
 #include <algorithm>
 #include <fstream>
@@ -110,6 +111,10 @@ bool BuildModScriptModules(
                 manifest.script_api_version.empty()
                     ? std::string(script::kScriptApiVersion)
                     : manifest.script_api_version,
+            .capabilities =
+                manifest.script_capabilities.empty()
+                    ? std::vector<std::string>{"event.receive", "tick.receive"}
+                    : manifest.script_capabilities,
             .source_code = std::move(module_source),
         });
     }
@@ -216,6 +221,30 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
                     .boss_defeated = loaded_save_state.gameplay_boss_defeated,
                     .playable_loop_complete = loaded_save_state.gameplay_loop_complete,
                 });
+            }
+            if (loaded_save_state.has_world_snapshot) {
+                std::size_t applied_chunk_count = 0;
+                for (const std::string& encoded_chunk :
+                     loaded_save_state.world_chunk_payloads) {
+                    std::string apply_error;
+                    if (!simulation_kernel_.ApplyRemoteChunkPayload(
+                            encoded_chunk,
+                            apply_error)) {
+                        core::Logger::Warn(
+                            "save",
+                            "Skip invalid world chunk snapshot payload: " +
+                                apply_error);
+                        continue;
+                    }
+                    ++applied_chunk_count;
+                }
+
+                core::Logger::Info(
+                    "save",
+                    "Loaded world chunk snapshots: applied=" +
+                        std::to_string(applied_chunk_count) +
+                        ", total=" +
+                        std::to_string(loaded_save_state.world_chunk_payloads.size()));
             }
             core::Logger::Info(
                 "save",
@@ -689,6 +718,37 @@ void GameApp::Shutdown() {
     std::string save_error;
     const net::NetDiagnosticsSnapshot diagnostics = net_service_.DiagnosticsSnapshot();
     const sim::GameplayProgressSnapshot gameplay_progress = simulation_kernel_.GameplayProgress();
+    std::vector<std::string> encoded_world_chunks;
+    for (const world::ChunkCoord& chunk_coord : world_service_.LoadedChunkCoords()) {
+        world::ChunkSnapshot chunk_snapshot{};
+        std::string snapshot_error;
+        if (!world_service_.BuildChunkSnapshot(chunk_coord, chunk_snapshot, snapshot_error)) {
+            core::Logger::Warn(
+                "save",
+                "Skip world chunk snapshot build at (" +
+                    std::to_string(chunk_coord.x) + "," +
+                    std::to_string(chunk_coord.y) + "): " +
+                    snapshot_error);
+            continue;
+        }
+
+        std::string encoded_chunk;
+        if (!world::WorldSnapshotCodec::EncodeChunkSnapshot(
+                chunk_snapshot,
+                encoded_chunk,
+                snapshot_error)) {
+            core::Logger::Warn(
+                "save",
+                "Skip world chunk snapshot encode at (" +
+                    std::to_string(chunk_coord.x) + "," +
+                    std::to_string(chunk_coord.y) + "): " +
+                    snapshot_error);
+            continue;
+        }
+
+        encoded_world_chunks.push_back(std::move(encoded_chunk));
+    }
+    const bool has_world_snapshot = !encoded_world_chunks.empty();
     const save::WorldSaveState save_state{
         .tick_index = simulation_kernel_.CurrentTick(),
         .local_player_id = local_player_id_,
@@ -702,6 +762,8 @@ void GameApp::Shutdown() {
         .gameplay_boss_defeated = gameplay_progress.boss_defeated,
         .gameplay_loop_complete = gameplay_progress.playable_loop_complete,
         .has_gameplay_snapshot = true,
+        .world_chunk_payloads = std::move(encoded_world_chunks),
+        .has_world_snapshot = has_world_snapshot,
         .debug_net_session_transitions = diagnostics.session_transition_count,
         .debug_net_timeout_disconnects = diagnostics.timeout_disconnect_count,
         .debug_net_manual_disconnects = diagnostics.manual_disconnect_count,

@@ -45,7 +45,8 @@ bool TestLoadAllAndFingerprint() {
         "description = \"A valid test mod\"\n"
         "dependencies = []\n"
         "script_entry = \"content/scripts/core.lua\"\n"
-        "script_api_version = \"0.1.0\"\n");
+        "script_api_version = \"0.1.0\"\n"
+        "script_capabilities = [\"event.receive\", \"tick.receive\"]\n");
     WriteTextFile(
         test_root / "mod_ok_a" / "content" / "items.csv",
         "wood_pickaxe,tool.mine_speed+1\n");
@@ -87,6 +88,11 @@ bool TestLoadAllAndFingerprint() {
         manifests[0].script_entry == "content/scripts/core.lua" &&
             manifests[0].script_api_version == "0.1.0",
         "Mod manifest should parse optional script metadata.");
+    passed &= Expect(
+        manifests[0].script_capabilities.size() == 2 &&
+            manifests[0].script_capabilities[0] == "event.receive" &&
+            manifests[0].script_capabilities[1] == "tick.receive",
+        "Mod manifest should parse optional script capability metadata.");
 
     const std::string fingerprint_a = novaria::mod::ModLoader::BuildManifestFingerprint(manifests);
     passed &= Expect(!fingerprint_a.empty(), "Manifest fingerprint should not be empty.");

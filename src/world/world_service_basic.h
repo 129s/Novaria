@@ -29,6 +29,7 @@ public:
 
     bool IsChunkLoaded(const ChunkCoord& chunk_coord) const;
     std::size_t LoadedChunkCount() const;
+    std::vector<ChunkCoord> LoadedChunkCoords() const;
     bool TryReadTile(int tile_x, int tile_y, std::uint16_t& out_material_id) const;
 
 private:
