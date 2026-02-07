@@ -27,6 +27,18 @@ const char* NetBackendPreferenceName(NetBackendPreference preference) {
 }
 
 void NetServiceRuntime::ConfigureUdpBackend(std::uint16_t local_port, UdpEndpoint remote_endpoint) {
+    ConfigureUdpBackend("127.0.0.1", local_port, std::move(remote_endpoint));
+}
+
+void NetServiceRuntime::ConfigureUdpBackend(
+    std::string local_host,
+    std::uint16_t local_port,
+    UdpEndpoint remote_endpoint) {
+    if (local_host.empty()) {
+        local_host = "127.0.0.1";
+    }
+
+    udp_bind_host_ = std::move(local_host);
     udp_bind_port_ = local_port;
     udp_remote_endpoint_ = std::move(remote_endpoint);
 }
@@ -150,6 +162,7 @@ void NetServiceRuntime::PublishWorldSnapshot(
 }
 
 bool NetServiceRuntime::InitializeWithUdpLoopback(std::string& out_error) {
+    udp_loopback_host_.SetBindHost(udp_bind_host_);
     udp_loopback_host_.SetBindPort(udp_bind_port_);
     udp_loopback_host_.SetRemoteEndpoint(udp_remote_endpoint_);
 

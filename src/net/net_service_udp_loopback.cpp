@@ -99,7 +99,7 @@ bool NetServiceUdpLoopback::Initialize(std::string& out_error) {
     last_sent_heartbeat_tick_ = kInvalidTick;
     handshake_ack_received_ = false;
 
-    if (!transport_.Open(bind_port_, out_error)) {
+    if (!transport_.Open(bind_host_, bind_port_, out_error)) {
         initialized_ = false;
         return false;
     }
@@ -114,7 +114,9 @@ bool NetServiceUdpLoopback::Initialize(std::string& out_error) {
     out_error.clear();
     core::Logger::Info(
         "net",
-        "UDP loopback net service initialized on port " +
+        "UDP loopback net service initialized on " +
+            bind_host_ +
+            ":" +
             std::to_string(transport_.LocalPort()) +
             ", remote=" + remote_endpoint_.host +
             ":" + std::to_string(remote_endpoint_.port) + ".");
@@ -349,6 +351,18 @@ void NetServiceUdpLoopback::PublishWorldSnapshot(
             break;
         }
     }
+}
+
+void NetServiceUdpLoopback::SetBindHost(std::string local_host) {
+    if (initialized_) {
+        return;
+    }
+
+    if (local_host.empty()) {
+        local_host = "127.0.0.1";
+    }
+
+    bind_host_ = std::move(local_host);
 }
 
 void NetServiceUdpLoopback::SetBindPort(std::uint16_t local_port) {

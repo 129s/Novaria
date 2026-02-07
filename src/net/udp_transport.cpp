@@ -99,6 +99,36 @@ bool BuildEndpointAddress(const UdpEndpoint& endpoint, sockaddr_in& out_address,
     return true;
 }
 
+bool BuildBindAddress(
+    std::string_view local_host,
+    std::uint16_t local_port,
+    sockaddr_in& out_address,
+    std::string& out_error) {
+    std::memset(&out_address, 0, sizeof(out_address));
+    out_address.sin_family = AF_INET;
+    out_address.sin_port = htons(local_port);
+
+    if (local_host == "0.0.0.0") {
+        out_address.sin_addr.s_addr = htonl(INADDR_ANY);
+        out_error.clear();
+        return true;
+    }
+
+    std::string host_text(local_host);
+    if (host_text.empty()) {
+        host_text = "127.0.0.1";
+    }
+
+    const int parse_result = inet_pton(AF_INET, host_text.c_str(), &out_address.sin_addr);
+    if (parse_result != 1) {
+        out_error = "invalid bind IPv4 host: " + host_text;
+        return false;
+    }
+
+    out_error.clear();
+    return true;
+}
+
 std::string AddressToString(const sockaddr_in& address) {
     char output_buffer[INET_ADDRSTRLEN] = {};
     const char* text = inet_ntop(AF_INET, &address.sin_addr, output_buffer, INET_ADDRSTRLEN);
@@ -142,7 +172,7 @@ UdpTransport::~UdpTransport() {
     Close();
 }
 
-bool UdpTransport::Open(std::uint16_t local_port, std::string& out_error) {
+bool UdpTransport::Open(std::string_view local_host, std::uint16_t local_port, std::string& out_error) {
     Close();
 
 #if defined(_WIN32)
@@ -172,10 +202,14 @@ bool UdpTransport::Open(std::uint16_t local_port, std::string& out_error) {
     }
 
     sockaddr_in bind_address{};
-    std::memset(&bind_address, 0, sizeof(bind_address));
-    bind_address.sin_family = AF_INET;
-    bind_address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    bind_address.sin_port = htons(local_port);
+    if (!BuildBindAddress(local_host, local_port, bind_address, out_error)) {
+        CloseNativeSocket(socket_handle);
+#if defined(_WIN32)
+        ReleaseSocketSubsystem();
+        impl_->socket_subsystem_acquired = false;
+#endif
+        return false;
+    }
     if (bind(socket_handle, reinterpret_cast<const sockaddr*>(&bind_address), sizeof(bind_address)) != 0) {
         out_error = BuildSocketErrorMessage("bind failed");
         CloseNativeSocket(socket_handle);
@@ -209,6 +243,10 @@ bool UdpTransport::Open(std::uint16_t local_port, std::string& out_error) {
     impl_->local_port = ntohs(actual_address.sin_port);
     out_error.clear();
     return true;
+}
+
+bool UdpTransport::Open(std::uint16_t local_port, std::string& out_error) {
+    return Open("127.0.0.1", local_port, out_error);
 }
 
 void UdpTransport::Close() {

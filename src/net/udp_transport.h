@@ -20,6 +20,7 @@ public:
     UdpTransport(const UdpTransport&) = delete;
     UdpTransport& operator=(const UdpTransport&) = delete;
 
+    bool Open(std::string_view local_host, std::uint16_t local_port, std::string& out_error);
     bool Open(std::uint16_t local_port, std::string& out_error);
     void Close();
 

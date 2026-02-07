@@ -36,6 +36,7 @@ public:
         std::uint64_t tick_index,
         const std::vector<std::string>& encoded_dirty_chunks) override;
 
+    void SetBindHost(std::string local_host);
     void SetBindPort(std::uint16_t local_port);
     void SetRemoteEndpoint(UdpEndpoint endpoint);
     UdpEndpoint RemoteEndpoint() const;
@@ -81,6 +82,7 @@ private:
     std::size_t last_published_dirty_chunk_count_ = 0;
     std::vector<std::string> last_published_encoded_chunks_;
     std::uint64_t snapshot_publish_count_ = 0;
+    std::string bind_host_ = "127.0.0.1";
     std::uint16_t bind_port_ = 0;
     std::uint64_t connect_started_tick_ = kInvalidTick;
     std::uint64_t next_connect_probe_tick_ = kInvalidTick;

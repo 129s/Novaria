@@ -201,6 +201,14 @@ bool ConfigLoader::Load(
             continue;
         }
 
+        if (key == "net_udp_local_host") {
+            if (!ParseString(value, out_config.net_udp_local_host)) {
+                out_error = "net_udp_local_host expects string: line " + std::to_string(line_number);
+                return false;
+            }
+            continue;
+        }
+
         if (key == "net_udp_remote_host") {
             if (!ParseString(value, out_config.net_udp_remote_host)) {
                 out_error = "net_udp_remote_host expects string: line " + std::to_string(line_number);
@@ -221,6 +229,16 @@ bool ConfigLoader::Load(
 
     if (out_config.window_width <= 0 || out_config.window_height <= 0) {
         out_error = "Window size must be greater than zero.";
+        return false;
+    }
+
+    if (out_config.net_udp_local_host.empty()) {
+        out_error = "net_udp_local_host cannot be empty.";
+        return false;
+    }
+
+    if (out_config.net_udp_remote_host.empty()) {
+        out_error = "net_udp_remote_host cannot be empty.";
         return false;
     }
 

@@ -25,6 +25,7 @@ struct GameConfig final {
     bool strict_save_mod_fingerprint = false;
     ScriptBackendMode script_backend_mode = ScriptBackendMode::LuaJit;
     NetBackendMode net_backend_mode = NetBackendMode::UdpLoopback;
+    std::string net_udp_local_host = "127.0.0.1";
     int net_udp_local_port = 0;
     std::string net_udp_remote_host = "127.0.0.1";
     int net_udp_remote_port = 0;

@@ -77,17 +77,26 @@ script_api_version = "0.1.0"
 
 ```toml
 net_backend = "udp_loopback"
+net_udp_local_host = "127.0.0.1"
 net_udp_local_port = 0
 net_udp_remote_host = "127.0.0.1"
 net_udp_remote_port = 0
 ```
 
-说明：`net_udp_remote_port = 0` 时运行时允许通过首个 `SYN` 采纳动态 peer（同机默认仍可自环）。
+说明：
+
+- `net_udp_local_host` 控制本地绑定地址（`127.0.0.1` 仅同机，`0.0.0.0` 可接收外部主机数据包）。
+- `net_udp_remote_port = 0` 时运行时允许通过首个 `SYN` 采纳动态 peer（同机默认仍可自环）。
 
 同机双进程联调示例：
 
-- 进程 A：`net_backend = "udp_loopback"`，`net_udp_local_port = 25000`，`net_udp_remote_port = 25001`
-- 进程 B：`net_backend = "udp_loopback"`，`net_udp_local_port = 25001`，`net_udp_remote_port = 25000`
+- 进程 A：`net_udp_local_host = "127.0.0.1"`，`net_udp_local_port = 25000`，`net_udp_remote_port = 25001`
+- 进程 B：`net_udp_local_host = "127.0.0.1"`，`net_udp_local_port = 25001`，`net_udp_remote_port = 25000`
+
+跨主机最小联调建议：
+
+- 服务端：`net_udp_local_host = "0.0.0.0"`，`net_udp_local_port = 25000`，`net_udp_remote_host = "<客户端IP>"`，`net_udp_remote_port = 25001`
+- 客户端：`net_udp_local_host = "0.0.0.0"`，`net_udp_local_port = 25001`，`net_udp_remote_host = "<服务端IP>"`，`net_udp_remote_port = 25000`
 
 ## 6. 调试热键（当前）
 

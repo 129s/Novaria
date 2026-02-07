@@ -32,6 +32,19 @@ int main() {
     passed &= Expect(sender.Open(0, error), "Sender should open on ephemeral port.");
     passed &= Expect(error.empty(), "Sender open should not return error.");
 
+    novaria::net::UdpTransport any_bind_transport;
+    passed &= Expect(
+        any_bind_transport.Open("0.0.0.0", 0, error),
+        "Transport should open with wildcard local bind host.");
+    passed &= Expect(error.empty(), "Wildcard bind open should not return error.");
+    any_bind_transport.Close();
+
+    novaria::net::UdpTransport invalid_bind_transport;
+    passed &= Expect(
+        !invalid_bind_transport.Open("not-an-ipv4-host", 0, error),
+        "Invalid local bind host should fail transport open.");
+    passed &= Expect(!error.empty(), "Invalid local bind host should return readable error.");
+
     const novaria::net::UdpEndpoint receiver_endpoint{
         .host = "127.0.0.1",
         .port = receiver.LocalPort(),

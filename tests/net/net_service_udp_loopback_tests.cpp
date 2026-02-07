@@ -177,6 +177,15 @@ int main() {
         "Connect probe exponential backoff should reduce probe count.");
     timeout_host.Shutdown();
 
+    novaria::net::NetServiceUdpLoopback invalid_bind_host;
+    invalid_bind_host.SetBindHost("not-an-ipv4-host");
+    passed &= Expect(
+        !invalid_bind_host.Initialize(error),
+        "Invalid bind host should fail UDP loopback initialization.");
+    passed &= Expect(
+        !error.empty(),
+        "Invalid bind host failure should return readable error.");
+
     if (!passed) {
         return 1;
     }

@@ -22,7 +22,7 @@ int main() {
 
     novaria::net::NetServiceRuntime runtime;
     runtime.SetBackendPreference(novaria::net::NetBackendPreference::UdpLoopback);
-    runtime.ConfigureUdpBackend(0, {.host = "127.0.0.1", .port = 0});
+    runtime.ConfigureUdpBackend("127.0.0.1", 0, {.host = "127.0.0.1", .port = 0});
     passed &= Expect(runtime.Initialize(error), "UDP loopback backend init should succeed.");
     passed &= Expect(error.empty(), "UDP loopback backend init should not return error.");
     passed &= Expect(
@@ -43,6 +43,15 @@ int main() {
     const auto payloads = runtime.ConsumeRemoteChunkPayloads();
     passed &= Expect(payloads.size() == 1 && payloads.front() == "payload", "Runtime should loopback payload.");
     runtime.Shutdown();
+
+    novaria::net::NetServiceRuntime invalid_runtime;
+    invalid_runtime.ConfigureUdpBackend("not-an-ipv4-host", 0, {.host = "127.0.0.1", .port = 0});
+    passed &= Expect(
+        !invalid_runtime.Initialize(error),
+        "Invalid local bind host should fail runtime initialization.");
+    passed &= Expect(
+        !error.empty(),
+        "Invalid local bind host should provide readable runtime error.");
 
     if (!passed) {
         return 1;

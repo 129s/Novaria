@@ -66,6 +66,9 @@ int main() {
         "Net backend should default to udp_loopback.");
     passed &= Expect(default_config.net_udp_local_port == 0, "Net UDP local port should default to 0.");
     passed &= Expect(
+        default_config.net_udp_local_host == "127.0.0.1",
+        "Net UDP local host should default to loopback.");
+    passed &= Expect(
         default_config.net_udp_remote_host == "127.0.0.1",
         "Net UDP remote host should default to loopback.");
     passed &= Expect(default_config.net_udp_remote_port == 0, "Net UDP remote port should default to 0.");
@@ -80,6 +83,7 @@ int main() {
             "strict_save_mod_fingerprint = true\n"
             "script_backend = \"luajit\"\n"
             "net_backend = \"udp_loopback\"\n"
+            "net_udp_local_host = \"0.0.0.0\"\n"
             "net_udp_local_port = 24000\n"
             "net_udp_remote_host = \"127.0.0.1\"\n"
             "net_udp_remote_port = 24001\n"),
@@ -102,6 +106,9 @@ int main() {
     passed &= Expect(
         strict_config.net_udp_local_port == 24000 && strict_config.net_udp_remote_port == 24001,
         "Net UDP ports should parse correctly.");
+    passed &= Expect(
+        strict_config.net_udp_local_host == "0.0.0.0",
+        "Net UDP local host should parse correctly.");
     passed &= Expect(
         strict_config.net_udp_remote_host == "127.0.0.1",
         "Net UDP remote host should parse correctly.");
@@ -160,6 +167,25 @@ int main() {
         !novaria::core::ConfigLoader::Load(config_path, invalid_port_config, error),
         "Out-of-range UDP local port should fail config load.");
     passed &= Expect(!error.empty(), "Out-of-range UDP local port should provide error.");
+
+    passed &= Expect(
+        WriteConfigFile(
+            config_path,
+            "window_title = \"CfgTestInvalidLocalHost\"\n"
+            "window_width = 1280\n"
+            "window_height = 720\n"
+            "vsync = true\n"
+            "strict_save_mod_fingerprint = true\n"
+            "script_backend = \"luajit\"\n"
+            "net_backend = \"udp_loopback\"\n"
+            "net_udp_local_host = \"\"\n"),
+        "Invalid net UDP local host config file write should succeed.");
+
+    novaria::core::GameConfig invalid_local_host_config{};
+    passed &= Expect(
+        !novaria::core::ConfigLoader::Load(config_path, invalid_local_host_config, error),
+        "Empty UDP local host should fail config load.");
+    passed &= Expect(!error.empty(), "Empty UDP local host should provide error.");
 
     std::filesystem::remove_all(test_dir, ec);
 
