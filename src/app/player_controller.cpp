@@ -144,9 +144,17 @@ void PlayerController::Update(
     }
 
     if (input_intent.hotbar_select_slot_1) {
-        state_.selected_place_material_id = world::WorldServiceBasic::kMaterialDirt;
+        state_.selected_hotbar_slot = 0;
     }
     if (input_intent.hotbar_select_slot_2) {
+        state_.selected_hotbar_slot = 1;
+    }
+    if (input_intent.hotbar_select_slot_3) {
+        state_.selected_hotbar_slot = 2;
+        state_.selected_place_material_id = world::WorldServiceBasic::kMaterialDirt;
+    }
+    if (input_intent.hotbar_select_slot_4) {
+        state_.selected_hotbar_slot = 3;
         state_.selected_place_material_id = world::WorldServiceBasic::kMaterialStone;
     }
 
@@ -156,40 +164,108 @@ void PlayerController::Update(
         std::uint16_t target_material = 0;
         const bool has_target_material =
             world_service.TryReadTile(target_tile_x, target_tile_y, target_material);
-        if (has_target_material && IsCollectibleMaterial(target_material)) {
-            submit_world_set_tile(target_tile_x, target_tile_y, world::WorldServiceBasic::kMaterialAir);
-            if (target_material == world::WorldServiceBasic::kMaterialDirt ||
-                target_material == world::WorldServiceBasic::kMaterialGrass) {
-                ++state_.inventory_dirt_count;
-            } else if (target_material == world::WorldServiceBasic::kMaterialStone) {
-                ++state_.inventory_stone_count;
-                submit_collect_resource(sim::command::kResourceStone, 1);
-            } else if (target_material == world::WorldServiceBasic::kMaterialWood) {
-                ++state_.inventory_wood_count;
-                submit_collect_resource(sim::command::kResourceWood, 1);
-            }
-        } else if (!has_target_material || !IsSolidMaterial(target_material)) {
-            if (state_.selected_place_material_id == world::WorldServiceBasic::kMaterialDirt &&
-                state_.inventory_dirt_count > 0) {
-                --state_.inventory_dirt_count;
-                submit_world_set_tile(
-                    target_tile_x,
-                    target_tile_y,
-                    world::WorldServiceBasic::kMaterialDirt);
+        if (!has_target_material) {
+            ResetPrimaryActionProgress();
+        } else {
+            constexpr int kPlaceRequiredTicks = 8;
+            bool action_is_harvest = false;
+            bool action_is_place = false;
+            int required_ticks = 0;
+            std::uint16_t place_material_id = world::WorldServiceBasic::kMaterialAir;
+
+            if (state_.selected_hotbar_slot == 0) {
+                action_is_harvest = IsPickaxeHarvestMaterial(target_material);
+                if (action_is_harvest) {
+                    required_ticks = RequiredHarvestTicks(target_material);
+                }
+            } else if (state_.selected_hotbar_slot == 1) {
+                action_is_harvest = IsAxeHarvestMaterial(target_material);
+                if (action_is_harvest) {
+                    required_ticks = RequiredHarvestTicks(target_material);
+                }
             } else if (
-                state_.selected_place_material_id == world::WorldServiceBasic::kMaterialStone &&
+                state_.selected_hotbar_slot == 2 &&
+                target_material == world::WorldServiceBasic::kMaterialAir &&
+                state_.inventory_dirt_count > 0) {
+                action_is_place = true;
+                place_material_id = world::WorldServiceBasic::kMaterialDirt;
+                required_ticks = kPlaceRequiredTicks;
+            } else if (
+                state_.selected_hotbar_slot == 3 &&
+                target_material == world::WorldServiceBasic::kMaterialAir &&
                 state_.inventory_stone_count > 0) {
-                --state_.inventory_stone_count;
-                submit_world_set_tile(
-                    target_tile_x,
-                    target_tile_y,
-                    world::WorldServiceBasic::kMaterialStone);
+                action_is_place = true;
+                place_material_id = world::WorldServiceBasic::kMaterialStone;
+                required_ticks = kPlaceRequiredTicks;
+            }
+
+            if (!action_is_harvest && !action_is_place) {
+                ResetPrimaryActionProgress();
+            } else {
+                const bool same_progress =
+                    primary_action_progress_.active &&
+                    primary_action_progress_.is_harvest == action_is_harvest &&
+                    primary_action_progress_.target_tile_x == target_tile_x &&
+                    primary_action_progress_.target_tile_y == target_tile_y &&
+                    primary_action_progress_.target_material_id == target_material &&
+                    primary_action_progress_.hotbar_slot == state_.selected_hotbar_slot;
+                if (!same_progress) {
+                    primary_action_progress_ = PrimaryActionProgress{
+                        .active = true,
+                        .is_harvest = action_is_harvest,
+                        .target_tile_x = target_tile_x,
+                        .target_tile_y = target_tile_y,
+                        .target_material_id = target_material,
+                        .hotbar_slot = state_.selected_hotbar_slot,
+                        .required_ticks = required_ticks,
+                        .elapsed_ticks = 0,
+                    };
+                }
+
+                ++primary_action_progress_.elapsed_ticks;
+                if (primary_action_progress_.elapsed_ticks >= primary_action_progress_.required_ticks) {
+                    if (action_is_harvest) {
+                        submit_world_set_tile(
+                            target_tile_x,
+                            target_tile_y,
+                            world::WorldServiceBasic::kMaterialAir);
+                        if (target_material == world::WorldServiceBasic::kMaterialDirt ||
+                            target_material == world::WorldServiceBasic::kMaterialGrass) {
+                            ++state_.inventory_dirt_count;
+                        } else if (target_material == world::WorldServiceBasic::kMaterialStone) {
+                            ++state_.inventory_stone_count;
+                            submit_collect_resource(sim::command::kResourceStone, 1);
+                        } else if (target_material == world::WorldServiceBasic::kMaterialWood) {
+                            ++state_.inventory_wood_count;
+                            submit_collect_resource(sim::command::kResourceWood, 1);
+                        }
+                    } else {
+                        if (place_material_id == world::WorldServiceBasic::kMaterialDirt &&
+                            state_.inventory_dirt_count > 0) {
+                            --state_.inventory_dirt_count;
+                            submit_world_set_tile(target_tile_x, target_tile_y, place_material_id);
+                        } else if (
+                            place_material_id == world::WorldServiceBasic::kMaterialStone &&
+                            state_.inventory_stone_count > 0) {
+                            --state_.inventory_stone_count;
+                            submit_world_set_tile(target_tile_x, target_tile_y, place_material_id);
+                        }
+                    }
+
+                    ResetPrimaryActionProgress();
+                }
             }
         }
+    } else {
+        ResetPrimaryActionProgress();
     }
 
     (void)input_intent.interaction_primary_pressed;
     (void)submit_gameplay_command;
+    (void)input_intent.ui_inventory_toggle_pressed;
+    (void)input_intent.hotbar_select_next_row;
+    (void)input_intent.smart_mode_toggle_pressed;
+    (void)input_intent.smart_context_held;
 }
 
 int PlayerController::FloorDiv(int value, int divisor) {
@@ -214,12 +290,32 @@ bool PlayerController::IsSolidMaterial(std::uint16_t material_id) {
         material_id != world::WorldServiceBasic::kMaterialLeaves;
 }
 
-bool PlayerController::IsCollectibleMaterial(std::uint16_t material_id) {
+bool PlayerController::IsPickaxeHarvestMaterial(std::uint16_t material_id) {
     return material_id == world::WorldServiceBasic::kMaterialDirt ||
         material_id == world::WorldServiceBasic::kMaterialGrass ||
-        material_id == world::WorldServiceBasic::kMaterialStone ||
-        material_id == world::WorldServiceBasic::kMaterialWood ||
+        material_id == world::WorldServiceBasic::kMaterialStone;
+}
+
+bool PlayerController::IsAxeHarvestMaterial(std::uint16_t material_id) {
+    return material_id == world::WorldServiceBasic::kMaterialWood ||
         material_id == world::WorldServiceBasic::kMaterialLeaves;
+}
+
+int PlayerController::RequiredHarvestTicks(std::uint16_t material_id) {
+    if (material_id == world::WorldServiceBasic::kMaterialStone) {
+        return 18;
+    }
+    if (material_id == world::WorldServiceBasic::kMaterialWood) {
+        return 12;
+    }
+    if (material_id == world::WorldServiceBasic::kMaterialLeaves) {
+        return 6;
+    }
+    return 8;
+}
+
+void PlayerController::ResetPrimaryActionProgress() {
+    primary_action_progress_ = {};
 }
 
 }  // namespace novaria::app

@@ -15,6 +15,7 @@ struct LocalPlayerState final {
     std::uint32_t inventory_dirt_count = 0;
     std::uint32_t inventory_stone_count = 0;
     std::uint32_t inventory_wood_count = 0;
+    std::uint8_t selected_hotbar_slot = 0;
     std::uint16_t selected_place_material_id = 1;
     bool workbench_built = false;
     bool wood_sword_crafted = false;
@@ -34,12 +35,28 @@ public:
         std::uint32_t local_player_id);
 
 private:
+    struct PrimaryActionProgress final {
+        bool active = false;
+        bool is_harvest = false;
+        int target_tile_x = 0;
+        int target_tile_y = 0;
+        std::uint16_t target_material_id = 0;
+        std::uint8_t hotbar_slot = 0;
+        int required_ticks = 0;
+        int elapsed_ticks = 0;
+    };
+
     static int FloorDiv(int value, int divisor);
     static world::ChunkCoord TileToChunkCoord(int tile_x, int tile_y);
     static bool IsSolidMaterial(std::uint16_t material_id);
-    static bool IsCollectibleMaterial(std::uint16_t material_id);
+    static bool IsPickaxeHarvestMaterial(std::uint16_t material_id);
+    static bool IsAxeHarvestMaterial(std::uint16_t material_id);
+    static int RequiredHarvestTicks(std::uint16_t material_id);
+
+    void ResetPrimaryActionProgress();
 
     LocalPlayerState state_{};
+    PrimaryActionProgress primary_action_progress_{};
 };
 
 }  // namespace novaria::app
