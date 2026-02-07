@@ -2,6 +2,7 @@
 
 #include "sim/command_schema.h"
 
+#include <algorithm>
 #include <cstddef>
 
 namespace novaria::app {
@@ -21,6 +22,9 @@ void PlayerController::Update(
     world::WorldServiceBasic& world_service,
     sim::SimulationKernel& simulation_kernel,
     std::uint32_t local_player_id) {
+    constexpr int kTilePixelSize = 32;
+    constexpr int kReachDistanceTiles = 4;
+
     if (state_.pickup_toast_ticks_remaining > 0) {
         --state_.pickup_toast_ticks_remaining;
         if (state_.pickup_toast_ticks_remaining == 0) {
@@ -213,9 +217,31 @@ void PlayerController::Update(
         apply_hotbar_slot(static_cast<std::uint8_t>((state_.selected_hotbar_slot + 1) % 10));
     }
 
-    const int target_tile_x = state_.tile_x + state_.facing_x;
-    const int target_tile_y = state_.tile_y;
-    if (input_intent.action_primary_held) {
+    int target_tile_x = state_.tile_x + state_.facing_x;
+    int target_tile_y = state_.tile_y;
+    if (input_intent.cursor_valid &&
+        input_intent.viewport_width > 0 &&
+        input_intent.viewport_height > 0) {
+        const int view_tiles_x = std::max(1, input_intent.viewport_width / kTilePixelSize);
+        const int view_tiles_y = std::max(1, input_intent.viewport_height / kTilePixelSize);
+        const int first_world_tile_x = state_.tile_x - view_tiles_x / 2;
+        const int first_world_tile_y = state_.tile_y - view_tiles_y / 2;
+        target_tile_x = first_world_tile_x + (input_intent.cursor_screen_x / kTilePixelSize);
+        target_tile_y = first_world_tile_y + (input_intent.cursor_screen_y / kTilePixelSize);
+    }
+
+    if (target_tile_x < state_.tile_x) {
+        state_.facing_x = -1;
+    } else if (target_tile_x > state_.tile_x) {
+        state_.facing_x = 1;
+    }
+
+    const int delta_x = target_tile_x - state_.tile_x;
+    const int delta_y = target_tile_y - state_.tile_y;
+    const int distance_squared = delta_x * delta_x + delta_y * delta_y;
+    const bool target_reachable = distance_squared <= (kReachDistanceTiles * kReachDistanceTiles);
+
+    if (input_intent.action_primary_held && target_reachable) {
         std::uint16_t target_material = 0;
         const bool has_target_material =
             world_service.TryReadTile(target_tile_x, target_tile_y, target_material);
@@ -307,6 +333,11 @@ void PlayerController::Update(
         }
     } else {
         ResetPrimaryActionProgress();
+    }
+
+    if (input_intent.interaction_primary_pressed) {
+        const bool interaction_target_reachable = target_reachable;
+        (void)interaction_target_reachable;
     }
 
     constexpr std::uint16_t kPickupToastTicks = 90;

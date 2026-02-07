@@ -8,6 +8,11 @@ struct PlayerInputIntent final {
     bool move_left = false;
     bool move_right = false;
     bool jump_pressed = false;
+    bool cursor_valid = false;
+    int cursor_screen_x = 0;
+    int cursor_screen_y = 0;
+    int viewport_width = 0;
+    int viewport_height = 0;
     bool action_primary_held = false;
     bool interaction_primary_pressed = false;
     bool hotbar_select_slot_1 = false;

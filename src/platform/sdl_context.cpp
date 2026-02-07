@@ -255,9 +255,18 @@ bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
     float mouse_x = 0.0F;
     float mouse_y = 0.0F;
     const SDL_MouseButtonFlags mouse_buttons = SDL_GetMouseState(&mouse_x, &mouse_y);
-    (void)mouse_x;
-    (void)mouse_y;
+    out_actions.cursor_valid = true;
+    out_actions.cursor_screen_x = static_cast<int>(mouse_x);
+    out_actions.cursor_screen_y = static_cast<int>(mouse_y);
     out_actions.action_primary_held = (mouse_buttons & SDL_BUTTON_LMASK) != 0U;
+
+    if (window_ != nullptr) {
+        int window_width = 0;
+        int window_height = 0;
+        (void)SDL_GetWindowSize(window_, &window_width, &window_height);
+        out_actions.viewport_width = window_width;
+        out_actions.viewport_height = window_height;
+    }
 
     const bool* keyboard_state = SDL_GetKeyboardState(nullptr);
     if (keyboard_state != nullptr) {
