@@ -542,6 +542,9 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
         } else if (
             scene.hud.pickup_toast_material_id == world::WorldServiceBasic::kMaterialCoalOre) {
             pickup_color = MaterialColor(world::WorldServiceBasic::kMaterialCoalOre);
+        } else if (
+            scene.hud.pickup_toast_material_id == world::WorldServiceBasic::kMaterialTorch) {
+            pickup_color = MaterialColor(world::WorldServiceBasic::kMaterialTorch);
         } else if (scene.hud.pickup_toast_material_id == world::WorldServiceBasic::kMaterialWood) {
             pickup_color = MaterialColor(world::WorldServiceBasic::kMaterialWood);
         }
