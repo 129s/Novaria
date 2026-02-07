@@ -21,6 +21,7 @@ struct RenderHudState final {
     std::uint16_t pickup_toast_material_id = 0;
     std::uint32_t pickup_toast_amount = 0;
     std::uint16_t pickup_toast_ticks_remaining = 0;
+    bool inventory_open = false;
     std::uint16_t selected_material_id = 1;
     std::uint8_t hotbar_row = 0;
     std::uint8_t hotbar_slot = 0;

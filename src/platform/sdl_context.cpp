@@ -540,6 +540,29 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
             pickup_color);
     }
 
+    if (scene.hud.inventory_open) {
+        const int inventory_panel_width = std::max(320, window_width / 2);
+        const int inventory_panel_height = std::max(220, window_height / 3);
+        const int inventory_x = (window_width - inventory_panel_width) / 2;
+        const int inventory_y = (window_height - inventory_panel_height) / 2;
+        DrawFilledRect(
+            renderer_,
+            inventory_x,
+            inventory_y,
+            inventory_panel_width,
+            inventory_panel_height,
+            RgbaColor{.r = 22, .g = 22, .b = 28, .a = 228});
+
+        const int craft_zone_margin = 14;
+        DrawFilledRect(
+            renderer_,
+            inventory_x + craft_zone_margin,
+            inventory_y + craft_zone_margin,
+            inventory_panel_width / 3,
+            inventory_panel_height - craft_zone_margin * 2,
+            RgbaColor{.r = 42, .g = 52, .b = 64, .a = 240});
+    }
+
     SDL_RenderPresent(renderer_);
 }
 

@@ -217,6 +217,9 @@ void PlayerController::Update(
     } else if (input_intent.hotbar_cycle_next) {
         apply_hotbar_slot(static_cast<std::uint8_t>((state_.selected_hotbar_slot + 1) % 10));
     }
+    if (input_intent.ui_inventory_toggle_pressed) {
+        state_.inventory_open = !state_.inventory_open;
+    }
     if (input_intent.hotbar_select_next_row) {
         state_.active_hotbar_row =
             static_cast<std::uint8_t>((state_.active_hotbar_row + 1) % kHotbarRows);
@@ -246,7 +249,7 @@ void PlayerController::Update(
     const int distance_squared = delta_x * delta_x + delta_y * delta_y;
     const bool target_reachable = distance_squared <= (kReachDistanceTiles * kReachDistanceTiles);
 
-    if (input_intent.action_primary_held && target_reachable) {
+    if (!state_.inventory_open && input_intent.action_primary_held && target_reachable) {
         std::uint16_t target_material = 0;
         const bool has_target_material =
             world_service.TryReadTile(target_tile_x, target_tile_y, target_material);
@@ -377,7 +380,6 @@ void PlayerController::Update(
 
     (void)input_intent.interaction_primary_pressed;
     (void)submit_gameplay_command;
-    (void)input_intent.ui_inventory_toggle_pressed;
     (void)input_intent.hotbar_select_next_row;
     (void)input_intent.smart_mode_toggle_pressed;
     (void)input_intent.smart_context_held;
