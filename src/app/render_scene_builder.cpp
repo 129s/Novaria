@@ -1,6 +1,8 @@
 #include "app/render_scene_builder.h"
 
 #include <algorithm>
+#include <cmath>
+#include <utility>
 #include <vector>
 
 namespace novaria::app {
@@ -55,6 +57,9 @@ platform::RenderScene RenderSceneBuilder::Build(
     scene.tiles.reserve(static_cast<std::size_t>(scene.view_tiles_x * scene.view_tiles_y));
     std::vector<bool> column_blocked(static_cast<std::size_t>(scene.view_tiles_x), false);
     const float sky_light_base = 0.2F + scene.daylight_factor * 0.8F;
+    std::vector<std::pair<int, int>> torch_tiles;
+    std::vector<float> tile_light_factors;
+    tile_light_factors.reserve(static_cast<std::size_t>(scene.view_tiles_x * scene.view_tiles_y));
     for (int local_y = 0; local_y < scene.view_tiles_y; ++local_y) {
         for (int local_x = 0; local_x < scene.view_tiles_x; ++local_x) {
             const int world_tile_x = first_world_tile_x + local_x;
@@ -70,19 +75,48 @@ platform::RenderScene RenderSceneBuilder::Build(
             if (is_blocked) {
                 light_factor *= 0.36F;
             }
-            const std::uint8_t light_level = static_cast<std::uint8_t>(
-                std::clamp(static_cast<int>(light_factor * 255.0F), 0, 255));
             if (!is_blocked && IsSunlightBlockingMaterial(material_id)) {
                 column_blocked[static_cast<std::size_t>(local_x)] = true;
             }
 
+            if (material_id == world::WorldServiceBasic::kMaterialTorch) {
+                torch_tiles.push_back({local_x, local_y});
+            }
+            tile_light_factors.push_back(light_factor);
             scene.tiles.push_back(platform::RenderTile{
                 .world_tile_x = world_tile_x,
                 .world_tile_y = world_tile_y,
                 .material_id = material_id,
-                .light_level = light_level,
+                .light_level = static_cast<std::uint8_t>(
+                    std::clamp(static_cast<int>(light_factor * 255.0F), 0, 255)),
             });
         }
+    }
+
+    constexpr float kTorchRadius = 6.0F;
+    constexpr float kTorchIntensity = 0.85F;
+    for (std::size_t tile_index = 0; tile_index < scene.tiles.size(); ++tile_index) {
+        const int local_x = static_cast<int>(tile_index % static_cast<std::size_t>(scene.view_tiles_x));
+        const int local_y = static_cast<int>(tile_index / static_cast<std::size_t>(scene.view_tiles_x));
+        float torch_light = 0.0F;
+        for (const auto& torch_tile : torch_tiles) {
+            const float delta_x = static_cast<float>(local_x - torch_tile.first);
+            const float delta_y = static_cast<float>(local_y - torch_tile.second);
+            const float distance = std::sqrt(delta_x * delta_x + delta_y * delta_y);
+            if (distance > kTorchRadius) {
+                continue;
+            }
+
+            const float falloff = 1.0F - (distance / kTorchRadius);
+            torch_light = std::max(torch_light, falloff * kTorchIntensity);
+        }
+
+        const float combined_light = std::clamp(
+            tile_light_factors[tile_index] + torch_light,
+            0.0F,
+            1.0F);
+        scene.tiles[tile_index].light_level = static_cast<std::uint8_t>(
+            std::clamp(static_cast<int>(combined_light * 255.0F), 0, 255));
     }
 
     return scene;
