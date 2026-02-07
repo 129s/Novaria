@@ -3,7 +3,6 @@
 #include "core/logger.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cstdint>
 #include <string>
 
@@ -63,6 +62,19 @@ RgbaColor MaterialColor(std::uint16_t material_id) {
         default:
             return RgbaColor{};
     }
+}
+
+RgbaColor ApplyTileVariation(
+    const RgbaColor& base_color,
+    int world_tile_x,
+    int world_tile_y) {
+    const int shade_delta = ((world_tile_x + world_tile_y) & 1) == 0 ? 8 : -8;
+    return RgbaColor{
+        .r = ClampToByte(static_cast<int>(base_color.r) + shade_delta),
+        .g = ClampToByte(static_cast<int>(base_color.g) + shade_delta),
+        .b = ClampToByte(static_cast<int>(base_color.b) + shade_delta),
+        .a = base_color.a,
+    };
 }
 
 void DrawFilledRect(
@@ -250,12 +262,33 @@ bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
     }
 
 #if defined(SDL_SCANCODE_A) && defined(SDL_SCANCODE_D) && defined(SDL_SCANCODE_W) && defined(SDL_SCANCODE_S)
+    SDL_PumpEvents();
     const bool* keyboard_state = SDL_GetKeyboardState(nullptr);
     if (keyboard_state != nullptr) {
-        out_actions.move_left = keyboard_state[SDL_SCANCODE_A];
-        out_actions.move_right = keyboard_state[SDL_SCANCODE_D];
-        out_actions.move_up = keyboard_state[SDL_SCANCODE_W];
-        out_actions.move_down = keyboard_state[SDL_SCANCODE_S];
+        const bool move_left_wasd = keyboard_state[SDL_SCANCODE_A];
+        const bool move_right_wasd = keyboard_state[SDL_SCANCODE_D];
+        const bool move_up_wasd = keyboard_state[SDL_SCANCODE_W];
+        const bool move_down_wasd = keyboard_state[SDL_SCANCODE_S];
+        bool move_left_arrow = false;
+        bool move_right_arrow = false;
+        bool move_up_arrow = false;
+        bool move_down_arrow = false;
+#if defined(SDL_SCANCODE_LEFT)
+        move_left_arrow = keyboard_state[SDL_SCANCODE_LEFT];
+#endif
+#if defined(SDL_SCANCODE_RIGHT)
+        move_right_arrow = keyboard_state[SDL_SCANCODE_RIGHT];
+#endif
+#if defined(SDL_SCANCODE_UP)
+        move_up_arrow = keyboard_state[SDL_SCANCODE_UP];
+#endif
+#if defined(SDL_SCANCODE_DOWN)
+        move_down_arrow = keyboard_state[SDL_SCANCODE_DOWN];
+#endif
+        out_actions.move_left = move_left_wasd || move_left_arrow;
+        out_actions.move_right = move_right_wasd || move_right_arrow;
+        out_actions.move_up = move_up_wasd || move_up_arrow;
+        out_actions.move_down = move_down_wasd || move_down_arrow;
     }
 #endif
 
@@ -266,14 +299,8 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
     if (renderer_ == nullptr) {
         return;
     }
-
-    const float seconds = static_cast<float>(SDL_GetTicks()) / 1000.0F;
-    const float pulse = (std::sin(seconds * 1.2F) + 1.0F) * 0.5F;
-    const Uint8 blue = ClampToByte(28 + static_cast<int>(pulse * 20.0F));
-    const Uint8 green =
-        ClampToByte(20 + static_cast<int>(interpolation_alpha * 10.0F));
-
-    (void)SDL_SetRenderDrawColor(renderer_, 12, green, blue, 255);
+    (void)interpolation_alpha;
+    (void)SDL_SetRenderDrawColor(renderer_, 14, 24, 36, 255);
     (void)SDL_RenderClear(renderer_);
 
     int window_width = 0;
@@ -310,7 +337,10 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
 
         const int screen_x = origin_x + local_tile_x * tile_pixel_size;
         const int screen_y = origin_y + local_tile_y * tile_pixel_size;
-        const RgbaColor tile_color = MaterialColor(tile.material_id);
+        const RgbaColor tile_color = ApplyTileVariation(
+            MaterialColor(tile.material_id),
+            tile.world_tile_x,
+            tile.world_tile_y);
         DrawFilledRect(
             renderer_,
             screen_x,
