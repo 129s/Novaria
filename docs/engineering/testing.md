@@ -34,6 +34,7 @@ ctest --test-dir build -C Debug --output-on-failure -R novaria_mvp_acceptance_te
 - `novaria_world_service_tests`
 - `novaria_script_host_runtime_tests`
 - `novaria_simulation_kernel_tests`
+- `novaria_ecs_runtime_tests`
 - `novaria_save_repository_tests`
 - `novaria_mod_loader_tests`
 - `novaria_world_snapshot_codec_tests`

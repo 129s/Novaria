@@ -2,6 +2,8 @@
 
 #include "net/net_service.h"
 #include "script/script_host.h"
+#include "sim/ecs_runtime.h"
+#include "sim/typed_command.h"
 #include "world/world_service.h"
 
 #include <cstddef>
@@ -53,8 +55,12 @@ private:
         std::string transition_reason;
     };
 
-    void ExecuteWorldCommandIfMatched(const net::PlayerCommand& command);
-    void ExecuteGameplayCommandIfMatched(const net::PlayerCommand& command);
+    void ExecuteWorldCommandIfMatched(const TypedPlayerCommand& command);
+    void ExecuteGameplayCommandIfMatched(const TypedPlayerCommand& command);
+    void ExecuteCombatCommandIfMatched(
+        const TypedPlayerCommand& command,
+        std::uint32_t player_id);
+    void UpdatePlayableLoopCompletion();
     void DispatchGameplayProgressEvent(std::string_view milestone);
     void ResetGameplayProgress();
     void QueueNetSessionChangedEvent(
@@ -67,6 +73,7 @@ private:
     world::IWorldService& world_service_;
     net::INetService& net_service_;
     script::IScriptHost& script_host_;
+    ecs::Runtime ecs_runtime_;
     std::vector<net::PlayerCommand> pending_local_commands_;
     std::size_t dropped_local_command_count_ = 0;
     net::NetSessionState last_observed_net_session_state_ = net::NetSessionState::Disconnected;

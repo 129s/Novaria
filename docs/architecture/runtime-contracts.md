@@ -7,7 +7,7 @@
 
 ## 1. 目标
 
-定义 `sim/world/net/script/save/mod` 的边界，确保实现可并行推进且可测试。
+定义 `sim/world/net/script/save/mod/ecs` 的边界，确保实现可并行推进且可测试。
 
 ## 2. 调度主线（`sim::SimulationKernel`）
 
@@ -19,9 +19,10 @@
 4. `net.Tick`。
 5. （仅连接态）消费远端快照并应用到 `world`。
 6. `world.Tick`。
-7. `script.Tick`。
-8. `world` 输出脏块并编码。
-9. （仅连接态）`net.PublishWorldSnapshot`。
+7. `ecs.Tick`（实体行为：投射物/目标碰撞/伤害/回收）。
+8. `script.Tick`。
+9. `world` 输出脏块并编码。
+10. （仅连接态）`net.PublishWorldSnapshot`。
 
 ## 3. 分模块契约
 
@@ -149,6 +150,23 @@
 - 可选解析脚本能力声明：`script_capabilities`（用于运行时能力校验）。
 - 指纹已纳入依赖、内容定义与脚本元信息（含能力声明），支持联机一致性校验。
 
+### 3.7 `ecs`
+
+**契约**
+
+- `ecs::Runtime` 仅承载行为实体（当前：`projectile/hostile_target`）。
+- `world(tile/chunk)` 继续作为权威世界数据层，不迁入 `entt::registry`。
+- ECS 系统顺序固定：`spawn -> movement -> collision -> damage -> lifetime_recycle`。
+- ECS 对外仅暴露强类型输入与事件输出：
+  - 输入：`combat.fire_projectile`（经 `TypedPlayerCommand` 解码）。
+  - 输出：`CombatEvent`（当前实现 `HostileDefeated`）。
+
+**当前实现**
+
+- 已接入 EnTT 运行时骨架：`sim::ecs::Runtime`。
+- 已落地投射物纵切：生成→移动→碰撞→伤害→回收。
+- 已与 `SimulationKernel` 固定 Tick 调度对齐，并将击杀事件回灌玩法进度计数。
+
 ## 4. 输入映射（当前）
 
 正式玩家输入（M6）：
@@ -161,7 +179,7 @@
 兼容调试输入（保留）：
 
 - `J`：提交 `jump`
-- `K`：提交 `attack`
+- `K`：提交 `combat.fire_projectile`
 - `F1`：发送 `debug.ping`
 - `F2`：提交 `world.set_tile`（`0,0,0`）
 - `F3`：提交 `world.set_tile`（`0,0,2`）

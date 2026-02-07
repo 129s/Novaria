@@ -1,0 +1,127 @@
+#include "sim/ecs_runtime.h"
+
+#include <cstdint>
+#include <iostream>
+#include <vector>
+
+namespace {
+
+bool Expect(bool condition, const char* message) {
+    if (!condition) {
+        std::cerr << "[FAIL] " << message << '\n';
+        return false;
+    }
+    return true;
+}
+
+bool TestProjectilePipelineCompletesKillFlow() {
+    bool passed = true;
+
+    novaria::sim::ecs::Runtime runtime;
+    std::string error;
+    passed &= Expect(runtime.Initialize(error), "ECS runtime should initialize.");
+
+    const novaria::sim::command::FireProjectilePayload payload{
+        .origin_tile_x = 1,
+        .origin_tile_y = -4,
+        .velocity_milli_x = 4500,
+        .velocity_milli_y = 0,
+        .damage = 13,
+        .lifetime_ticks = 180,
+        .faction = 1,
+    };
+
+    runtime.QueueSpawnProjectile(7, payload);
+    runtime.QueueSpawnProjectile(7, payload);
+
+    for (std::uint64_t tick_index = 0; tick_index < 240; ++tick_index) {
+        runtime.Tick({
+            .tick_index = tick_index,
+            .fixed_delta_seconds = 1.0 / 60.0,
+        });
+    }
+
+    std::uint16_t total_reward_kills = 0;
+    const std::vector<novaria::sim::ecs::CombatEvent> events =
+        runtime.ConsumeCombatEvents();
+    for (const auto& event_data : events) {
+        if (event_data.type == novaria::sim::ecs::CombatEventType::HostileDefeated) {
+            total_reward_kills += event_data.reward_kill_count;
+        }
+    }
+
+    const novaria::sim::ecs::RuntimeDiagnostics diagnostics =
+        runtime.DiagnosticsSnapshot();
+    passed &= Expect(
+        diagnostics.total_projectile_spawned == 2,
+        "Two projectiles should be spawned.");
+    passed &= Expect(
+        diagnostics.total_damage_instances >= 2,
+        "Projectile collisions should produce damage instances.");
+    passed &= Expect(
+        diagnostics.total_hostile_defeated >= 1,
+        "At least one hostile should be defeated.");
+    passed &= Expect(
+        total_reward_kills >= 1,
+        "Combat event stream should report hostile defeat.");
+    passed &= Expect(
+        diagnostics.total_projectile_recycled >= 2,
+        "Projectile lifecycle should recycle expired/consumed entities.");
+
+    runtime.Shutdown();
+    return passed;
+}
+
+bool TestProjectileLifetimeRecycleWithoutCollision() {
+    bool passed = true;
+
+    novaria::sim::ecs::Runtime runtime;
+    std::string error;
+    passed &= Expect(runtime.Initialize(error), "ECS runtime should initialize.");
+
+    runtime.QueueSpawnProjectile(
+        1,
+        novaria::sim::command::FireProjectilePayload{
+            .origin_tile_x = -20,
+            .origin_tile_y = -20,
+            .velocity_milli_x = 0,
+            .velocity_milli_y = 0,
+            .damage = 5,
+            .lifetime_ticks = 2,
+            .faction = 1,
+        });
+
+    for (std::uint64_t tick_index = 0; tick_index < 5; ++tick_index) {
+        runtime.Tick({
+            .tick_index = tick_index,
+            .fixed_delta_seconds = 1.0 / 60.0,
+        });
+    }
+
+    const novaria::sim::ecs::RuntimeDiagnostics diagnostics =
+        runtime.DiagnosticsSnapshot();
+    passed &= Expect(
+        diagnostics.active_projectile_count == 0,
+        "Expired projectile should be recycled.");
+    passed &= Expect(
+        diagnostics.total_projectile_recycled >= 1,
+        "Lifetime system should recycle non-colliding projectile.");
+
+    runtime.Shutdown();
+    return passed;
+}
+
+}  // namespace
+
+int main() {
+    bool passed = true;
+    passed &= TestProjectilePipelineCompletesKillFlow();
+    passed &= TestProjectileLifetimeRecycleWithoutCollision();
+
+    if (!passed) {
+        return 1;
+    }
+
+    std::cout << "[PASS] novaria_ecs_runtime_tests\n";
+    return 0;
+}

@@ -82,6 +82,13 @@ bool SimulationKernel::Initialize(std::string& out_error) {
         out_error = "Script host initialize failed: " + dependency_error;
         return false;
     }
+    if (!ecs_runtime_.Initialize(dependency_error)) {
+        script_host_.Shutdown();
+        net_service_.Shutdown();
+        world_service_.Shutdown();
+        out_error = "ECS runtime initialize failed: " + dependency_error;
+        return false;
+    }
 
     net_service_.RequestConnect();
     last_observed_net_session_state_ = net_service_.SessionState();
@@ -102,6 +109,7 @@ void SimulationKernel::Shutdown() {
         return;
     }
 
+    ecs_runtime_.Shutdown();
     script_host_.Shutdown();
     net_service_.Shutdown();
     world_service_.Shutdown();
@@ -229,56 +237,37 @@ void SimulationKernel::TryDispatchPendingNetSessionEvent() {
         tick_index_ + kSessionStateEventMinIntervalTicks;
 }
 
-void SimulationKernel::ExecuteWorldCommandIfMatched(const net::PlayerCommand& command) {
-    if (command.command_type == command::kWorldSetTile) {
-        command::WorldSetTilePayload payload{};
-        if (!command::TryParseWorldSetTilePayload(command.payload, payload)) {
-            return;
-        }
-
+void SimulationKernel::ExecuteWorldCommandIfMatched(const TypedPlayerCommand& command) {
+    if (command.type == TypedPlayerCommandType::WorldSetTile) {
         const world::TileMutation mutation{
-            .tile_x = payload.tile_x,
-            .tile_y = payload.tile_y,
-            .material_id = payload.material_id,
+            .tile_x = command.world_set_tile.tile_x,
+            .tile_y = command.world_set_tile.tile_y,
+            .material_id = command.world_set_tile.material_id,
         };
         std::string apply_error;
         (void)world_service_.ApplyTileMutation(mutation, apply_error);
         return;
     }
 
-    if (command.command_type == command::kWorldLoadChunk) {
-        command::WorldChunkPayload payload{};
-        if (!command::TryParseWorldChunkPayload(command.payload, payload)) {
-            return;
-        }
-
+    if (command.type == TypedPlayerCommandType::WorldLoadChunk) {
         world_service_.LoadChunk(world::ChunkCoord{
-            .x = payload.chunk_x,
-            .y = payload.chunk_y,
+            .x = command.world_chunk.chunk_x,
+            .y = command.world_chunk.chunk_y,
         });
         return;
     }
 
-    if (command.command_type == command::kWorldUnloadChunk) {
-        command::WorldChunkPayload payload{};
-        if (!command::TryParseWorldChunkPayload(command.payload, payload)) {
-            return;
-        }
-
+    if (command.type == TypedPlayerCommandType::WorldUnloadChunk) {
         world_service_.UnloadChunk(world::ChunkCoord{
-            .x = payload.chunk_x,
-            .y = payload.chunk_y,
+            .x = command.world_chunk.chunk_x,
+            .y = command.world_chunk.chunk_y,
         });
     }
 }
 
-void SimulationKernel::ExecuteGameplayCommandIfMatched(const net::PlayerCommand& command) {
-    if (command.command_type == command::kGameplayCollectResource) {
-        command::CollectResourcePayload payload{};
-        if (!command::TryParseCollectResourcePayload(command.payload, payload)) {
-            return;
-        }
-
+void SimulationKernel::ExecuteGameplayCommandIfMatched(const TypedPlayerCommand& command) {
+    if (command.type == TypedPlayerCommandType::GameplayCollectResource) {
+        const command::CollectResourcePayload& payload = command.collect_resource;
         if (payload.resource_id == command::kResourceWood) {
             wood_collected_ += payload.amount;
             DispatchGameplayProgressEvent("collect_wood");
@@ -292,7 +281,7 @@ void SimulationKernel::ExecuteGameplayCommandIfMatched(const net::PlayerCommand&
         return;
     }
 
-    if (command.command_type == command::kGameplayBuildWorkbench) {
+    if (command.type == TypedPlayerCommandType::GameplayBuildWorkbench) {
         if (workbench_built_) {
             return;
         }
@@ -308,7 +297,7 @@ void SimulationKernel::ExecuteGameplayCommandIfMatched(const net::PlayerCommand&
         return;
     }
 
-    if (command.command_type == command::kGameplayCraftSword) {
+    if (command.type == TypedPlayerCommandType::GameplayCraftSword) {
         if (sword_crafted_) {
             return;
         }
@@ -327,7 +316,7 @@ void SimulationKernel::ExecuteGameplayCommandIfMatched(const net::PlayerCommand&
         return;
     }
 
-    if (command.command_type == command::kGameplayAttackEnemy) {
+    if (command.type == TypedPlayerCommandType::GameplayAttackEnemy) {
         if (!sword_crafted_) {
             return;
         }
@@ -337,7 +326,7 @@ void SimulationKernel::ExecuteGameplayCommandIfMatched(const net::PlayerCommand&
         return;
     }
 
-    if (command.command_type == command::kGameplayAttackBoss) {
+    if (command.type == TypedPlayerCommandType::GameplayAttackBoss) {
         if (!sword_crafted_ || boss_defeated_) {
             return;
         }
@@ -353,6 +342,25 @@ void SimulationKernel::ExecuteGameplayCommandIfMatched(const net::PlayerCommand&
             boss_health_ -= kGameplayBossDamagePerAttack;
             DispatchGameplayProgressEvent("attack_boss");
         }
+    }
+}
+
+void SimulationKernel::ExecuteCombatCommandIfMatched(
+    const TypedPlayerCommand& command,
+    std::uint32_t player_id) {
+    if (command.type != TypedPlayerCommandType::CombatFireProjectile) {
+        return;
+    }
+
+    ecs_runtime_.QueueSpawnProjectile(player_id, command.fire_projectile);
+}
+
+void SimulationKernel::UpdatePlayableLoopCompletion() {
+    const bool previous_loop_complete = playable_loop_complete_;
+    playable_loop_complete_ =
+        workbench_built_ && sword_crafted_ && enemy_kill_count_ >= 3 && boss_defeated_;
+    if (playable_loop_complete_ && !previous_loop_complete) {
+        DispatchGameplayProgressEvent("playable_loop_complete");
     }
 }
 
@@ -374,17 +382,17 @@ void SimulationKernel::Update(double fixed_delta_seconds) {
 
     for (const auto& command : pending_local_commands_) {
         net_service_.SubmitLocalCommand(command);
-        ExecuteWorldCommandIfMatched(command);
-        ExecuteGameplayCommandIfMatched(command);
+
+        TypedPlayerCommand typed_command{};
+        if (!TryDecodePlayerCommand(command, typed_command)) {
+            continue;
+        }
+
+        ExecuteWorldCommandIfMatched(typed_command);
+        ExecuteGameplayCommandIfMatched(typed_command);
+        ExecuteCombatCommandIfMatched(typed_command, command.player_id);
     }
     pending_local_commands_.clear();
-
-    const bool previous_loop_complete = playable_loop_complete_;
-    playable_loop_complete_ =
-        workbench_built_ && sword_crafted_ && enemy_kill_count_ >= 3 && boss_defeated_;
-    if (playable_loop_complete_ && !previous_loop_complete) {
-        DispatchGameplayProgressEvent("playable_loop_complete");
-    }
 
     net_service_.Tick(tick_context);
     const net::NetDiagnosticsSnapshot net_diagnostics = net_service_.DiagnosticsSnapshot();
@@ -411,6 +419,17 @@ void SimulationKernel::Update(double fixed_delta_seconds) {
     }
 
     world_service_.Tick(tick_context);
+    ecs_runtime_.Tick(tick_context);
+    for (const ecs::CombatEvent& combat_event : ecs_runtime_.ConsumeCombatEvents()) {
+        if (combat_event.type != ecs::CombatEventType::HostileDefeated ||
+            combat_event.reward_kill_count == 0) {
+            continue;
+        }
+
+        enemy_kill_count_ += combat_event.reward_kill_count;
+        DispatchGameplayProgressEvent("kill_enemy");
+    }
+    UpdatePlayableLoopCompletion();
     script_host_.Tick(tick_context);
 
     const auto dirty_chunks = world_service_.ConsumeDirtyChunks();

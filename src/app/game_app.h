@@ -1,7 +1,10 @@
 #pragma once
 
+#include "app/input_command_mapper.h"
 #include "core/config.h"
 #include "mod/mod_loader.h"
+#include "app/player_controller.h"
+#include "app/render_scene_builder.h"
 #include "platform/sdl_context.h"
 #include "save/save_repository.h"
 #include "sim/simulation_kernel.h"
@@ -40,19 +43,13 @@ private:
     std::uint32_t local_player_id_ = 1;
     std::uint64_t script_ping_counter_ = 0;
     std::uint64_t last_net_diagnostics_tick_ = 0;
-    int player_tile_x_ = 0;
-    int player_tile_y_ = -4;
-    int player_facing_x_ = 1;
-    std::uint32_t inventory_dirt_count_ = 0;
-    std::uint32_t inventory_stone_count_ = 0;
-    std::uint16_t selected_place_material_id_ = 1;
-    bool loaded_chunk_window_ready_ = false;
-    int loaded_chunk_window_center_x_ = 0;
-    int loaded_chunk_window_center_y_ = 0;
     world::WorldServiceBasic world_service_;
     net::NetServiceRuntime net_service_;
     script::ScriptHostRuntime script_host_;
     sim::SimulationKernel simulation_kernel_;
+    InputCommandMapper input_command_mapper_;
+    PlayerController player_controller_;
+    RenderSceneBuilder render_scene_builder_;
 };
 
 }  // namespace novaria::app

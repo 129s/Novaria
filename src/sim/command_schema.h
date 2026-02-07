@@ -18,6 +18,7 @@ inline constexpr std::string_view kGameplayBuildWorkbench = "gameplay.build_work
 inline constexpr std::string_view kGameplayCraftSword = "gameplay.craft_sword";
 inline constexpr std::string_view kGameplayAttackEnemy = "gameplay.attack_enemy";
 inline constexpr std::string_view kGameplayAttackBoss = "gameplay.attack_boss";
+inline constexpr std::string_view kCombatFireProjectile = "combat.fire_projectile";
 
 inline constexpr std::uint16_t kResourceWood = 1;
 inline constexpr std::uint16_t kResourceStone = 2;
@@ -36,6 +37,16 @@ struct WorldChunkPayload final {
 struct CollectResourcePayload final {
     std::uint16_t resource_id = 0;
     std::uint32_t amount = 0;
+};
+
+struct FireProjectilePayload final {
+    int origin_tile_x = 0;
+    int origin_tile_y = 0;
+    int velocity_milli_x = 0;
+    int velocity_milli_y = 0;
+    std::uint16_t damage = 0;
+    std::uint16_t lifetime_ticks = 0;
+    std::uint16_t faction = 0;
 };
 
 inline bool TryParseSignedInt(std::string_view token, int& out_value) {
@@ -188,6 +199,67 @@ inline bool TryParseCollectResourcePayload(
     return true;
 }
 
+inline bool TryParseFireProjectilePayload(
+    std::string_view payload,
+    FireProjectilePayload& out_payload) {
+    std::size_t separators[6]{};
+    std::size_t search_offset = 0;
+    for (std::size_t index = 0; index < 6; ++index) {
+        const std::size_t separator = payload.find(',', search_offset);
+        if (separator == std::string_view::npos) {
+            return false;
+        }
+
+        separators[index] = separator;
+        search_offset = separator + 1;
+    }
+    if (payload.find(',', separators[5] + 1) != std::string_view::npos) {
+        return false;
+    }
+
+    const std::string_view tokens[7]{
+        payload.substr(0, separators[0]),
+        payload.substr(separators[0] + 1, separators[1] - separators[0] - 1),
+        payload.substr(separators[1] + 1, separators[2] - separators[1] - 1),
+        payload.substr(separators[2] + 1, separators[3] - separators[2] - 1),
+        payload.substr(separators[3] + 1, separators[4] - separators[3] - 1),
+        payload.substr(separators[4] + 1, separators[5] - separators[4] - 1),
+        payload.substr(separators[5] + 1),
+    };
+
+    int origin_tile_x = 0;
+    int origin_tile_y = 0;
+    int velocity_milli_x = 0;
+    int velocity_milli_y = 0;
+    std::uint16_t damage = 0;
+    std::uint16_t lifetime_ticks = 0;
+    std::uint16_t faction = 0;
+    if (!TryParseSignedInt(tokens[0], origin_tile_x) ||
+        !TryParseSignedInt(tokens[1], origin_tile_y) ||
+        !TryParseSignedInt(tokens[2], velocity_milli_x) ||
+        !TryParseSignedInt(tokens[3], velocity_milli_y) ||
+        !TryParseMaterialId(tokens[4], damage) ||
+        !TryParseMaterialId(tokens[5], lifetime_ticks) ||
+        !TryParseMaterialId(tokens[6], faction)) {
+        return false;
+    }
+
+    if (damage == 0 || lifetime_ticks == 0 || faction == 0) {
+        return false;
+    }
+
+    out_payload = FireProjectilePayload{
+        .origin_tile_x = origin_tile_x,
+        .origin_tile_y = origin_tile_y,
+        .velocity_milli_x = velocity_milli_x,
+        .velocity_milli_y = velocity_milli_y,
+        .damage = damage,
+        .lifetime_ticks = lifetime_ticks,
+        .faction = faction,
+    };
+    return true;
+}
+
 inline std::string BuildWorldSetTilePayload(int tile_x, int tile_y, std::uint16_t material_id) {
     return std::to_string(tile_x) + "," + std::to_string(tile_y) + "," + std::to_string(material_id);
 }
@@ -198,6 +270,20 @@ inline std::string BuildWorldChunkPayload(int chunk_x, int chunk_y) {
 
 inline std::string BuildCollectResourcePayload(std::uint16_t resource_id, std::uint32_t amount) {
     return std::to_string(resource_id) + "," + std::to_string(amount);
+}
+
+inline std::string BuildFireProjectilePayload(
+    int origin_tile_x,
+    int origin_tile_y,
+    int velocity_milli_x,
+    int velocity_milli_y,
+    std::uint16_t damage,
+    std::uint16_t lifetime_ticks,
+    std::uint16_t faction) {
+    return std::to_string(origin_tile_x) + "," + std::to_string(origin_tile_y) + "," +
+        std::to_string(velocity_milli_x) + "," + std::to_string(velocity_milli_y) + "," +
+        std::to_string(damage) + "," + std::to_string(lifetime_ticks) + "," +
+        std::to_string(faction);
 }
 
 }  // namespace novaria::sim::command

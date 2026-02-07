@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(NOVARIA_WARNINGS_AS_ERRORS "Treat compiler warnings as errors." OFF)
 option(NOVARIA_FETCH_SDL3 "Fetch SDL3 when local package is unavailable." OFF)
+option(NOVARIA_FETCH_ENTT "Fetch EnTT when local package is unavailable." ON)
 option(NOVARIA_BUILD_TESTS "Build unit tests." ON)
 option(NOVARIA_ENABLE_LUAJIT "Enable LuaJIT backend when library is available." ON)
 
@@ -18,8 +19,9 @@ endif()
 
 find_package(SDL3 CONFIG QUIET)
 
+include(FetchContent)
+
 if(NOT SDL3_FOUND AND NOVARIA_FETCH_SDL3)
-    include(FetchContent)
     FetchContent_Declare(
         SDL3
         URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.0.tar.gz
@@ -45,6 +47,40 @@ if(NOT NOVARIA_SDL3_TARGET)
         "2) Set SDL3_DIR manually.\n"
         "3) If network allows, configure with -DNOVARIA_FETCH_SDL3=ON.\n"
     )
+endif()
+
+find_package(EnTT CONFIG QUIET)
+
+if(NOT EnTT_FOUND AND NOVARIA_FETCH_ENTT)
+    FetchContent_Declare(
+        entt
+        URL https://github.com/skypjack/entt/archive/refs/tags/v3.13.2.tar.gz
+        DOWNLOAD_EXTRACT_TIMESTAMP FALSE
+        EXCLUDE_FROM_ALL
+    )
+    FetchContent_MakeAvailable(entt)
+endif()
+
+set(NOVARIA_ENTT_TARGET "")
+set(NOVARIA_ENTT_INCLUDE_DIR "")
+foreach(candidate_target EnTT::EnTT entt::entt)
+    if(TARGET ${candidate_target})
+        set(NOVARIA_ENTT_TARGET ${candidate_target})
+        break()
+    endif()
+endforeach()
+
+if(NOT NOVARIA_ENTT_TARGET)
+    if(DEFINED entt_SOURCE_DIR AND EXISTS "${entt_SOURCE_DIR}/src/entt/entt.hpp")
+        set(NOVARIA_ENTT_INCLUDE_DIR "${entt_SOURCE_DIR}/src")
+    else()
+        message(
+            FATAL_ERROR
+            "EnTT target not found.\n"
+            "1) Install EnTT package and set EnTT_DIR.\n"
+            "2) Enable fetch with -DNOVARIA_FETCH_ENTT=ON.\n"
+        )
+    endif()
 endif()
 
 set(NOVARIA_LUAJIT_FOUND OFF)
@@ -75,12 +111,25 @@ function(novaria_link_luajit_if_available target_name)
     endif()
 endfunction()
 
+function(novaria_link_entt target_name)
+    if(NOVARIA_ENTT_TARGET)
+        target_link_libraries(${target_name} PRIVATE ${NOVARIA_ENTT_TARGET})
+    elseif(NOVARIA_ENTT_INCLUDE_DIR)
+        target_include_directories(${target_name} PRIVATE "${NOVARIA_ENTT_INCLUDE_DIR}")
+    endif()
+endfunction()
+
 add_executable(
     novaria
     src/main.cpp
     src/app/game_app.cpp
     src/app/game_loop.cpp
+    src/app/input_command_mapper.cpp
+    src/app/player_controller.cpp
+    src/app/render_scene_builder.cpp
     src/sim/simulation_kernel.cpp
+    src/sim/typed_command.cpp
+    src/sim/ecs_runtime.cpp
     src/platform/sdl_context.cpp
     src/world/world_service_basic.cpp
     src/world/snapshot_codec.cpp
@@ -97,6 +146,7 @@ add_executable(
 
 target_include_directories(novaria PRIVATE src)
 target_link_libraries(novaria PRIVATE ${NOVARIA_SDL3_TARGET})
+novaria_link_entt(novaria)
 if(WIN32)
     target_link_libraries(novaria PRIVATE ws2_32)
 endif()
@@ -132,6 +182,8 @@ add_executable(
     novaria_server
     tools/server_main.cpp
     src/sim/simulation_kernel.cpp
+    src/sim/typed_command.cpp
+    src/sim/ecs_runtime.cpp
     src/world/world_service_basic.cpp
     src/world/snapshot_codec.cpp
     src/net/net_service_runtime.cpp
@@ -141,6 +193,7 @@ add_executable(
     src/core/config.cpp
 )
 target_include_directories(novaria_server PRIVATE src)
+novaria_link_entt(novaria_server)
 if(WIN32)
     target_link_libraries(novaria_server PRIVATE ws2_32)
 endif()
@@ -239,6 +292,8 @@ if(NOVARIA_BUILD_TESTS)
         novaria_simulation_kernel_tests
         tests/sim/simulation_kernel_tests.cpp
         src/sim/simulation_kernel.cpp
+        src/sim/typed_command.cpp
+        src/sim/ecs_runtime.cpp
         src/world/snapshot_codec.cpp
         src/net/net_service_runtime.cpp
         src/net/net_service_udp_loopback.cpp
@@ -247,9 +302,18 @@ if(NOVARIA_BUILD_TESTS)
         src/core/logger.cpp
     )
     target_include_directories(novaria_simulation_kernel_tests PRIVATE src)
+    novaria_link_entt(novaria_simulation_kernel_tests)
     if(WIN32)
         target_link_libraries(novaria_simulation_kernel_tests PRIVATE ws2_32)
     endif()
+
+    add_executable(
+        novaria_ecs_runtime_tests
+        tests/sim/ecs_runtime_tests.cpp
+        src/sim/ecs_runtime.cpp
+    )
+    target_include_directories(novaria_ecs_runtime_tests PRIVATE src)
+    novaria_link_entt(novaria_ecs_runtime_tests)
 
     add_executable(
         novaria_save_repository_tests
@@ -286,6 +350,8 @@ if(NOVARIA_BUILD_TESTS)
         novaria_mvp_acceptance_tests
         tests/mvp/mvp_acceptance_tests.cpp
         src/sim/simulation_kernel.cpp
+        src/sim/typed_command.cpp
+        src/sim/ecs_runtime.cpp
         src/world/world_service_basic.cpp
         src/world/snapshot_codec.cpp
         src/net/net_service_runtime.cpp
@@ -296,6 +362,7 @@ if(NOVARIA_BUILD_TESTS)
         src/core/logger.cpp
     )
     target_include_directories(novaria_mvp_acceptance_tests PRIVATE src)
+    novaria_link_entt(novaria_mvp_acceptance_tests)
     if(WIN32)
         target_link_libraries(novaria_mvp_acceptance_tests PRIVATE ws2_32)
     endif()
@@ -308,6 +375,7 @@ if(NOVARIA_BUILD_TESTS)
         target_compile_options(novaria_world_service_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_script_host_runtime_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_simulation_kernel_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
+        target_compile_options(novaria_ecs_runtime_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_save_repository_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_mod_loader_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
         target_compile_options(novaria_world_snapshot_codec_tests PRIVATE /W4 /permissive- /Zc:__cplusplus)
@@ -321,6 +389,7 @@ if(NOVARIA_BUILD_TESTS)
             target_compile_options(novaria_world_service_tests PRIVATE /WX)
             target_compile_options(novaria_script_host_runtime_tests PRIVATE /WX)
             target_compile_options(novaria_simulation_kernel_tests PRIVATE /WX)
+            target_compile_options(novaria_ecs_runtime_tests PRIVATE /WX)
             target_compile_options(novaria_save_repository_tests PRIVATE /WX)
             target_compile_options(novaria_mod_loader_tests PRIVATE /WX)
             target_compile_options(novaria_world_snapshot_codec_tests PRIVATE /WX)
@@ -335,6 +404,7 @@ if(NOVARIA_BUILD_TESTS)
         target_compile_options(novaria_world_service_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_script_host_runtime_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_simulation_kernel_tests PRIVATE -Wall -Wextra -Wpedantic)
+        target_compile_options(novaria_ecs_runtime_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_save_repository_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_mod_loader_tests PRIVATE -Wall -Wextra -Wpedantic)
         target_compile_options(novaria_world_snapshot_codec_tests PRIVATE -Wall -Wextra -Wpedantic)
@@ -348,6 +418,7 @@ if(NOVARIA_BUILD_TESTS)
             target_compile_options(novaria_world_service_tests PRIVATE -Werror)
             target_compile_options(novaria_script_host_runtime_tests PRIVATE -Werror)
             target_compile_options(novaria_simulation_kernel_tests PRIVATE -Werror)
+            target_compile_options(novaria_ecs_runtime_tests PRIVATE -Werror)
             target_compile_options(novaria_save_repository_tests PRIVATE -Werror)
             target_compile_options(novaria_mod_loader_tests PRIVATE -Werror)
             target_compile_options(novaria_world_snapshot_codec_tests PRIVATE -Werror)
@@ -363,6 +434,7 @@ if(NOVARIA_BUILD_TESTS)
     add_test(NAME novaria_world_service_tests COMMAND novaria_world_service_tests)
     add_test(NAME novaria_script_host_runtime_tests COMMAND novaria_script_host_runtime_tests)
     add_test(NAME novaria_simulation_kernel_tests COMMAND novaria_simulation_kernel_tests)
+    add_test(NAME novaria_ecs_runtime_tests COMMAND novaria_ecs_runtime_tests)
     add_test(NAME novaria_save_repository_tests COMMAND novaria_save_repository_tests)
     add_test(NAME novaria_mod_loader_tests COMMAND novaria_mod_loader_tests)
     add_test(NAME novaria_world_snapshot_codec_tests COMMAND novaria_world_snapshot_codec_tests)

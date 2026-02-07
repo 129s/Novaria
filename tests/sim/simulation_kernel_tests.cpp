@@ -1,5 +1,6 @@
 #include "sim/simulation_kernel.h"
 #include "sim/command_schema.h"
+#include "sim/typed_command.h"
 #include "save/save_repository.h"
 #include "net/net_service_udp_loopback.h"
 #include "world/snapshot_codec.h"
@@ -406,6 +407,67 @@ bool TestCommandSchemaPayloadParsing() {
     passed &= Expect(
         !novaria::sim::command::TryParseCollectResourcePayload("1,2,3", collect_payload),
         "Collect payload parser should reject extra tokens.");
+
+    novaria::sim::command::FireProjectilePayload fire_projectile_payload{};
+    passed &= Expect(
+        novaria::sim::command::TryParseFireProjectilePayload(
+            novaria::sim::command::BuildFireProjectilePayload(
+                1,
+                -4,
+                4500,
+                0,
+                13,
+                180,
+                1),
+            fire_projectile_payload),
+        "Fire projectile payload parser should accept valid payload.");
+    passed &= Expect(
+        fire_projectile_payload.origin_tile_x == 1 &&
+            fire_projectile_payload.origin_tile_y == -4 &&
+            fire_projectile_payload.velocity_milli_x == 4500 &&
+            fire_projectile_payload.velocity_milli_y == 0 &&
+            fire_projectile_payload.damage == 13 &&
+            fire_projectile_payload.lifetime_ticks == 180 &&
+            fire_projectile_payload.faction == 1,
+        "Fire projectile payload parser should parse all fields.");
+    passed &= Expect(
+        !novaria::sim::command::TryParseFireProjectilePayload(
+            "1,-4,4500,0,13,0,1",
+            fire_projectile_payload),
+        "Fire projectile payload parser should reject zero lifetime.");
+    passed &= Expect(
+        !novaria::sim::command::TryParseFireProjectilePayload(
+            "1,-4,4500,0,13,180",
+            fire_projectile_payload),
+        "Fire projectile payload parser should reject missing tokens.");
+
+    novaria::sim::TypedPlayerCommand typed_command{};
+    passed &= Expect(
+        novaria::sim::TryDecodePlayerCommand(
+            novaria::net::PlayerCommand{
+                .player_id = 1,
+                .command_type = std::string(novaria::sim::command::kCombatFireProjectile),
+                .payload = novaria::sim::command::BuildFireProjectilePayload(
+                    1,
+                    -4,
+                    4500,
+                    0,
+                    13,
+                    180,
+                    1),
+            },
+            typed_command) &&
+            typed_command.type == novaria::sim::TypedPlayerCommandType::CombatFireProjectile,
+        "Typed command bridge should decode projectile command.");
+    passed &= Expect(
+        !novaria::sim::TryDecodePlayerCommand(
+            novaria::net::PlayerCommand{
+                .player_id = 1,
+                .command_type = std::string(novaria::sim::command::kCombatFireProjectile),
+                .payload = "bad_payload",
+            },
+            typed_command),
+        "Typed command bridge should reject invalid projectile payload.");
 
     return passed;
 }

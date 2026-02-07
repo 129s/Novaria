@@ -125,7 +125,8 @@ net_udp_remote_port = 0
 
 兼容调试热键（保留）：
 
-- `J/K`：提交基础动作命令。
+- `J`：提交 `jump`。
+- `K`：提交 `combat.fire_projectile`。
 - `F1`：脚本调试事件 `debug.ping`。
 - `F2/F3`：挖空/放置方块。
 - `F4/F5/F6`：断线/心跳/重连。
