@@ -40,6 +40,7 @@ public:
     NetDiagnosticsSnapshot DiagnosticsSnapshot() const override;
     void Tick(const sim::TickContext& tick_context) override;
     void SubmitLocalCommand(const PlayerCommand& command) override;
+    std::vector<PlayerCommand> ConsumeRemoteCommands() override;
     std::vector<std::string> ConsumeRemoteChunkPayloads() override;
     void PublishWorldSnapshot(
         std::uint64_t tick_index,

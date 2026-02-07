@@ -38,6 +38,19 @@ int main() {
     passed &= Expect(
         runtime.SessionState() == novaria::net::NetSessionState::Connected,
         "Runtime should connect through UDP handshake.");
+    runtime.SubmitLocalCommand({
+        .player_id = 9,
+        .command_type = "jump",
+        .payload = "",
+    });
+    runtime.Tick({.tick_index = 21, .fixed_delta_seconds = 1.0 / 60.0});
+    const auto commands = runtime.ConsumeRemoteCommands();
+    passed &= Expect(
+        commands.size() == 1 &&
+            commands.front().player_id == 9 &&
+            commands.front().command_type == "jump",
+        "Runtime should expose loopback command queue.");
+
     runtime.PublishWorldSnapshot(21, {"payload"});
     runtime.Tick({.tick_index = 22, .fixed_delta_seconds = 1.0 / 60.0});
     const auto payloads = runtime.ConsumeRemoteChunkPayloads();

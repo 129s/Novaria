@@ -45,6 +45,13 @@ int main() {
 
     net_service.SubmitLocalCommand({.player_id = 1, .command_type = "jump", .payload = "{}"});
     net_service.Tick({.tick_index = 2, .fixed_delta_seconds = 1.0 / 60.0});
+    const auto consumed_commands = net_service.ConsumeRemoteCommands();
+    passed &= Expect(
+        consumed_commands.size() == 1 &&
+            consumed_commands.front().player_id == 1 &&
+            consumed_commands.front().command_type == "jump" &&
+            consumed_commands.front().payload == "{}",
+        "Loopback transport should surface local command through remote command queue.");
 
     const std::vector<std::string> encoded_chunks = {"chunk_payload_1", "chunk_payload_2"};
     net_service.PublishWorldSnapshot(3, encoded_chunks);
@@ -97,17 +104,32 @@ int main() {
             host_b.SessionState() == novaria::net::NetSessionState::Connected,
         "Both hosts should enter connected state after handshake.");
 
-    host_a.PublishWorldSnapshot(2, {"cross_process_payload"});
+    host_a.SubmitLocalCommand({
+        .player_id = 7,
+        .command_type = "world.set_tile",
+        .payload = "0,0,2",
+    });
     host_a.Tick({.tick_index = 2, .fixed_delta_seconds = 1.0 / 60.0});
     host_b.Tick({.tick_index = 2, .fixed_delta_seconds = 1.0 / 60.0});
+    const auto host_b_commands = host_b.ConsumeRemoteCommands();
+    passed &= Expect(
+        host_b_commands.size() == 1 &&
+            host_b_commands.front().player_id == 7 &&
+            host_b_commands.front().command_type == "world.set_tile" &&
+            host_b_commands.front().payload == "0,0,2",
+        "Host B should receive command datagram published by Host A.");
+
+    host_a.PublishWorldSnapshot(3, {"cross_process_payload"});
+    host_a.Tick({.tick_index = 3, .fixed_delta_seconds = 1.0 / 60.0});
+    host_b.Tick({.tick_index = 3, .fixed_delta_seconds = 1.0 / 60.0});
     const auto host_b_payloads = host_b.ConsumeRemoteChunkPayloads();
     passed &= Expect(
         host_b_payloads.size() == 1 && host_b_payloads.front() == "cross_process_payload",
         "Host B should receive payload published by Host A.");
 
-    host_b.PublishWorldSnapshot(3, {"cross_process_payload_back"});
-    host_b.Tick({.tick_index = 3, .fixed_delta_seconds = 1.0 / 60.0});
-    host_a.Tick({.tick_index = 3, .fixed_delta_seconds = 1.0 / 60.0});
+    host_b.PublishWorldSnapshot(4, {"cross_process_payload_back"});
+    host_b.Tick({.tick_index = 4, .fixed_delta_seconds = 1.0 / 60.0});
+    host_a.Tick({.tick_index = 4, .fixed_delta_seconds = 1.0 / 60.0});
     const auto host_a_payloads = host_a.ConsumeRemoteChunkPayloads();
     passed &= Expect(
         host_a_payloads.size() == 1 && host_a_payloads.front() == "cross_process_payload_back",

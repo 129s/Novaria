@@ -3,9 +3,11 @@
 #include "core/logger.h"
 
 #include <algorithm>
+#include <charconv>
+#include <cstdint>
 #include <string>
-#include <utility>
 #include <string_view>
+#include <utility>
 
 namespace novaria::net {
 namespace {
@@ -25,6 +27,7 @@ const char* SessionStateName(NetSessionState state) {
 
 constexpr std::string_view kControlPrefix = "CTRL|";
 constexpr std::string_view kPayloadPrefix = "DATA|";
+constexpr std::string_view kCommandPrefix = "CMD|";
 constexpr std::string_view kControlSyn = "SYN";
 constexpr std::string_view kControlAck = "ACK";
 constexpr std::string_view kControlHeartbeat = "HEARTBEAT";
@@ -40,6 +43,115 @@ std::string BuildControlDatagram(std::string_view control_type) {
 
 std::string BuildPayloadDatagram(std::string_view payload) {
     return std::string(kPayloadPrefix) + std::string(payload);
+}
+
+std::string HexEncode(std::string_view text) {
+    constexpr char kHexDigits[] = "0123456789abcdef";
+    std::string encoded;
+    encoded.reserve(text.size() * 2);
+    for (unsigned char value : text) {
+        encoded.push_back(kHexDigits[value >> 4]);
+        encoded.push_back(kHexDigits[value & 0x0F]);
+    }
+
+    return encoded;
+}
+
+bool TryParseHexNibble(char token, std::uint8_t& out_value) {
+    if (token >= '0' && token <= '9') {
+        out_value = static_cast<std::uint8_t>(token - '0');
+        return true;
+    }
+    if (token >= 'a' && token <= 'f') {
+        out_value = static_cast<std::uint8_t>(token - 'a' + 10);
+        return true;
+    }
+    if (token >= 'A' && token <= 'F') {
+        out_value = static_cast<std::uint8_t>(token - 'A' + 10);
+        return true;
+    }
+
+    return false;
+}
+
+bool TryHexDecode(std::string_view encoded, std::string& out_text) {
+    if ((encoded.size() % 2) != 0) {
+        return false;
+    }
+
+    out_text.clear();
+    out_text.reserve(encoded.size() / 2);
+    for (std::size_t index = 0; index < encoded.size(); index += 2) {
+        std::uint8_t high_nibble = 0;
+        std::uint8_t low_nibble = 0;
+        if (!TryParseHexNibble(encoded[index], high_nibble) ||
+            !TryParseHexNibble(encoded[index + 1], low_nibble)) {
+            out_text.clear();
+            return false;
+        }
+
+        out_text.push_back(static_cast<char>((high_nibble << 4) | low_nibble));
+    }
+
+    return true;
+}
+
+std::string BuildCommandDatagram(const PlayerCommand& command) {
+    std::string datagram = std::string(kCommandPrefix);
+    datagram += std::to_string(command.player_id);
+    datagram += "|";
+    datagram += HexEncode(command.command_type);
+    datagram += "|";
+    datagram += HexEncode(command.payload);
+    return datagram;
+}
+
+bool TryParseCommandDatagram(std::string_view encoded_payload, PlayerCommand& out_command) {
+    const std::size_t first_separator = encoded_payload.find('|');
+    if (first_separator == std::string_view::npos) {
+        return false;
+    }
+
+    const std::size_t second_separator = encoded_payload.find('|', first_separator + 1);
+    if (second_separator == std::string_view::npos) {
+        return false;
+    }
+    if (encoded_payload.find('|', second_separator + 1) != std::string_view::npos) {
+        return false;
+    }
+
+    const std::string_view player_id_token = encoded_payload.substr(0, first_separator);
+    const std::string_view command_type_token = encoded_payload.substr(
+        first_separator + 1,
+        second_separator - first_separator - 1);
+    const std::string_view payload_token = encoded_payload.substr(second_separator + 1);
+    if (player_id_token.empty()) {
+        return false;
+    }
+
+    std::uint32_t player_id = 0;
+    const auto [player_id_end, parse_error] = std::from_chars(
+        player_id_token.data(),
+        player_id_token.data() + player_id_token.size(),
+        player_id);
+    if (parse_error != std::errc{} ||
+        player_id_end != player_id_token.data() + player_id_token.size()) {
+        return false;
+    }
+
+    std::string command_type;
+    std::string payload;
+    if (!TryHexDecode(command_type_token, command_type) ||
+        !TryHexDecode(payload_token, payload)) {
+        return false;
+    }
+
+    out_command = PlayerCommand{
+        .player_id = player_id,
+        .command_type = std::move(command_type),
+        .payload = std::move(payload),
+    };
+    return true;
 }
 
 }  // namespace
@@ -69,7 +181,7 @@ void NetServiceUdpLoopback::TransitionSessionState(
 
 bool NetServiceUdpLoopback::Initialize(std::string& out_error) {
     session_state_ = NetSessionState::Disconnected;
-    pending_commands_.clear();
+    pending_remote_commands_.clear();
     pending_remote_chunk_payloads_.clear();
     total_processed_command_count_ = 0;
     dropped_command_count_ = 0;
@@ -129,7 +241,7 @@ void NetServiceUdpLoopback::Shutdown() {
     }
 
     TransitionSessionState(NetSessionState::Disconnected, "shutdown");
-    pending_commands_.clear();
+    pending_remote_commands_.clear();
     pending_remote_chunk_payloads_.clear();
     last_published_encoded_chunks_.clear();
     last_heartbeat_tick_ = kInvalidTick;
@@ -172,7 +284,7 @@ void NetServiceUdpLoopback::RequestDisconnect() {
 
     ++manual_disconnect_count_;
     TransitionSessionState(NetSessionState::Disconnected, "request_disconnect");
-    pending_commands_.clear();
+    pending_remote_commands_.clear();
     pending_remote_chunk_payloads_.clear();
     last_heartbeat_tick_ = kInvalidTick;
     connect_started_tick_ = kInvalidTick;
@@ -260,7 +372,7 @@ void NetServiceUdpLoopback::Tick(const sim::TickContext& tick_context) {
         } else if (connect_started_tick_ != kInvalidTick &&
                    tick_context.tick_index > connect_started_tick_ + kConnectTimeoutTicks) {
             TransitionSessionState(NetSessionState::Disconnected, "connect_timeout");
-            pending_commands_.clear();
+            pending_remote_commands_.clear();
             pending_remote_chunk_payloads_.clear();
             last_heartbeat_tick_ = kInvalidTick;
             connect_started_tick_ = kInvalidTick;
@@ -274,7 +386,7 @@ void NetServiceUdpLoopback::Tick(const sim::TickContext& tick_context) {
                last_heartbeat_tick_ != kInvalidTick &&
                tick_context.tick_index > last_heartbeat_tick_ + kHeartbeatTimeoutTicks) {
         TransitionSessionState(NetSessionState::Disconnected, "heartbeat_timeout");
-        pending_commands_.clear();
+        pending_remote_commands_.clear();
         pending_remote_chunk_payloads_.clear();
         last_heartbeat_tick_ = kInvalidTick;
         connect_started_tick_ = kInvalidTick;
@@ -295,8 +407,6 @@ void NetServiceUdpLoopback::Tick(const sim::TickContext& tick_context) {
         }
     }
 
-    total_processed_command_count_ += pending_commands_.size();
-    pending_commands_.clear();
 }
 
 void NetServiceUdpLoopback::SubmitLocalCommand(const PlayerCommand& command) {
@@ -304,19 +414,39 @@ void NetServiceUdpLoopback::SubmitLocalCommand(const PlayerCommand& command) {
         return;
     }
 
-    if (session_state_ == NetSessionState::Disconnected) {
-        ++dropped_command_count_;
-        ++dropped_command_disconnected_count_;
-        return;
-    }
-
-    if (pending_commands_.size() >= kMaxPendingCommands) {
+    if (pending_remote_commands_.size() >= kMaxPendingCommands) {
         ++dropped_command_count_;
         ++dropped_command_queue_full_count_;
         return;
     }
 
-    pending_commands_.push_back(command);
+    pending_remote_commands_.push_back(command);
+
+    if (session_state_ != NetSessionState::Connected) {
+        ++dropped_command_count_;
+        ++dropped_command_disconnected_count_;
+        return;
+    }
+
+    if (IsSelfEndpoint()) {
+        return;
+    }
+
+    std::string send_error;
+    if (!SendPayloadDatagram(BuildCommandDatagram(command), send_error)) {
+        core::Logger::Warn("net", "UDP command send failed: " + send_error);
+    }
+}
+
+std::vector<PlayerCommand> NetServiceUdpLoopback::ConsumeRemoteCommands() {
+    if (!initialized_) {
+        return {};
+    }
+
+    std::vector<PlayerCommand> commands = std::move(pending_remote_commands_);
+    pending_remote_commands_.clear();
+    total_processed_command_count_ += commands.size();
+    return commands;
 }
 
 std::vector<std::string> NetServiceUdpLoopback::ConsumeRemoteChunkPayloads() {
@@ -393,6 +523,20 @@ std::uint16_t NetServiceUdpLoopback::LocalPort() const {
     return transport_.LocalPort();
 }
 
+bool NetServiceUdpLoopback::IsSelfEndpoint() const {
+    if (!initialized_ || remote_endpoint_.port == 0) {
+        return false;
+    }
+
+    if (remote_endpoint_.port != transport_.LocalPort()) {
+        return false;
+    }
+
+    return remote_endpoint_.host == bind_host_ ||
+        remote_endpoint_.host == "127.0.0.1" ||
+        bind_host_ == "0.0.0.0";
+}
+
 bool NetServiceUdpLoopback::IsExpectedSender(const UdpEndpoint& sender) const {
     if (sender.port == 0 || remote_endpoint_.port == 0) {
         return false;
@@ -416,6 +560,22 @@ bool NetServiceUdpLoopback::TryAdoptDynamicPeerFromSyn(const UdpEndpoint& sender
             remote_endpoint_.host +
             ":" + std::to_string(remote_endpoint_.port) + ".");
     return true;
+}
+
+void NetServiceUdpLoopback::EnqueueRemoteCommand(PlayerCommand command) {
+    if (session_state_ != NetSessionState::Connected) {
+        ++dropped_command_count_;
+        ++dropped_command_disconnected_count_;
+        return;
+    }
+
+    if (pending_remote_commands_.size() >= kMaxPendingCommands) {
+        ++dropped_command_count_;
+        ++dropped_command_queue_full_count_;
+        return;
+    }
+
+    pending_remote_commands_.push_back(std::move(command));
 }
 
 void NetServiceUdpLoopback::EnqueueRemoteChunkPayload(std::string payload) {
@@ -478,12 +638,26 @@ void NetServiceUdpLoopback::DrainInboundDatagrams(std::uint64_t tick_index) {
         }
 
         if (StartsWith(payload_view, kPayloadPrefix)) {
-            EnqueueRemoteChunkPayload(std::string(payload_view.substr(kPayloadPrefix.size())));
+            payload_view = payload_view.substr(kPayloadPrefix.size());
+        }
+
+        if (StartsWith(payload_view, kCommandPrefix)) {
+            PlayerCommand command{};
+            if (!TryParseCommandDatagram(
+                    payload_view.substr(kCommandPrefix.size()),
+                    command)) {
+                ++dropped_command_count_;
+                core::Logger::Warn("net", "UDP received invalid command datagram.");
+                payload.clear();
+                continue;
+            }
+
+            EnqueueRemoteCommand(std::move(command));
             payload.clear();
             continue;
         }
 
-        EnqueueRemoteChunkPayload(std::move(payload));
+        EnqueueRemoteChunkPayload(std::string(payload_view));
         payload.clear();
     }
 

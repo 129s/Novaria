@@ -227,6 +227,7 @@ public:
     int disconnect_request_count = 0;
     std::string last_transition_reason = "initialize";
     std::vector<novaria::net::PlayerCommand> submitted_commands;
+    std::vector<novaria::net::PlayerCommand> pending_remote_commands;
     std::vector<std::pair<std::uint64_t, std::size_t>> published_snapshots;
     std::vector<std::vector<std::string>> published_snapshot_payloads;
     std::vector<std::string> pending_remote_chunk_payloads;
@@ -287,6 +288,13 @@ public:
 
     void SubmitLocalCommand(const novaria::net::PlayerCommand& command) override {
         submitted_commands.push_back(command);
+        pending_remote_commands.push_back(command);
+    }
+
+    std::vector<novaria::net::PlayerCommand> ConsumeRemoteCommands() override {
+        std::vector<novaria::net::PlayerCommand> commands = std::move(pending_remote_commands);
+        pending_remote_commands.clear();
+        return commands;
     }
 
     std::vector<std::string> ConsumeRemoteChunkPayloads() override {

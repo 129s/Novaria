@@ -143,6 +143,14 @@ void NetServiceRuntime::SubmitLocalCommand(const PlayerCommand& command) {
     active_host_->SubmitLocalCommand(command);
 }
 
+std::vector<PlayerCommand> NetServiceRuntime::ConsumeRemoteCommands() {
+    if (active_host_ == nullptr) {
+        return {};
+    }
+
+    return active_host_->ConsumeRemoteCommands();
+}
+
 std::vector<std::string> NetServiceRuntime::ConsumeRemoteChunkPayloads() {
     if (active_host_ == nullptr) {
         return {};

@@ -31,6 +31,7 @@ public:
     NetDiagnosticsSnapshot DiagnosticsSnapshot() const override;
     void Tick(const sim::TickContext& tick_context) override;
     void SubmitLocalCommand(const PlayerCommand& command) override;
+    std::vector<PlayerCommand> ConsumeRemoteCommands() override;
     std::vector<std::string> ConsumeRemoteChunkPayloads() override;
     void PublishWorldSnapshot(
         std::uint64_t tick_index,
@@ -45,8 +46,10 @@ public:
 private:
     static constexpr std::uint64_t kInvalidTick = std::numeric_limits<std::uint64_t>::max();
     void TransitionSessionState(NetSessionState next_state, std::string_view reason);
+    bool IsSelfEndpoint() const;
     bool IsExpectedSender(const UdpEndpoint& sender) const;
     bool TryAdoptDynamicPeerFromSyn(const UdpEndpoint& sender);
+    void EnqueueRemoteCommand(PlayerCommand command);
     void EnqueueRemoteChunkPayload(std::string payload);
     void DrainInboundDatagrams(std::uint64_t tick_index);
     bool SendControlDatagramTo(
@@ -58,7 +61,7 @@ private:
 
     bool initialized_ = false;
     NetSessionState session_state_ = NetSessionState::Disconnected;
-    std::vector<PlayerCommand> pending_commands_;
+    std::vector<PlayerCommand> pending_remote_commands_;
     std::vector<std::string> pending_remote_chunk_payloads_;
     std::size_t total_processed_command_count_ = 0;
     std::size_t dropped_command_count_ = 0;

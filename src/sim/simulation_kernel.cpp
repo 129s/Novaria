@@ -391,22 +391,24 @@ void SimulationKernel::Update(double fixed_delta_seconds) {
 
     for (const auto& command : pending_local_commands_) {
         net_service_.SubmitLocalCommand(command);
-        if (!authority_mode) {
-            continue;
-        }
-
-        TypedPlayerCommand typed_command{};
-        if (!TryDecodePlayerCommand(command, typed_command)) {
-            continue;
-        }
-
-        ExecuteWorldCommandIfMatched(typed_command);
-        ExecuteGameplayCommandIfMatched(typed_command);
-        ExecuteCombatCommandIfMatched(typed_command, command.player_id);
     }
     pending_local_commands_.clear();
 
     net_service_.Tick(tick_context);
+    const std::vector<net::PlayerCommand> remote_commands = net_service_.ConsumeRemoteCommands();
+    if (authority_mode) {
+        for (const net::PlayerCommand& command : remote_commands) {
+            TypedPlayerCommand typed_command{};
+            if (!TryDecodePlayerCommand(command, typed_command)) {
+                continue;
+            }
+
+            ExecuteWorldCommandIfMatched(typed_command);
+            ExecuteGameplayCommandIfMatched(typed_command);
+            ExecuteCombatCommandIfMatched(typed_command, command.player_id);
+        }
+    }
+
     const net::NetDiagnosticsSnapshot net_diagnostics = net_service_.DiagnosticsSnapshot();
     const net::NetSessionState current_session_state = net_diagnostics.session_state;
     if (current_session_state != last_observed_net_session_state_) {
