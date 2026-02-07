@@ -36,6 +36,18 @@ cmake --build build --config Debug
 .\build\Debug\novaria.exe config/game.toml
 ```
 
+独立服务端（无窗口）：
+
+```powershell
+.\build\Debug\novaria_server.exe --config config/game.toml --ticks 7200
+```
+
+说明：
+
+- `--ticks 0` 表示持续运行直到收到终止信号。
+- `--fixed-delta` 可覆盖服务端 Tick 间隔（默认 `1/60`）。
+- `--log-interval` 控制服务端诊断日志频率（默认每 `300` Tick）。
+
 ## 5. 常用可选参数
 
 使用系统 SDL3：

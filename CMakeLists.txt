@@ -115,6 +115,23 @@ if(WIN32)
     target_link_libraries(novaria_net_smoke PRIVATE ws2_32)
 endif()
 
+add_executable(
+    novaria_server
+    tools/server_main.cpp
+    src/sim/simulation_kernel.cpp
+    src/world/world_service_basic.cpp
+    src/world/snapshot_codec.cpp
+    src/net/net_service_runtime.cpp
+    src/net/net_service_udp_loopback.cpp
+    src/net/udp_transport.cpp
+    src/core/logger.cpp
+    src/core/config.cpp
+)
+target_include_directories(novaria_server PRIVATE src)
+if(WIN32)
+    target_link_libraries(novaria_server PRIVATE ws2_32)
+endif()
+
 set(NOVARIA_LOCAL_SDL3_DLL "${CMAKE_SOURCE_DIR}/third_party/SDL3-3.2.0/lib/x64/SDL3.dll")
 if(EXISTS "${NOVARIA_LOCAL_SDL3_DLL}")
     add_custom_command(
@@ -128,13 +145,17 @@ endif()
 
 if(MSVC)
     target_compile_options(novaria PRIVATE /W4 /permissive- /Zc:__cplusplus)
+    target_compile_options(novaria_server PRIVATE /W4 /permissive- /Zc:__cplusplus)
     if(NOVARIA_WARNINGS_AS_ERRORS)
         target_compile_options(novaria PRIVATE /WX)
+        target_compile_options(novaria_server PRIVATE /WX)
     endif()
 else()
     target_compile_options(novaria PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(novaria_server PRIVATE -Wall -Wextra -Wpedantic)
     if(NOVARIA_WARNINGS_AS_ERRORS)
         target_compile_options(novaria PRIVATE -Werror)
+        target_compile_options(novaria_server PRIVATE -Werror)
     endif()
 endif()
 
