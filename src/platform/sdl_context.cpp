@@ -476,6 +476,20 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
         20,
         MaterialColor(world::WorldServiceBasic::kMaterialStone));
 
+    for (int slot = 0; slot < 10; ++slot) {
+        const int slot_x = hud_x + 8 + slot * 14;
+        const int slot_y = hud_y + 128 + static_cast<int>(scene.hud.hotbar_row) * 10;
+        DrawFilledRect(
+            renderer_,
+            slot_x,
+            slot_y,
+            10,
+            6,
+            slot == static_cast<int>(scene.hud.hotbar_slot)
+                ? RgbaColor{.r = 230, .g = 208, .b = 114, .a = 255}
+                : RgbaColor{.r = 78, .g = 78, .b = 84, .a = 255});
+    }
+
     const int status_x = hud_x + 16;
     const int status_y = hud_y + 114;
     DrawFilledRect(

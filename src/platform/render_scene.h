@@ -22,6 +22,8 @@ struct RenderHudState final {
     std::uint32_t pickup_toast_amount = 0;
     std::uint16_t pickup_toast_ticks_remaining = 0;
     std::uint16_t selected_material_id = 1;
+    std::uint8_t hotbar_row = 0;
+    std::uint8_t hotbar_slot = 0;
     bool workbench_built = false;
     bool wood_sword_crafted = false;
 };

@@ -39,6 +39,8 @@ platform::RenderScene RenderSceneBuilder::Build(
         .pickup_toast_amount = player_state.pickup_toast_amount,
         .pickup_toast_ticks_remaining = player_state.pickup_toast_ticks_remaining,
         .selected_material_id = player_state.selected_place_material_id,
+        .hotbar_row = player_state.active_hotbar_row,
+        .hotbar_slot = player_state.selected_hotbar_slot,
         .workbench_built = player_state.workbench_built,
         .wood_sword_crafted = player_state.wood_sword_crafted,
     };

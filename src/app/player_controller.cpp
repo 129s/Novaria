@@ -24,6 +24,7 @@ void PlayerController::Update(
     std::uint32_t local_player_id) {
     constexpr int kTilePixelSize = 32;
     constexpr int kReachDistanceTiles = 4;
+    constexpr std::uint8_t kHotbarRows = 2;
 
     if (state_.pickup_toast_ticks_remaining > 0) {
         --state_.pickup_toast_ticks_remaining;
@@ -216,6 +217,10 @@ void PlayerController::Update(
     } else if (input_intent.hotbar_cycle_next) {
         apply_hotbar_slot(static_cast<std::uint8_t>((state_.selected_hotbar_slot + 1) % 10));
     }
+    if (input_intent.hotbar_select_next_row) {
+        state_.active_hotbar_row =
+            static_cast<std::uint8_t>((state_.active_hotbar_row + 1) % kHotbarRows);
+    }
 
     int target_tile_x = state_.tile_x + state_.facing_x;
     int target_tile_y = state_.tile_y;
@@ -254,17 +259,18 @@ void PlayerController::Update(
             int required_ticks = 0;
             std::uint16_t place_material_id = world::WorldServiceBasic::kMaterialAir;
 
-            if (state_.selected_hotbar_slot == 0) {
+            if (state_.active_hotbar_row == 0 && state_.selected_hotbar_slot == 0) {
                 action_is_harvest = IsPickaxeHarvestMaterial(target_material);
                 if (action_is_harvest) {
                     required_ticks = RequiredHarvestTicks(target_material);
                 }
-            } else if (state_.selected_hotbar_slot == 1) {
+            } else if (state_.active_hotbar_row == 0 && state_.selected_hotbar_slot == 1) {
                 action_is_harvest = IsAxeHarvestMaterial(target_material);
                 if (action_is_harvest) {
                     required_ticks = RequiredHarvestTicks(target_material);
                 }
             } else if (
+                state_.active_hotbar_row == 0 &&
                 state_.selected_hotbar_slot == 2 &&
                 target_material == world::WorldServiceBasic::kMaterialAir &&
                 state_.inventory_dirt_count > 0) {
@@ -272,6 +278,7 @@ void PlayerController::Update(
                 place_material_id = world::WorldServiceBasic::kMaterialDirt;
                 required_ticks = kPlaceRequiredTicks;
             } else if (
+                state_.active_hotbar_row == 0 &&
                 state_.selected_hotbar_slot == 3 &&
                 target_material == world::WorldServiceBasic::kMaterialAir &&
                 state_.inventory_stone_count > 0) {
