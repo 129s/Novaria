@@ -1111,6 +1111,7 @@ bool TestUpdateConsumesRemoteChunkPayloads() {
     FakeNetService net;
     FakeScriptHost script;
     novaria::sim::SimulationKernel kernel(world, net, script);
+    kernel.SetAuthorityMode(novaria::sim::SimulationAuthorityMode::Replica);
 
     std::string error;
     passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
@@ -1247,6 +1248,48 @@ bool TestWorldCommandExecutionFromLocalQueue() {
     return passed;
 }
 
+bool TestReplicaModeRejectsLocalWorldWrites() {
+    bool passed = true;
+
+    FakeWorldService world;
+    FakeNetService net;
+    FakeScriptHost script;
+    novaria::sim::SimulationKernel kernel(world, net, script);
+    kernel.SetAuthorityMode(novaria::sim::SimulationAuthorityMode::Replica);
+
+    std::string error;
+    passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
+
+    kernel.SubmitLocalCommand({
+        .player_id = 1,
+        .command_type = std::string(novaria::sim::command::kWorldLoadChunk),
+        .payload = novaria::sim::command::BuildWorldChunkPayload(4, 5),
+    });
+    kernel.SubmitLocalCommand({
+        .player_id = 1,
+        .command_type = std::string(novaria::sim::command::kWorldSetTile),
+        .payload = novaria::sim::command::BuildWorldSetTilePayload(10, 11, 7),
+    });
+    kernel.SubmitLocalCommand({
+        .player_id = 1,
+        .command_type = std::string(novaria::sim::command::kWorldUnloadChunk),
+        .payload = novaria::sim::command::BuildWorldChunkPayload(4, 5),
+    });
+    kernel.Update(1.0 / 60.0);
+
+    passed &= Expect(
+        net.submitted_commands.size() == 3,
+        "Replica mode should still forward local commands to net service.");
+    passed &= Expect(
+        world.loaded_chunks.empty() &&
+            world.unloaded_chunks.empty() &&
+            world.applied_tile_mutations.empty(),
+        "Replica mode should block local world writes.");
+
+    kernel.Shutdown();
+    return passed;
+}
+
 bool TestGameplayLoopCommandsReachBossDefeat() {
     bool passed = true;
 
@@ -1357,6 +1400,7 @@ int main() {
     passed &= TestLocalCommandQueueCapAndDroppedCount();
     passed &= TestApplyRemoteChunkPayload();
     passed &= TestWorldCommandExecutionFromLocalQueue();
+    passed &= TestReplicaModeRejectsLocalWorldWrites();
     passed &= TestGameplayLoopCommandsReachBossDefeat();
     passed &= TestUpdateConsumesRemoteChunkPayloads();
     passed &= TestUpdateSkipsNetExchangeWhenSessionNotConnected();

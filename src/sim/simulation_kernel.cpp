@@ -122,6 +122,14 @@ void SimulationKernel::Shutdown() {
     initialized_ = false;
 }
 
+void SimulationKernel::SetAuthorityMode(SimulationAuthorityMode authority_mode) {
+    authority_mode_ = authority_mode;
+}
+
+SimulationAuthorityMode SimulationKernel::AuthorityMode() const {
+    return authority_mode_;
+}
+
 void SimulationKernel::SubmitLocalCommand(const net::PlayerCommand& command) {
     if (!initialized_) {
         return;
@@ -379,9 +387,13 @@ void SimulationKernel::Update(double fixed_delta_seconds) {
         .tick_index = tick_index_,
         .fixed_delta_seconds = fixed_delta_seconds,
     };
+    const bool authority_mode = authority_mode_ == SimulationAuthorityMode::Authority;
 
     for (const auto& command : pending_local_commands_) {
         net_service_.SubmitLocalCommand(command);
+        if (!authority_mode) {
+            continue;
+        }
 
         TypedPlayerCommand typed_command{};
         if (!TryDecodePlayerCommand(command, typed_command)) {
@@ -411,7 +423,7 @@ void SimulationKernel::Update(double fixed_delta_seconds) {
     TryDispatchPendingNetSessionEvent();
 
     const bool net_connected = current_session_state == net::NetSessionState::Connected;
-    if (net_connected) {
+    if (net_connected && !authority_mode) {
         for (const auto& encoded_payload : net_service_.ConsumeRemoteChunkPayloads()) {
             std::string apply_error;
             (void)ApplyRemoteChunkPayload(encoded_payload, apply_error);
@@ -453,7 +465,7 @@ void SimulationKernel::Update(double fixed_delta_seconds) {
         encoded_dirty_chunks.push_back(std::move(encoded_chunk));
     }
 
-    if (net_connected) {
+    if (net_connected && authority_mode) {
         net_service_.PublishWorldSnapshot(tick_index_, encoded_dirty_chunks);
     }
 

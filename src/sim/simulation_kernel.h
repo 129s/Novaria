@@ -14,6 +14,11 @@
 
 namespace novaria::sim {
 
+enum class SimulationAuthorityMode : std::uint8_t {
+    Authority = 0,
+    Replica = 1,
+};
+
 struct GameplayProgressSnapshot final {
     std::uint32_t wood_collected = 0;
     std::uint32_t stone_collected = 0;
@@ -38,6 +43,8 @@ public:
 
     bool Initialize(std::string& out_error);
     void Shutdown();
+    void SetAuthorityMode(SimulationAuthorityMode authority_mode);
+    SimulationAuthorityMode AuthorityMode() const;
     void SubmitLocalCommand(const net::PlayerCommand& command);
     bool ApplyRemoteChunkPayload(std::string_view encoded_payload, std::string& out_error);
     std::uint64_t CurrentTick() const;
@@ -88,6 +95,7 @@ private:
     std::uint32_t boss_health_ = 0;
     bool boss_defeated_ = false;
     bool playable_loop_complete_ = false;
+    SimulationAuthorityMode authority_mode_ = SimulationAuthorityMode::Authority;
 };
 
 }  // namespace novaria::sim
