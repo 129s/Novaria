@@ -12,6 +12,7 @@
 extern "C" {
 #include <lauxlib.h>
 #include <lua.h>
+#include <luajit.h>
 #include <lualib.h>
 }
 #endif
@@ -55,11 +56,34 @@ void InstructionBudgetHook(lua_State* lua_state, lua_Debug* debug) {
     luaL_error(lua_state, "instruction budget exceeded");
 }
 
+bool DisableJitEngine(lua_State* lua_state, std::string& out_error) {
+#if defined(LUAJIT_MODE_ENGINE) && defined(LUAJIT_MODE_OFF)
+    if (luaJIT_setmode(lua_state, 0, LUAJIT_MODE_ENGINE | LUAJIT_MODE_OFF) == 0) {
+        out_error = "Failed to disable LuaJIT JIT engine.";
+        return false;
+    }
+#else
+    (void)lua_state;
+#endif
+
+    out_error.clear();
+    return true;
+}
+
 bool RunProtectedLuaCall(
     lua_State* lua_state,
     int instruction_budget_per_call,
     int argument_count,
     std::string& out_error) {
+#if defined(LUAJIT_MODE_FUNC) && defined(LUAJIT_MODE_OFF)
+    if (lua_isfunction(lua_state, -(argument_count + 1))) {
+        (void)luaJIT_setmode(
+            lua_state,
+            -(argument_count + 1),
+            LUAJIT_MODE_FUNC | LUAJIT_MODE_OFF);
+    }
+#endif
+
     lua_sethook(lua_state, InstructionBudgetHook, LUA_MASKCOUNT, instruction_budget_per_call);
     const int run_status = lua_pcall(lua_state, argument_count, 0, 0);
     lua_sethook(lua_state, nullptr, 0, 0);
@@ -332,6 +356,10 @@ bool LuaJitScriptHost::ApplyMvpSandbox(std::string& out_error) {
 #else
     if (lua_state_ == nullptr) {
         out_error = "Lua state is null.";
+        return false;
+    }
+
+    if (!DisableJitEngine(lua_state_, out_error)) {
         return false;
     }
 

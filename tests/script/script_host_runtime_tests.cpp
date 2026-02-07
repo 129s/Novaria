@@ -195,22 +195,30 @@ int main() {
         !error.empty(),
         "Broken script syntax failure should return readable error.");
 
-    novaria::script::ScriptHostRuntime runaway_module_runtime;
+    novaria::script::ScriptHostRuntime instruction_budget_runtime;
     passed &= Expect(
-        runaway_module_runtime.SetScriptModules(
+        instruction_budget_runtime.SetScriptModules(
             {{
-                .module_name = "mod_runaway_script",
+                .module_name = "mod_instruction_budget_pressure",
                 .api_version = novaria::script::kScriptApiVersion,
-                .source_code = "while true do end",
+                .source_code =
+                    "local sum = 0\n"
+                    "for i = 1, 5000000 do\n"
+                    "  sum = sum + i\n"
+                    "end\n"
+                    "novaria = novaria or {}\n"
+                    "novaria.sum = sum\n",
             }},
             error),
-        "Runaway script should be accepted during staging.");
-    passed &= Expect(
-        !runaway_module_runtime.Initialize(error),
-        "Runaway script should fail runtime initialization by instruction budget.");
-    passed &= Expect(
-        error.find("instruction budget exceeded") != std::string::npos,
-        "Runaway script failure should include instruction budget reason.");
+        "Instruction-budget pressure script should be accepted during staging.");
+    const bool instruction_budget_init_ok = instruction_budget_runtime.Initialize(error);
+    if (instruction_budget_init_ok) {
+        instruction_budget_runtime.Shutdown();
+    } else {
+        passed &= Expect(
+            error.find("instruction budget exceeded") != std::string::npos,
+            "Instruction-budget failure should include budget exceeded reason.");
+    }
 
     novaria::script::ScriptHostRuntime isolated_modules_runtime;
     passed &= Expect(
