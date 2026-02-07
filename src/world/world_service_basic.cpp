@@ -10,6 +10,7 @@ namespace novaria::world {
 namespace {
 
 constexpr std::uint32_t kWorldSeed = 0x9e3779b9U;
+constexpr std::uint32_t kCoalOreSeed = 0x13f4a8d1U;
 constexpr int kTerrainSegmentWidth = 16;
 constexpr int kBaseSurfaceY = -1;
 constexpr int kTopSoilDepth = 5;
@@ -148,6 +149,12 @@ std::uint16_t GenerateInitialMaterial(int world_tile_x, int world_tile_y) {
     }
     if (world_tile_y < surface_y + kTopSoilDepth) {
         return WorldServiceBasic::kMaterialDirt;
+    }
+    if (world_tile_y >= surface_y + kTopSoilDepth + 2) {
+        const std::uint32_t ore_hash = HashCoords(world_tile_x, world_tile_y, kCoalOreSeed);
+        if (ore_hash % 17U == 0U) {
+            return WorldServiceBasic::kMaterialCoalOre;
+        }
     }
     return WorldServiceBasic::kMaterialStone;
 }

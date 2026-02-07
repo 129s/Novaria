@@ -20,6 +20,9 @@ public:
     static constexpr std::uint16_t kMaterialWater = 4;
     static constexpr std::uint16_t kMaterialWood = 5;
     static constexpr std::uint16_t kMaterialLeaves = 6;
+    static constexpr std::uint16_t kMaterialCoalOre = 7;
+    static constexpr std::uint16_t kMaterialTorch = 8;
+    static constexpr std::uint16_t kMaterialWorkbench = 9;
 
     bool Initialize(std::string& out_error) override;
     void Shutdown() override;

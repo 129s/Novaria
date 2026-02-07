@@ -354,6 +354,8 @@ void PlayerController::Update(
         } else if (drop.material_id == world::WorldServiceBasic::kMaterialStone) {
             state_.inventory_stone_count += drop.amount;
             submit_collect_resource(sim::command::kResourceStone, drop.amount);
+        } else if (drop.material_id == world::WorldServiceBasic::kMaterialCoalOre) {
+            state_.inventory_coal_count += drop.amount;
         } else if (drop.material_id == world::WorldServiceBasic::kMaterialWood) {
             state_.inventory_wood_count += drop.amount;
             submit_collect_resource(sim::command::kResourceWood, drop.amount);
@@ -393,13 +395,15 @@ world::ChunkCoord PlayerController::TileToChunkCoord(int tile_x, int tile_y) {
 bool PlayerController::IsSolidMaterial(std::uint16_t material_id) {
     return material_id != world::WorldServiceBasic::kMaterialAir &&
         material_id != world::WorldServiceBasic::kMaterialWater &&
-        material_id != world::WorldServiceBasic::kMaterialLeaves;
+        material_id != world::WorldServiceBasic::kMaterialLeaves &&
+        material_id != world::WorldServiceBasic::kMaterialTorch;
 }
 
 bool PlayerController::IsPickaxeHarvestMaterial(std::uint16_t material_id) {
     return material_id == world::WorldServiceBasic::kMaterialDirt ||
         material_id == world::WorldServiceBasic::kMaterialGrass ||
-        material_id == world::WorldServiceBasic::kMaterialStone;
+        material_id == world::WorldServiceBasic::kMaterialStone ||
+        material_id == world::WorldServiceBasic::kMaterialCoalOre;
 }
 
 bool PlayerController::IsAxeHarvestMaterial(std::uint16_t material_id) {
@@ -410,6 +414,9 @@ bool PlayerController::IsAxeHarvestMaterial(std::uint16_t material_id) {
 int PlayerController::RequiredHarvestTicks(std::uint16_t material_id) {
     if (material_id == world::WorldServiceBasic::kMaterialStone) {
         return 18;
+    }
+    if (material_id == world::WorldServiceBasic::kMaterialCoalOre) {
+        return 20;
     }
     if (material_id == world::WorldServiceBasic::kMaterialWood) {
         return 12;
@@ -430,6 +437,10 @@ bool PlayerController::TryResolveHarvestDrop(
     }
     if (material_id == world::WorldServiceBasic::kMaterialStone) {
         out_drop_material_id = world::WorldServiceBasic::kMaterialStone;
+        return true;
+    }
+    if (material_id == world::WorldServiceBasic::kMaterialCoalOre) {
+        out_drop_material_id = world::WorldServiceBasic::kMaterialCoalOre;
         return true;
     }
     if (material_id == world::WorldServiceBasic::kMaterialWood) {

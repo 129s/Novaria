@@ -17,6 +17,8 @@ struct LocalPlayerState final {
     std::uint32_t inventory_dirt_count = 0;
     std::uint32_t inventory_stone_count = 0;
     std::uint32_t inventory_wood_count = 0;
+    std::uint32_t inventory_coal_count = 0;
+    std::uint32_t inventory_torch_count = 0;
     std::uint16_t pickup_toast_material_id = 0;
     std::uint32_t pickup_toast_amount = 0;
     std::uint16_t pickup_toast_ticks_remaining = 0;

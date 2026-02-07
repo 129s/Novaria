@@ -9,7 +9,8 @@ namespace {
 bool IsSunlightBlockingMaterial(std::uint16_t material_id) {
     return material_id != world::WorldServiceBasic::kMaterialAir &&
         material_id != world::WorldServiceBasic::kMaterialWater &&
-        material_id != world::WorldServiceBasic::kMaterialLeaves;
+        material_id != world::WorldServiceBasic::kMaterialLeaves &&
+        material_id != world::WorldServiceBasic::kMaterialTorch;
 }
 
 }  // namespace
@@ -32,6 +33,8 @@ platform::RenderScene RenderSceneBuilder::Build(
         .dirt_count = player_state.inventory_dirt_count,
         .stone_count = player_state.inventory_stone_count,
         .wood_count = player_state.inventory_wood_count,
+        .coal_count = player_state.inventory_coal_count,
+        .torch_count = player_state.inventory_torch_count,
         .pickup_toast_material_id = player_state.pickup_toast_material_id,
         .pickup_toast_amount = player_state.pickup_toast_amount,
         .pickup_toast_ticks_remaining = player_state.pickup_toast_ticks_remaining,

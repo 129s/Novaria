@@ -82,6 +82,27 @@ RgbaColor MaterialColor(std::uint16_t material_id) {
                 .b = 52,
                 .a = 235,
             };
+        case world::WorldServiceBasic::kMaterialCoalOre:
+            return RgbaColor{
+                .r = 58,
+                .g = 60,
+                .b = 66,
+                .a = 255,
+            };
+        case world::WorldServiceBasic::kMaterialTorch:
+            return RgbaColor{
+                .r = 244,
+                .g = 184,
+                .b = 54,
+                .a = 255,
+            };
+        case world::WorldServiceBasic::kMaterialWorkbench:
+            return RgbaColor{
+                .r = 164,
+                .g = 118,
+                .b = 70,
+                .a = 255,
+            };
         default:
             return RgbaColor{};
     }
@@ -378,6 +399,10 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
         std::min<int>(bar_max_width, static_cast<int>(scene.hud.stone_count) * 4);
     const int wood_bar_width =
         std::min<int>(bar_max_width, static_cast<int>(scene.hud.wood_count) * 4);
+    const int coal_bar_width =
+        std::min<int>(bar_max_width, static_cast<int>(scene.hud.coal_count) * 4);
+    const int torch_bar_width =
+        std::min<int>(bar_max_width, static_cast<int>(scene.hud.torch_count) * 4);
     DrawFilledRect(
         renderer_,
         hud_x + 96,
@@ -399,6 +424,20 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
         wood_bar_width,
         12,
         MaterialColor(world::WorldServiceBasic::kMaterialWood));
+    DrawFilledRect(
+        renderer_,
+        hud_x + 96,
+        hud_y + 74,
+        coal_bar_width,
+        12,
+        MaterialColor(world::WorldServiceBasic::kMaterialCoalOre));
+    DrawFilledRect(
+        renderer_,
+        hud_x + 96,
+        hud_y + 94,
+        torch_bar_width,
+        12,
+        MaterialColor(world::WorldServiceBasic::kMaterialTorch));
 
     const int selector_x = hud_x + 18;
     const int selector_y = hud_y + 16;
@@ -438,7 +477,7 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
         MaterialColor(world::WorldServiceBasic::kMaterialStone));
 
     const int status_x = hud_x + 16;
-    const int status_y = hud_y + 86;
+    const int status_y = hud_y + 114;
     DrawFilledRect(
         renderer_,
         status_x,
@@ -468,6 +507,9 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
             pickup_color = MaterialColor(world::WorldServiceBasic::kMaterialDirt);
         } else if (scene.hud.pickup_toast_material_id == world::WorldServiceBasic::kMaterialStone) {
             pickup_color = MaterialColor(world::WorldServiceBasic::kMaterialStone);
+        } else if (
+            scene.hud.pickup_toast_material_id == world::WorldServiceBasic::kMaterialCoalOre) {
+            pickup_color = MaterialColor(world::WorldServiceBasic::kMaterialCoalOre);
         } else if (scene.hud.pickup_toast_material_id == world::WorldServiceBasic::kMaterialWood) {
             pickup_color = MaterialColor(world::WorldServiceBasic::kMaterialWood);
         }

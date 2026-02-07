@@ -16,6 +16,8 @@ struct RenderHudState final {
     std::uint32_t dirt_count = 0;
     std::uint32_t stone_count = 0;
     std::uint32_t wood_count = 0;
+    std::uint32_t coal_count = 0;
+    std::uint32_t torch_count = 0;
     std::uint16_t pickup_toast_material_id = 0;
     std::uint32_t pickup_toast_amount = 0;
     std::uint16_t pickup_toast_ticks_remaining = 0;
