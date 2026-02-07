@@ -1,32 +1,6 @@
-# Novaria 运行时契约
+# 模块边界与契约
 
-- `status`: authoritative
-- `owner`: @novaria-core
-- `last_verified_commit`: 504e174
-- `updated`: 2026-02-07
-
-## 1. 目标
-
-定义 `sim/world/net/script/save/mod/ecs` 的边界，确保实现可并行推进且可测试。
-
-## 2. 调度主线（`sim::SimulationKernel`）
-
-固定调度顺序：
-
-1. 转发本地命令到 `net`。
-2. 执行可识别世界命令（`world.set_tile`、`world.load_chunk`、`world.unload_chunk`）。
-3. 执行可识别玩法命令（采集/建造/制作/战斗/Boss）。
-4. `net.Tick`。
-5. （仅连接态）消费远端快照并应用到 `world`。
-6. `world.Tick`。
-7. `ecs.Tick`（实体行为：投射物/目标碰撞/伤害/回收）。
-8. `script.Tick`。
-9. `world` 输出脏块并编码。
-10. （仅连接态）`net.PublishWorldSnapshot`。
-
-## 3. 分模块契约
-
-### 3.1 `sim`
+## `sim`
 
 **契约**
 
@@ -43,7 +17,7 @@
 - 会话变化事件：`net.session_state_changed`，payload `state=...;tick=...;reason=...`。
 - 玩法里程碑事件：`gameplay.progress`，payload `milestone=...;tick=...`。
 
-### 3.2 `world`
+## `world`
 
 **契约**
 
@@ -62,7 +36,7 @@
 - 脏块增量追踪，`ConsumeDirtyChunks` 稳定排序输出。
 - 支持负坐标 Tile 读写。
 
-### 3.3 `net`
+## `net`
 
 **契约**
 
@@ -90,7 +64,7 @@
 - 提供可观测诊断：迁移计数、探测计数、来源过滤计数、丢弃计数、最近迁移原因、最后心跳 Tick。
 - `UdpTransport` 已提供可绑定端口、非阻塞收发、Loopback 自测能力（基础传输层骨架）。
 
-### 3.4 `script`
+## `script`
 
 **契约**
 
@@ -111,7 +85,7 @@
 - 已支持按模组清单字段 `script_entry/script_api_version` 装载内容脚本并进行 API 版本 fail-fast 校验。
 - 当前仍未完成最终形态沙箱策略（细粒度 capability 白名单、跨模组权限配置、配额可配置化）。
 
-### 3.5 `save`
+## `save`
 
 **契约**
 
@@ -129,7 +103,7 @@
   - 存档写入采用 `world.sav.tmp -> world.sav` 原子替换，并保留 `world.sav.bak` 回档副本。
   - 存档指纹校验受 `strict_save_mod_fingerprint` 控制。
 
-### 3.6 `mod`
+## `mod`
 
 **契约**
 
@@ -150,7 +124,7 @@
 - 可选解析脚本能力声明：`script_capabilities`（用于运行时能力校验）。
 - 指纹已纳入依赖、内容定义与脚本元信息（含能力声明），支持联机一致性校验。
 
-### 3.7 `ecs`
+## `ecs`
 
 **契约**
 
@@ -166,29 +140,3 @@
 - 已接入 EnTT 运行时骨架：`sim::ecs::Runtime`。
 - 已落地投射物纵切：生成→移动→碰撞→伤害→回收。
 - 已与 `SimulationKernel` 固定 Tick 调度对齐，并将击杀事件回灌玩法进度计数。
-
-## 4. 输入映射（当前）
-
-正式玩家输入（M6）：
-
-- `W/A/S/D`：移动角色
-- `E`：挖掘角色面向方向的方块
-- `R`：放置当前选中材料到角色面向方向
-- `1/2`：切换放置材料（`dirt/stone`）
-
-兼容调试输入（保留）：
-
-- `J`：提交 `jump`
-- `K`：提交 `combat.fire_projectile`
-- `F1`：发送 `debug.ping`
-- `F2`：提交 `world.set_tile`（`0,0,0`）
-- `F3`：提交 `world.set_tile`（`0,0,2`）
-- `F4`：请求断线
-- `F5`：注入心跳
-- `F6`：请求重连
-- `F7`：采集木材（+5）
-- `F8`：采集石材（+5）
-- `F9`：建造工作台
-- `F10`：制作剑
-- `F11`：攻击基础敌人
-- `F12`：攻击 Boss

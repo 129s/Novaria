@@ -1,10 +1,5 @@
 # 发布与诊断流程（Windows）
 
-- `status`: authoritative
-- `owner`: @novaria-core
-- `last_verified_commit`: 504e174
-- `updated`: 2026-02-07
-
 ## 1. 打包流程
 
 执行：
@@ -13,9 +8,10 @@
 .\tools\release\build_release.ps1 -BuildDir build -Config RelWithDebInfo -OutputRoot dist
 ```
 
-CI 自动流程：
+说明：
 
-- `.github/workflows/windows-ci.yml` 会执行配置、构建、测试与打包，并上传发布产物。
+- 当前发布流程以本地脚本执行为准，不依赖 CI 工作流。
+- 发布前需手动执行构建、测试与打包命令并留存日志。
 
 产物目录：
 

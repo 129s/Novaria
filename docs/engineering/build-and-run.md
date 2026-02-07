@@ -1,10 +1,5 @@
 # 构建与运行（Windows）
 
-- `status`: authoritative
-- `owner`: @novaria-core
-- `last_verified_commit`: 504e174
-- `updated`: 2026-02-07
-
 ## 1. 前置条件
 
 - Windows 10/11

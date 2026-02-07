@@ -1,10 +1,5 @@
 # 测试策略与矩阵
 
-- `status`: authoritative
-- `owner`: @novaria-core
-- `last_verified_commit`: 23daedb
-- `updated`: 2026-02-06
-
 ## 1. 测试分层
 
 - 单元层：模块级行为验证（`config/net/world/script/save/mod`）。

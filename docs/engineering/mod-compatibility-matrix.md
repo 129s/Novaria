@@ -1,10 +1,5 @@
 # Mod 兼容性矩阵（M9）
 
-- `status`: active
-- `owner`: @novaria-core
-- `last_verified_commit`: 504e174
-- `updated`: 2026-02-07
-
 ## 1. 目标
 
 为 `script_api_version + script_capabilities` 提供统一兼容口径，避免模组在运行时“静默降级”。
