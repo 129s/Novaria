@@ -1,142 +1,166 @@
 # 模块边界与契约
 
-## `sim`
+## 0. 总则（强约束）
 
-**契约**
+- **依赖方向必须单向**：高层编排依赖低层能力；低层不得反向引用高层。
+- **实现不可当契约**：`*Basic/*Runtime/*UdpLoopback` 这类实现类型不得成为跨模块依赖的“事实标准”。
+- **契约必须可测试**：对外暴露的接口与数据格式必须能在不启动 SDL/窗口的情况下被测试覆盖。
 
-- `TickContext` 提供统一 Tick 输入（`tick_index`、`fixed_delta_seconds`）。
-- `SimulationKernel` 提供：
-  - `ApplyRemoteChunkPayload`（远端快照应用入口）
-  - 本地命令队列上限保护
-  - 玩法进度快照读写（`GameplayProgress` / `RestoreGameplayProgress`）
+## 1. 依赖与分层（目标形态）
 
-**当前实现**
+> 说明：这是“应该长成什么样”的契约，允许当前实现未完全达成，但任何新增代码必须向该方向收敛。
 
-- 自动重连节流：`kAutoReconnectRetryIntervalTicks`。
-- 会话事件限流与合并：`kSessionStateEventMinIntervalTicks`。
-- 会话变化事件：`net.session_state_changed`，payload `state=...;tick=...;reason=...`。
-- 玩法里程碑事件：`gameplay.progress`，payload `milestone=...;tick=...`。
+- `core`：基础工具与稳定配置（日志、配置、常量、通用小工具）。
+- `platform`：窗口/输入/渲染后端封装（SDL3 等），只处理平台细节。
+- `world`：权威世界数据与快照（chunk/tile），对外只暴露接口与快照编解码。
+- `net`：会话与传输层（握手/心跳/收发队列/诊断），不理解玩法语义。
+- `script`：脚本运行时与沙箱（LuaJIT 等），通过事件总线与主循环交互。
+- `mod`：模组清单与内容定义装载（manifest/content），不耦合渲染与网络。
+- `save`：存档持久化（版本化、兼容与回滚），不耦合窗口与输入。
+- `sim`：固定 Tick 的仿真调度与跨模块协同（权威/副本模式），不包含 UI/平台细节。
+- `app`：把上述模块装配成可运行产品（启动、主循环、输入到命令的映射、渲染场景构建）。
+- `tools`：调试/压测/打包等辅助可执行（应复用 `src` 的库代码，不复制逻辑）。
+- `tests`：自动化验证（优先覆盖契约与跨模块链路）。
 
-## `world`
+## 2. 模块契约
 
-**契约**
+### 2.1 `core`
 
-- `IWorldService`：
-  - `Initialize/Shutdown`
-  - `Tick`
-  - `LoadChunk/UnloadChunk`
-  - `ApplyTileMutation`
-  - `BuildChunkSnapshot`
-  - `ApplyChunkSnapshot`
-  - `ConsumeDirtyChunks`
+**职责**
 
-**当前实现**
+- 提供可复用的基础设施：日志、配置解析、稳定常量与小工具。
 
-- `WorldServiceBasic`（内存 Chunk 容器 + 基础地形生成）。
-- 脏块增量追踪，`ConsumeDirtyChunks` 稳定排序输出。
-- 支持负坐标 Tile 读写。
+**禁止**
 
-## `net`
+- 不得依赖 `SDL`、网络 socket、文件系统的业务目录结构（例如 `mods/`、`saves/` 的策略应在更高层决定）。
 
-**契约**
+### 2.2 `platform`
 
-- `INetService`：
-  - `Initialize/Shutdown`
-  - `RequestConnect/RequestDisconnect`
-  - `NotifyHeartbeatReceived`
-  - `SessionState` / `DiagnosticsSnapshot`
-  - `Tick`
-  - `SubmitLocalCommand`
-  - `ConsumeRemoteChunkPayloads`
-  - `PublishWorldSnapshot`
+**职责**
 
-**当前实现**
+- 把平台细节封装为稳定输入与渲染接口：
+  - 输入：输出 `platform::InputActions`（原始动作信号 + 光标/视口信息）。
+  - 渲染：消费 `platform::RenderScene`（已准备好的渲染数据，不再回查 world）。
 
-- `NetServiceRuntime`：固定走 `udp_loopback` 后端（无 stub/无自动回退）。
-- `udp_loopback` 后端：`NetServiceUdpLoopback`（支持本地端口绑定与对端端点配置，可做同机双进程互通验证）。
-- `udp_loopback` 后端支持本地绑定地址配置（`127.0.0.1`/`0.0.0.0`），可推进到跨主机联调。
-- `udp_loopback` 已引入最小握手与心跳控制报文（`SYN/ACK/HEARTBEAT`）。
-- 已引入连接探测指数退避（`kConnectProbeIntervalTicks` -> `kMaxConnectProbeIntervalTicks`）并提供探测诊断计数。
-- 已引入对端来源校验与动态对端采纳（配置 `remote_port=0` 时可由 `SYN` 建立 peer）。
-- UDP 不可达噪声（Windows `WSAECONNRESET`）按可恢复空读处理，避免误判为传输层硬错误。
-- 心跳超时断线：`kHeartbeatTimeoutTicks`。
-- 断线态拒收本地命令与远端 payload。
-- 提供可观测诊断：迁移计数、探测计数、来源过滤计数、丢弃计数、最近迁移原因、最后心跳 Tick。
-- `UdpTransport` 已提供可绑定端口、非阻塞收发、Loopback 自测能力（基础传输层骨架）。
+**禁止（关键）**
 
-## `script`
+- 不得 include `world/*Basic*` 或读取 world 数据结构。
+- 不得包含玩法判断（例如“材料是否可采集/是否遮光/颜色映射”）。
 
-**契约**
+### 2.3 `world`
 
-- `IScriptHost`：
-  - `Initialize/Shutdown`
-  - `Tick`
-  - `DispatchEvent`
+**职责**
 
-**当前实现**
+- 维护权威世界数据与快照：
+  - `world::IWorldService`：Tile/Chunk 读写、加载/卸载、脏块追踪、快照构建与应用。
+  - `world::WorldSnapshotCodec`：快照编解码（需要版本化与兼容策略）。
 
-- `ScriptHostRuntime`：固定走 `luajit` 后端（无 stub/无自动回退）。
-- `LuaJitScriptHost` 已完成 VM 生命周期与事件回调骨架（`novaria_on_tick` / `novaria_on_event`）。
-- `LuaJitScriptHost` 已启用 MVP 最小沙箱（禁用 `io/os/debug/package/dofile/loadfile/load/require/collectgarbage`）。
-- 脚本执行已加每次调用指令预算保护，超预算直接 fail-fast（避免死循环拖垮主线程）。
-- 脚本 VM 已启用内存配额分配器（固定预算上限），超配额会在 Lua 调用边界 fail-fast。
-- 模组脚本按模块独立环境装载，仅导出受控回调（`novaria_on_tick/novaria_on_event`）。
-- `IScriptHost::RuntimeDescriptor` 已统一暴露 `backend/api_version/sandbox` 元信息（当前 API 版本 `0.1.0`）。
-- 已支持按模组清单字段 `script_entry/script_api_version` 装载内容脚本并进行 API 版本 fail-fast 校验。
-- 当前仍未完成最终形态沙箱策略（细粒度 capability 白名单、跨模组权限配置、配额可配置化）。
+**对外保证**
 
-## `save`
+- `ConsumeDirtyChunks()` 的输出必须稳定且可复现（用于网络与存档一致性）。
 
-**契约**
+**禁止**
 
-- `ISaveRepository`：
-  - `Initialize/Shutdown`
-  - `SaveWorldState/LoadWorldState`
+- 不得依赖 `net`、`script`、`platform`。
 
-**当前实现**
+### 2.4 `net`
 
-- `FileSaveRepository`：
-  - `format_version` 版本字段，支持旧档兼容与前向版本拒绝。
-  - 按需写入 `gameplay_section.core.*`（含 `gameplay_section.core.version`）。
-  - 按需写入 `world_section.core.*`（含 `world_section.core.version/chunk_count/chunk.<index>`）。
-  - 写入 `debug_section.net.*`（含 `debug_section.net.version`），并兼容旧 `debug_net_*` 字段。
-  - 存档写入采用 `world.sav.tmp -> world.sav` 原子替换，并保留 `world.sav.bak` 回档副本。
-  - 存档指纹校验受 `strict_save_mod_fingerprint` 控制。
+**职责**
 
-## `mod`
+- 只负责“会话 + 传输 + 队列 + 诊断”：
+  - `INetService` 作为仿真层的唯一入口。
+  - 不理解 `command_type` 的玩法语义，不参与规则判断。
 
-**契约**
+**对外保证**
 
-- `ModLoader`：
-  - 扫描 `mods/*/mod.toml`
-  - 解析 `name/version/description/dependencies`
-  - 依赖拓扑排序装载
-  - 缺失依赖与循环依赖直接失败
-  - 计算稳定指纹
+- 诊断指标语义必须一致（`dropped` 只表示真实丢弃；“未发送到远端”必须单列）。
+- 收发队列必须有上限与可观测性（丢弃原因可追溯）。
 
-**当前实现**
+**禁止**
 
-- 可选解析内容定义：
-  - `content/items.csv`
-  - `content/recipes.csv`
-  - `content/npcs.csv`
-- 可选解析脚本入口元信息：`script_entry`、`script_api_version`（用于脚本运行时装载与一致性校验）。
-- 可选解析脚本能力声明：`script_capabilities`（用于运行时能力校验）。
-- 指纹已纳入依赖、内容定义与脚本元信息（含能力声明），支持联机一致性校验。
+- 不得依赖 `world` 的实现细节（快照 payload 只当作字节/文本负载）。
 
-## `ecs`
+### 2.5 `script`
 
-**契约**
+**职责**
 
-- `ecs::Runtime` 仅承载行为实体（当前：`projectile/hostile_target`）。
-- `world(tile/chunk)` 继续作为权威世界数据层，不迁入 `entt::registry`。
-- ECS 系统顺序固定：`spawn -> movement -> collision -> damage -> lifetime_recycle`。
-- ECS 对外仅暴露强类型输入与事件输出：
-  - 输入：`combat.fire_projectile`（经 `TypedPlayerCommand` 解码）。
-  - 输出：`CombatEvent`（当前实现 `HostileDefeated`）。
+- 提供脚本宿主与沙箱：
+  - `IScriptHost::Tick`：在固定 Tick 中调用脚本回调。
+  - `IScriptHost::DispatchEvent`：接收事件并在脚本端消费。
+  - `RuntimeDescriptor`：暴露可观测元信息（后端名、API 版本、沙箱级别、配额）。
 
-**当前实现**
+**对外保证**
 
-- 已接入 EnTT 运行时骨架：`sim::ecs::Runtime`。
-- 已落地投射物纵切：生成→移动→碰撞→伤害→回收。
-- 已与 `SimulationKernel` 固定 Tick 调度对齐，并将击杀事件回灌玩法进度计数。
+- API 版本必须严格校验（不匹配 fail-fast）。
+- capability 白名单必须明确，越权 fail-fast。
+
+**禁止（关键）**
+
+- 脚本不得直接调用渲染/网络底层；脚本只通过事件与受控回调表达行为。
+
+### 2.6 `mod`
+
+**职责**
+
+- 扫描 `mod.toml` 并装载可选内容定义（items/recipes/npcs）与脚本元信息。
+- 构建稳定指纹，用于联机一致性与存档校验。
+
+**对外保证**
+
+- 指纹算法必须稳定、可复现、碰撞风险可控（建议使用 SHA-256）。
+- 依赖拓扑排序稳定；缺失依赖与循环依赖必须明确报错。
+
+### 2.7 `save`
+
+**职责**
+
+- 以版本化格式持久化世界状态、玩法进度与诊断快照。
+- 提供回滚与原子写入策略，避免存档损坏。
+
+**对外保证**
+
+- 兼容策略明确：旧版兼容、前向版本拒绝、字段缺省语义稳定。
+
+**禁止**
+
+- 不得依赖 `platform/app`。
+
+### 2.8 `sim`
+
+**职责**
+
+- 固定 Tick 的仿真调度与跨模块协同：
+  - 输入：来自 `net` 的命令与来自 `app` 的本地命令注入。
+  - 输出：对 `world` 的变更、对 `net` 的快照发布、对 `script` 的事件分发。
+
+**对外保证**
+
+- Tick 顺序固定且可复盘（详见 `docs/architecture/simulation-pipeline.md`）。
+- 权威模式与副本模式行为可预测，且差异清晰。
+
+**禁止（关键）**
+
+- `sim` 不得依赖 SDL/窗口/文件系统路径策略。
+- `SimulationKernel` 不得成为玩法规则大杂烩：规则应拆为 system/ruleset（可渐进式落地）。
+
+### 2.9 `app`
+
+**职责**
+
+- 负责装配与编排（启动、主循环、输入到命令映射、渲染场景构建、退出与存档）。
+
+**对外保证**
+
+- `app` 与 `platform` 只通过稳定数据结构交互（`InputActions/RenderScene`）。
+- `app` 不得依赖 `world` 的具体实现类型；只依赖接口与稳定材料/渲染元信息。
+
+### 2.10 `tools`
+
+**职责**
+
+- 提供联调、压测、打包脚本与独立服务端。
+
+**强约束**
+
+- 禁止复制 `src` 的业务逻辑：工具必须复用库代码；任何复制都要在下一次重构中消除。
+
