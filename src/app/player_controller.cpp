@@ -25,6 +25,8 @@ void PlayerController::Update(
     constexpr int kTilePixelSize = 32;
     constexpr int kReachDistanceTiles = 4;
     constexpr std::uint8_t kHotbarRows = 2;
+    constexpr std::uint32_t kWorkbenchWoodCost = 10;
+    constexpr std::uint32_t kWoodSwordWoodCost = 7;
 
     if (state_.pickup_toast_ticks_remaining > 0) {
         --state_.pickup_toast_ticks_remaining;
@@ -179,50 +181,65 @@ void PlayerController::Update(
             state_.selected_place_material_id = world::WorldServiceBasic::kMaterialDirt;
         } else if (slot_index == 3) {
             state_.selected_place_material_id = world::WorldServiceBasic::kMaterialStone;
+        } else if (slot_index == 4) {
+            state_.selected_place_material_id = world::WorldServiceBasic::kMaterialTorch;
+        } else if (slot_index == 5) {
+            state_.selected_place_material_id = world::WorldServiceBasic::kMaterialWorkbench;
         }
     };
 
-    if (input_intent.hotbar_select_slot_1) {
-        apply_hotbar_slot(0);
-    }
-    if (input_intent.hotbar_select_slot_2) {
-        apply_hotbar_slot(1);
-    }
-    if (input_intent.hotbar_select_slot_3) {
-        apply_hotbar_slot(2);
-    }
-    if (input_intent.hotbar_select_slot_4) {
-        apply_hotbar_slot(3);
-    }
-    if (input_intent.hotbar_select_slot_5) {
-        apply_hotbar_slot(4);
-    }
-    if (input_intent.hotbar_select_slot_6) {
-        apply_hotbar_slot(5);
-    }
-    if (input_intent.hotbar_select_slot_7) {
-        apply_hotbar_slot(6);
-    }
-    if (input_intent.hotbar_select_slot_8) {
-        apply_hotbar_slot(7);
-    }
-    if (input_intent.hotbar_select_slot_9) {
-        apply_hotbar_slot(8);
-    }
-    if (input_intent.hotbar_select_slot_10) {
-        apply_hotbar_slot(9);
-    }
-    if (input_intent.hotbar_cycle_prev) {
-        apply_hotbar_slot(static_cast<std::uint8_t>((state_.selected_hotbar_slot + 9) % 10));
-    } else if (input_intent.hotbar_cycle_next) {
-        apply_hotbar_slot(static_cast<std::uint8_t>((state_.selected_hotbar_slot + 1) % 10));
-    }
     if (input_intent.ui_inventory_toggle_pressed) {
         state_.inventory_open = !state_.inventory_open;
     }
-    if (input_intent.hotbar_select_next_row) {
-        state_.active_hotbar_row =
-            static_cast<std::uint8_t>((state_.active_hotbar_row + 1) % kHotbarRows);
+
+    if (state_.inventory_open) {
+        if (input_intent.hotbar_select_slot_1) {
+            state_.selected_recipe_index = 0;
+        } else if (input_intent.hotbar_select_slot_2) {
+            state_.selected_recipe_index = 1;
+        } else if (input_intent.hotbar_select_slot_3) {
+            state_.selected_recipe_index = 2;
+        }
+    } else {
+        if (input_intent.hotbar_select_slot_1) {
+            apply_hotbar_slot(0);
+        }
+        if (input_intent.hotbar_select_slot_2) {
+            apply_hotbar_slot(1);
+        }
+        if (input_intent.hotbar_select_slot_3) {
+            apply_hotbar_slot(2);
+        }
+        if (input_intent.hotbar_select_slot_4) {
+            apply_hotbar_slot(3);
+        }
+        if (input_intent.hotbar_select_slot_5) {
+            apply_hotbar_slot(4);
+        }
+        if (input_intent.hotbar_select_slot_6) {
+            apply_hotbar_slot(5);
+        }
+        if (input_intent.hotbar_select_slot_7) {
+            apply_hotbar_slot(6);
+        }
+        if (input_intent.hotbar_select_slot_8) {
+            apply_hotbar_slot(7);
+        }
+        if (input_intent.hotbar_select_slot_9) {
+            apply_hotbar_slot(8);
+        }
+        if (input_intent.hotbar_select_slot_10) {
+            apply_hotbar_slot(9);
+        }
+        if (input_intent.hotbar_cycle_prev) {
+            apply_hotbar_slot(static_cast<std::uint8_t>((state_.selected_hotbar_slot + 9) % 10));
+        } else if (input_intent.hotbar_cycle_next) {
+            apply_hotbar_slot(static_cast<std::uint8_t>((state_.selected_hotbar_slot + 1) % 10));
+        }
+        if (input_intent.hotbar_select_next_row) {
+            state_.active_hotbar_row =
+                static_cast<std::uint8_t>((state_.active_hotbar_row + 1) % kHotbarRows);
+        }
     }
 
     int target_tile_x = state_.tile_x + state_.facing_x;
@@ -288,6 +305,22 @@ void PlayerController::Update(
                 action_is_place = true;
                 place_material_id = world::WorldServiceBasic::kMaterialStone;
                 required_ticks = kPlaceRequiredTicks;
+            } else if (
+                state_.active_hotbar_row == 0 &&
+                state_.selected_hotbar_slot == 4 &&
+                target_material == world::WorldServiceBasic::kMaterialAir &&
+                state_.inventory_torch_count > 0) {
+                action_is_place = true;
+                place_material_id = world::WorldServiceBasic::kMaterialTorch;
+                required_ticks = kPlaceRequiredTicks;
+            } else if (
+                state_.active_hotbar_row == 0 &&
+                state_.selected_hotbar_slot == 5 &&
+                target_material == world::WorldServiceBasic::kMaterialAir &&
+                state_.inventory_workbench_count > 0) {
+                action_is_place = true;
+                place_material_id = world::WorldServiceBasic::kMaterialWorkbench;
+                required_ticks = kPlaceRequiredTicks;
             }
 
             if (!action_is_harvest && !action_is_place) {
@@ -334,6 +367,16 @@ void PlayerController::Update(
                             state_.inventory_stone_count > 0) {
                             --state_.inventory_stone_count;
                             submit_world_set_tile(target_tile_x, target_tile_y, place_material_id);
+                        } else if (
+                            place_material_id == world::WorldServiceBasic::kMaterialTorch &&
+                            state_.inventory_torch_count > 0) {
+                            --state_.inventory_torch_count;
+                            submit_world_set_tile(target_tile_x, target_tile_y, place_material_id);
+                        } else if (
+                            place_material_id == world::WorldServiceBasic::kMaterialWorkbench &&
+                            state_.inventory_workbench_count > 0) {
+                            --state_.inventory_workbench_count;
+                            submit_world_set_tile(target_tile_x, target_tile_y, place_material_id);
                         }
                     }
 
@@ -346,8 +389,54 @@ void PlayerController::Update(
     }
 
     if (input_intent.interaction_primary_pressed) {
-        const bool interaction_target_reachable = target_reachable;
-        (void)interaction_target_reachable;
+        if (state_.inventory_open) {
+            auto is_workbench_reachable = [&world_service, this]() {
+                constexpr int kWorkbenchReach = 4;
+                for (int dy = -kWorkbenchReach; dy <= kWorkbenchReach; ++dy) {
+                    for (int dx = -kWorkbenchReach; dx <= kWorkbenchReach; ++dx) {
+                        const int tile_x = state_.tile_x + dx;
+                        const int tile_y = state_.tile_y + dy;
+                        std::uint16_t material_id = 0;
+                        if (!world_service.TryReadTile(tile_x, tile_y, material_id) ||
+                            material_id != world::WorldServiceBasic::kMaterialWorkbench) {
+                            continue;
+                        }
+
+                        if (dx * dx + dy * dy <= kWorkbenchReach * kWorkbenchReach) {
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
+            };
+
+            if (state_.selected_recipe_index == 0 &&
+                state_.inventory_wood_count >= kWorkbenchWoodCost) {
+                state_.inventory_wood_count -= kWorkbenchWoodCost;
+                ++state_.inventory_workbench_count;
+                submit_gameplay_command(sim::command::kGameplayBuildWorkbench, "");
+                state_.workbench_built = true;
+            } else if (
+                state_.selected_recipe_index == 1 &&
+                state_.inventory_wood_count >= kWoodSwordWoodCost &&
+                is_workbench_reachable()) {
+                state_.inventory_wood_count -= kWoodSwordWoodCost;
+                ++state_.inventory_wood_sword_count;
+                submit_gameplay_command(sim::command::kGameplayCraftSword, "");
+                state_.wood_sword_crafted = true;
+            } else if (
+                state_.selected_recipe_index == 2 &&
+                state_.inventory_wood_count >= 1 &&
+                state_.inventory_coal_count >= 1) {
+                --state_.inventory_wood_count;
+                --state_.inventory_coal_count;
+                state_.inventory_torch_count += 4;
+            }
+        } else {
+            const bool interaction_target_reachable = target_reachable;
+            (void)interaction_target_reachable;
+        }
     }
 
     constexpr std::uint16_t kPickupToastTicks = 90;

@@ -19,10 +19,13 @@ struct LocalPlayerState final {
     std::uint32_t inventory_wood_count = 0;
     std::uint32_t inventory_coal_count = 0;
     std::uint32_t inventory_torch_count = 0;
+    std::uint32_t inventory_workbench_count = 0;
+    std::uint32_t inventory_wood_sword_count = 0;
     std::uint16_t pickup_toast_material_id = 0;
     std::uint32_t pickup_toast_amount = 0;
     std::uint16_t pickup_toast_ticks_remaining = 0;
     bool inventory_open = false;
+    std::uint8_t selected_recipe_index = 0;
     std::uint8_t active_hotbar_row = 0;
     std::uint8_t selected_hotbar_slot = 0;
     std::uint16_t selected_place_material_id = 1;

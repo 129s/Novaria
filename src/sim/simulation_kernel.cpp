@@ -13,9 +13,7 @@ namespace novaria::sim {
 namespace {
 
 constexpr std::uint32_t kGameplayWorkbenchWoodCost = 10;
-constexpr std::uint32_t kGameplayWorkbenchStoneCost = 5;
-constexpr std::uint32_t kGameplaySwordWoodCost = 8;
-constexpr std::uint32_t kGameplaySwordStoneCost = 12;
+constexpr std::uint32_t kGameplaySwordWoodCost = 7;
 constexpr std::uint32_t kGameplayBossMaxHealth = 60;
 constexpr std::uint32_t kGameplayBossDamagePerAttack = 10;
 
@@ -293,13 +291,11 @@ void SimulationKernel::ExecuteGameplayCommandIfMatched(const TypedPlayerCommand&
         if (workbench_built_) {
             return;
         }
-        if (wood_collected_ < kGameplayWorkbenchWoodCost ||
-            stone_collected_ < kGameplayWorkbenchStoneCost) {
+        if (wood_collected_ < kGameplayWorkbenchWoodCost) {
             return;
         }
 
         wood_collected_ -= kGameplayWorkbenchWoodCost;
-        stone_collected_ -= kGameplayWorkbenchStoneCost;
         workbench_built_ = true;
         DispatchGameplayProgressEvent("build_workbench");
         return;
@@ -312,13 +308,11 @@ void SimulationKernel::ExecuteGameplayCommandIfMatched(const TypedPlayerCommand&
         if (!workbench_built_) {
             return;
         }
-        if (wood_collected_ < kGameplaySwordWoodCost ||
-            stone_collected_ < kGameplaySwordStoneCost) {
+        if (wood_collected_ < kGameplaySwordWoodCost) {
             return;
         }
 
         wood_collected_ -= kGameplaySwordWoodCost;
-        stone_collected_ -= kGameplaySwordStoneCost;
         sword_crafted_ = true;
         DispatchGameplayProgressEvent("craft_sword");
         return;

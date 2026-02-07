@@ -378,7 +378,7 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
     const int hud_x = 12;
     const int hud_y = 12;
     const int hud_width = 280;
-    const int hud_height = 116;
+    const int hud_height = 180;
     DrawFilledRect(
         renderer_,
         hud_x,
@@ -403,6 +403,10 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
         std::min<int>(bar_max_width, static_cast<int>(scene.hud.coal_count) * 4);
     const int torch_bar_width =
         std::min<int>(bar_max_width, static_cast<int>(scene.hud.torch_count) * 4);
+    const int workbench_item_bar_width =
+        std::min<int>(bar_max_width, static_cast<int>(scene.hud.workbench_count) * 32);
+    const int wood_sword_item_bar_width =
+        std::min<int>(bar_max_width, static_cast<int>(scene.hud.wood_sword_count) * 32);
     DrawFilledRect(
         renderer_,
         hud_x + 96,
@@ -438,6 +442,20 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
         torch_bar_width,
         12,
         MaterialColor(world::WorldServiceBasic::kMaterialTorch));
+    DrawFilledRect(
+        renderer_,
+        hud_x + 96,
+        hud_y + 114,
+        workbench_item_bar_width,
+        12,
+        MaterialColor(world::WorldServiceBasic::kMaterialWorkbench));
+    DrawFilledRect(
+        renderer_,
+        hud_x + 96,
+        hud_y + 134,
+        wood_sword_item_bar_width,
+        12,
+        RgbaColor{.r = 186, .g = 210, .b = 228, .a = 255});
 
     const int selector_x = hud_x + 18;
     const int selector_y = hud_y + 16;
@@ -491,7 +509,7 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
     }
 
     const int status_x = hud_x + 16;
-    const int status_y = hud_y + 114;
+    const int status_y = hud_y + 154;
     DrawFilledRect(
         renderer_,
         status_x,
@@ -561,6 +579,18 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
             inventory_panel_width / 3,
             inventory_panel_height - craft_zone_margin * 2,
             RgbaColor{.r = 42, .g = 52, .b = 64, .a = 240});
+
+        for (int recipe_index = 0; recipe_index < 3; ++recipe_index) {
+            DrawFilledRect(
+                renderer_,
+                inventory_x + craft_zone_margin + 8,
+                inventory_y + craft_zone_margin + 12 + recipe_index * 24,
+                inventory_panel_width / 3 - 16,
+                14,
+                recipe_index == static_cast<int>(scene.hud.selected_recipe_index)
+                    ? RgbaColor{.r = 218, .g = 188, .b = 96, .a = 240}
+                    : RgbaColor{.r = 72, .g = 82, .b = 94, .a = 220});
+        }
     }
 
     SDL_RenderPresent(renderer_);
