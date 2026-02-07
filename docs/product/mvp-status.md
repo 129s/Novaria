@@ -2,7 +2,7 @@
 
 - `status`: active
 - `owner`: @novaria-core
-- `last_verified_commit`: 6bd4abe
+- `last_verified_commit`: bcee1f4
 - `updated`: 2026-02-06
 
 ## 1. 总结论
