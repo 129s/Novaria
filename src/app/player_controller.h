@@ -21,6 +21,8 @@ struct LocalPlayerState final {
     std::uint32_t inventory_torch_count = 0;
     std::uint32_t inventory_workbench_count = 0;
     std::uint32_t inventory_wood_sword_count = 0;
+    bool has_pickaxe_tool = true;
+    bool has_axe_tool = true;
     std::uint16_t pickup_toast_material_id = 0;
     std::uint32_t pickup_toast_amount = 0;
     std::uint16_t pickup_toast_ticks_remaining = 0;
@@ -70,6 +72,7 @@ private:
     static bool IsSolidMaterial(std::uint16_t material_id);
     static bool IsPickaxeHarvestMaterial(std::uint16_t material_id);
     static bool IsAxeHarvestMaterial(std::uint16_t material_id);
+    static bool IsSwordHarvestMaterial(std::uint16_t material_id);
     static int RequiredHarvestTicks(std::uint16_t material_id);
     static bool TryResolveHarvestDrop(std::uint16_t material_id, std::uint16_t& out_drop_material_id);
 

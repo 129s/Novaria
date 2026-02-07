@@ -279,15 +279,28 @@ void PlayerController::Update(
             int required_ticks = 0;
             std::uint16_t place_material_id = world::WorldServiceBasic::kMaterialAir;
 
-            if (state_.active_hotbar_row == 0 && state_.selected_hotbar_slot == 0) {
+            if (state_.active_hotbar_row == 0 &&
+                state_.selected_hotbar_slot == 0 &&
+                state_.has_pickaxe_tool) {
                 action_is_harvest = IsPickaxeHarvestMaterial(target_material);
                 if (action_is_harvest) {
                     required_ticks = RequiredHarvestTicks(target_material);
                 }
-            } else if (state_.active_hotbar_row == 0 && state_.selected_hotbar_slot == 1) {
+            } else if (
+                state_.active_hotbar_row == 0 &&
+                state_.selected_hotbar_slot == 1 &&
+                state_.has_axe_tool) {
                 action_is_harvest = IsAxeHarvestMaterial(target_material);
                 if (action_is_harvest) {
                     required_ticks = RequiredHarvestTicks(target_material);
+                }
+            } else if (
+                state_.active_hotbar_row == 0 &&
+                state_.selected_hotbar_slot == 6 &&
+                state_.inventory_wood_sword_count > 0) {
+                action_is_harvest = IsSwordHarvestMaterial(target_material);
+                if (action_is_harvest) {
+                    required_ticks = RequiredHarvestTicks(target_material) + 10;
                 }
             } else if (
                 state_.active_hotbar_row == 0 &&
@@ -511,6 +524,11 @@ bool PlayerController::IsPickaxeHarvestMaterial(std::uint16_t material_id) {
 bool PlayerController::IsAxeHarvestMaterial(std::uint16_t material_id) {
     return material_id == world::WorldServiceBasic::kMaterialWood ||
         material_id == world::WorldServiceBasic::kMaterialLeaves;
+}
+
+bool PlayerController::IsSwordHarvestMaterial(std::uint16_t material_id) {
+    return IsPickaxeHarvestMaterial(material_id) ||
+        IsAxeHarvestMaterial(material_id);
 }
 
 int PlayerController::RequiredHarvestTicks(std::uint16_t material_id) {
