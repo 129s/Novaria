@@ -400,6 +400,25 @@ if(NOVARIA_BUILD_TESTS)
     novaria_link_entt(novaria_mvp_acceptance_tests)
     novaria_link_winsock_if_needed(novaria_mvp_acceptance_tests)
 
+    add_executable(
+        novaria_gameplay_issue_e2e_tests
+        tests/mvp/gameplay_issue_e2e_tests.cpp
+        src/app/player_controller.cpp
+        src/app/render_scene_builder.cpp
+        src/sim/simulation_kernel.cpp
+        src/sim/typed_command.cpp
+        src/sim/ecs_runtime.cpp
+        src/world/world_service_basic.cpp
+        src/world/snapshot_codec.cpp
+        src/net/net_service_runtime.cpp
+        src/net/net_service_udp_loopback.cpp
+        src/net/udp_transport.cpp
+        src/core/logger.cpp
+    )
+    target_include_directories(novaria_gameplay_issue_e2e_tests PRIVATE src)
+    novaria_link_entt(novaria_gameplay_issue_e2e_tests)
+    novaria_link_winsock_if_needed(novaria_gameplay_issue_e2e_tests)
+
     set(NOVARIA_TEST_TARGETS
         novaria_config_tests
         novaria_net_service_udp_loopback_tests
@@ -414,6 +433,7 @@ if(NOVARIA_BUILD_TESTS)
         novaria_world_snapshot_codec_tests
         novaria_world_replication_flow_tests
         novaria_mvp_acceptance_tests
+        novaria_gameplay_issue_e2e_tests
     )
     foreach(test_target IN LISTS NOVARIA_TEST_TARGETS)
         novaria_enable_default_warnings(${test_target})
