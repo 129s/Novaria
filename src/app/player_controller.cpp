@@ -39,20 +39,60 @@ void PlayerController::Update(
         });
     };
 
+    auto submit_world_unload_chunk = [&simulation_kernel, local_player_id](int chunk_x, int chunk_y) {
+        simulation_kernel.SubmitLocalCommand(net::PlayerCommand{
+            .player_id = local_player_id,
+            .command_type = std::string(sim::command::kWorldUnloadChunk),
+            .payload = sim::command::BuildWorldChunkPayload(chunk_x, chunk_y),
+        });
+    };
+
     const world::ChunkCoord player_chunk = TileToChunkCoord(state_.tile_x, state_.tile_y);
     if (!state_.loaded_chunk_window_ready ||
         player_chunk.x != state_.loaded_chunk_window_center_x ||
         player_chunk.y != state_.loaded_chunk_window_center_y) {
         constexpr int kChunkWindowRadius = 2;
-        for (int offset_y = -kChunkWindowRadius;
-             offset_y <= kChunkWindowRadius;
-             ++offset_y) {
-            for (int offset_x = -kChunkWindowRadius;
-                 offset_x <= kChunkWindowRadius;
-                 ++offset_x) {
-                submit_world_load_chunk(
-                    player_chunk.x + offset_x,
-                    player_chunk.y + offset_y);
+        auto is_chunk_in_window = [](int chunk_x, int chunk_y, int center_x, int center_y) {
+            return chunk_x >= center_x - kChunkWindowRadius &&
+                chunk_x <= center_x + kChunkWindowRadius &&
+                chunk_y >= center_y - kChunkWindowRadius &&
+                chunk_y <= center_y + kChunkWindowRadius;
+        };
+
+        if (state_.loaded_chunk_window_ready) {
+            const int previous_center_x = state_.loaded_chunk_window_center_x;
+            const int previous_center_y = state_.loaded_chunk_window_center_y;
+            for (int chunk_y = previous_center_y - kChunkWindowRadius;
+                 chunk_y <= previous_center_y + kChunkWindowRadius;
+                 ++chunk_y) {
+                for (int chunk_x = previous_center_x - kChunkWindowRadius;
+                     chunk_x <= previous_center_x + kChunkWindowRadius;
+                     ++chunk_x) {
+                    if (is_chunk_in_window(chunk_x, chunk_y, player_chunk.x, player_chunk.y)) {
+                        continue;
+                    }
+
+                    submit_world_unload_chunk(chunk_x, chunk_y);
+                }
+            }
+        }
+
+        for (int chunk_y = player_chunk.y - kChunkWindowRadius;
+             chunk_y <= player_chunk.y + kChunkWindowRadius;
+             ++chunk_y) {
+            for (int chunk_x = player_chunk.x - kChunkWindowRadius;
+                 chunk_x <= player_chunk.x + kChunkWindowRadius;
+                 ++chunk_x) {
+                if (state_.loaded_chunk_window_ready &&
+                    is_chunk_in_window(
+                        chunk_x,
+                        chunk_y,
+                        state_.loaded_chunk_window_center_x,
+                        state_.loaded_chunk_window_center_y)) {
+                    continue;
+                }
+
+                submit_world_load_chunk(chunk_x, chunk_y);
             }
         }
 
