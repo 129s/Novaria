@@ -41,7 +41,6 @@ private:
     std::string mod_manifest_fingerprint_;
     platform::InputActions frame_actions_;
     std::uint32_t local_player_id_ = 1;
-    std::uint64_t script_ping_counter_ = 0;
     std::uint64_t last_net_diagnostics_tick_ = 0;
     world::WorldServiceBasic world_service_;
     net::NetServiceRuntime net_service_;

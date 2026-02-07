@@ -1,7 +1,6 @@
 #pragma once
 
 #include "app/input_command_mapper.h"
-#include "script/script_host.h"
 #include "sim/simulation_kernel.h"
 #include "world/world_service_basic.h"
 
@@ -29,9 +28,7 @@ public:
         const PlayerInputIntent& input_intent,
         world::WorldServiceBasic& world_service,
         sim::SimulationKernel& simulation_kernel,
-        script::IScriptHost& script_host,
-        std::uint32_t local_player_id,
-        std::uint64_t& io_script_ping_counter);
+        std::uint32_t local_player_id);
 
 private:
     static int FloorDiv(int value, int divisor);

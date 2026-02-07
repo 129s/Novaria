@@ -365,27 +365,7 @@ int GameApp::Run() {
                 player_input_intent,
                 world_service_,
                 simulation_kernel_,
-                script_host_,
-                local_player_id_,
-                script_ping_counter_);
-
-            if (frame_actions_.debug_net_disconnect) {
-                net_service_.RequestDisconnect();
-                core::Logger::Warn("net", "Debug action: request disconnect.");
-            }
-
-            if (frame_actions_.debug_net_connect) {
-                net_service_.RequestConnect();
-                core::Logger::Info("net", "Debug action: request connect.");
-            }
-
-            if (frame_actions_.debug_net_heartbeat) {
-                net_service_.NotifyHeartbeatReceived(simulation_kernel_.CurrentTick());
-                core::Logger::Info(
-                    "net",
-                    "Debug action: heartbeat received at tick " +
-                        std::to_string(simulation_kernel_.CurrentTick()) + ".");
-            }
+                local_player_id_);
 
             return !quit_requested_;
         },

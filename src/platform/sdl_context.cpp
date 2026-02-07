@@ -147,62 +147,6 @@ bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
             if (event.key.scancode == SDL_SCANCODE_2) {
                 out_actions.select_material_stone = true;
             }
-
-            if (event.key.scancode == SDL_SCANCODE_J) {
-                out_actions.send_jump_command = true;
-            }
-
-            if (event.key.scancode == SDL_SCANCODE_K) {
-                out_actions.send_attack_command = true;
-            }
-
-            if (event.key.scancode == SDL_SCANCODE_F1) {
-                out_actions.emit_script_ping = true;
-            }
-
-            if (event.key.scancode == SDL_SCANCODE_F2) {
-                out_actions.debug_set_tile_air = true;
-            }
-
-            if (event.key.scancode == SDL_SCANCODE_F3) {
-                out_actions.debug_set_tile_stone = true;
-            }
-
-            if (event.key.scancode == SDL_SCANCODE_F4) {
-                out_actions.debug_net_disconnect = true;
-            }
-
-            if (event.key.scancode == SDL_SCANCODE_F5) {
-                out_actions.debug_net_heartbeat = true;
-            }
-
-            if (event.key.scancode == SDL_SCANCODE_F6) {
-                out_actions.debug_net_connect = true;
-            }
-
-            if (event.key.scancode == SDL_SCANCODE_F7) {
-                out_actions.gameplay_collect_wood = true;
-            }
-
-            if (event.key.scancode == SDL_SCANCODE_F8) {
-                out_actions.gameplay_collect_stone = true;
-            }
-
-            if (event.key.scancode == SDL_SCANCODE_F9) {
-                out_actions.gameplay_build_workbench = true;
-            }
-
-            if (event.key.scancode == SDL_SCANCODE_F10) {
-                out_actions.gameplay_craft_sword = true;
-            }
-
-            if (event.key.scancode == SDL_SCANCODE_F11) {
-                out_actions.gameplay_attack_enemy = true;
-            }
-
-            if (event.key.scancode == SDL_SCANCODE_F12) {
-                out_actions.gameplay_attack_boss = true;
-            }
         }
     }
 
