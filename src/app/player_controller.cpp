@@ -35,6 +35,12 @@ void PlayerController::Update(
             state_.pickup_toast_amount = 0;
         }
     }
+    if (state_.last_interaction_ticks_remaining > 0) {
+        --state_.last_interaction_ticks_remaining;
+        if (state_.last_interaction_ticks_remaining == 0) {
+            state_.last_interaction_type = 0;
+        }
+    }
 
     auto submit_world_set_tile =
         [&simulation_kernel, local_player_id](int tile_x, int tile_y, std::uint16_t material_id) {
@@ -265,6 +271,44 @@ void PlayerController::Update(
     const int delta_y = target_tile_y - state_.tile_y;
     const int distance_squared = delta_x * delta_x + delta_y * delta_y;
     const bool target_reachable = distance_squared <= (kReachDistanceTiles * kReachDistanceTiles);
+    state_.target_highlight_visible = input_intent.smart_context_held;
+    state_.target_highlight_tile_x = target_tile_x;
+    state_.target_highlight_tile_y = target_tile_y;
+
+    if (input_intent.smart_mode_toggle_pressed) {
+        state_.smart_mode_enabled = !state_.smart_mode_enabled;
+    }
+    if (state_.smart_mode_enabled && input_intent.smart_context_held) {
+        state_.context_slot_visible = true;
+        if (!state_.context_slot_override_active) {
+            state_.context_slot_previous = state_.selected_hotbar_slot;
+            state_.context_slot_override_active = true;
+        }
+
+        std::uint8_t suggested_slot = state_.selected_hotbar_slot;
+        std::uint16_t target_material_id = 0;
+        if (world_service.TryReadTile(target_tile_x, target_tile_y, target_material_id)) {
+            if (IsPickaxeHarvestMaterial(target_material_id)) {
+                suggested_slot = 0;
+            } else if (IsAxeHarvestMaterial(target_material_id)) {
+                suggested_slot = 1;
+            } else if (
+                target_material_id == world::WorldServiceBasic::kMaterialAir &&
+                state_.inventory_torch_count > 0) {
+                suggested_slot = 4;
+            }
+        }
+
+        state_.context_slot_current = suggested_slot;
+        apply_hotbar_slot(suggested_slot);
+    } else {
+        state_.context_slot_visible = false;
+        if (state_.context_slot_override_active) {
+            apply_hotbar_slot(state_.context_slot_previous);
+            state_.context_slot_override_active = false;
+        }
+        state_.context_slot_current = state_.selected_hotbar_slot;
+    }
 
     if (!state_.inventory_open && input_intent.action_primary_held && target_reachable) {
         std::uint16_t target_material = 0;
@@ -447,9 +491,18 @@ void PlayerController::Update(
                 --state_.inventory_coal_count;
                 state_.inventory_torch_count += 4;
             }
+            state_.last_interaction_type = 2;
+            state_.last_interaction_ticks_remaining = 60;
         } else {
-            const bool interaction_target_reachable = target_reachable;
-            (void)interaction_target_reachable;
+            if (target_reachable) {
+                std::uint16_t target_material = 0;
+                if (world_service.TryReadTile(target_tile_x, target_tile_y, target_material) &&
+                    target_material == world::WorldServiceBasic::kMaterialWorkbench) {
+                    state_.inventory_open = true;
+                    state_.last_interaction_type = 1;
+                    state_.last_interaction_ticks_remaining = 60;
+                }
+            }
         }
     }
 
@@ -479,15 +532,13 @@ void PlayerController::Update(
         state_.pickup_toast_material_id = drop.material_id;
         state_.pickup_toast_amount = drop.amount;
         state_.pickup_toast_ticks_remaining = kPickupToastTicks;
+        ++state_.pickup_event_counter;
 
         world_drops_.erase(world_drops_.begin() + static_cast<std::ptrdiff_t>(index));
     }
 
     (void)input_intent.interaction_primary_pressed;
     (void)submit_gameplay_command;
-    (void)input_intent.hotbar_select_next_row;
-    (void)input_intent.smart_mode_toggle_pressed;
-    (void)input_intent.smart_context_held;
 }
 
 int PlayerController::FloorDiv(int value, int divisor) {

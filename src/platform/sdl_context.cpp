@@ -360,6 +360,21 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
             tile_color);
     }
 
+    if (scene.target_highlight_visible) {
+        const int highlight_local_x = scene.target_highlight_tile_x - first_world_tile_x;
+        const int highlight_local_y = scene.target_highlight_tile_y - first_world_tile_y;
+        if (highlight_local_x >= 0 && highlight_local_x < view_tiles_x &&
+            highlight_local_y >= 0 && highlight_local_y < view_tiles_y) {
+            DrawFilledRect(
+                renderer_,
+                origin_x + highlight_local_x * tile_pixel_size,
+                origin_y + highlight_local_y * tile_pixel_size,
+                tile_pixel_size,
+                tile_pixel_size,
+                RgbaColor{.r = 240, .g = 214, .b = 108, .a = 72});
+        }
+    }
+
     const int player_local_x = scene.player_tile_x - first_world_tile_x;
     const int player_local_y = scene.player_tile_y - first_world_tile_y;
     DrawFilledRect(
@@ -393,6 +408,12 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
         });
 
     const int bar_max_width = 136;
+    const int hp_bar_width = std::min<int>(
+        bar_max_width,
+        scene.hud.hp_max == 0
+            ? 0
+            : static_cast<int>((static_cast<unsigned long long>(scene.hud.hp_current) * bar_max_width) /
+                               scene.hud.hp_max));
     const int dirt_bar_width =
         std::min<int>(bar_max_width, static_cast<int>(scene.hud.dirt_count) * 4);
     const int stone_bar_width =
@@ -407,6 +428,13 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
         std::min<int>(bar_max_width, static_cast<int>(scene.hud.workbench_count) * 32);
     const int wood_sword_item_bar_width =
         std::min<int>(bar_max_width, static_cast<int>(scene.hud.wood_sword_count) * 32);
+    DrawFilledRect(
+        renderer_,
+        hud_x + 96,
+        hud_y - 6,
+        hp_bar_width,
+        10,
+        RgbaColor{.r = 204, .g = 62, .b = 74, .a = 255});
     DrawFilledRect(
         renderer_,
         hud_x + 96,
@@ -526,6 +554,23 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
         12,
         scene.hud.wood_sword_crafted ? RgbaColor{.r = 186, .g = 210, .b = 228, .a = 255}
                                      : RgbaColor{.r = 54, .g = 58, .b = 64, .a = 255});
+
+    DrawFilledRect(
+        renderer_,
+        status_x,
+        status_y + 18,
+        116,
+        10,
+        scene.hud.smart_mode_enabled ? RgbaColor{.r = 88, .g = 184, .b = 226, .a = 255}
+                                     : RgbaColor{.r = 62, .g = 66, .b = 72, .a = 255});
+    DrawFilledRect(
+        renderer_,
+        status_x + 128,
+        status_y + 18,
+        116,
+        10,
+        scene.hud.context_slot_visible ? RgbaColor{.r = 236, .g = 196, .b = 94, .a = 255}
+                                       : RgbaColor{.r = 62, .g = 66, .b = 72, .a = 255});
 
     if (scene.hud.pickup_toast_ticks_remaining > 0) {
         RgbaColor pickup_color{
