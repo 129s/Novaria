@@ -5,6 +5,7 @@
 #include "world/snapshot_codec.h"
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -120,6 +121,18 @@ bool BuildModScriptModules(
 
     out_error.clear();
     return true;
+}
+
+float ComputeDaylightFactor(std::uint64_t tick_index) {
+    constexpr double kTickDeltaSeconds = 1.0 / 60.0;
+    constexpr double kDayNightCycleSeconds = 180.0;
+    constexpr double kTau = 6.28318530717958647692;
+    const double elapsed_seconds = static_cast<double>(tick_index) * kTickDeltaSeconds;
+    const double cycle_phase =
+        std::fmod(elapsed_seconds, kDayNightCycleSeconds) / kDayNightCycleSeconds;
+    const double wave = std::sin(cycle_phase * kTau);
+    const double normalized = (wave + 1.0) * 0.5;
+    return static_cast<float>(std::clamp(normalized, 0.0, 1.0));
 }
 
 }  // namespace
@@ -339,7 +352,7 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
     last_net_diagnostics_tick_ = 0;
     core::Logger::Info(
         "input",
-        "Player controls active: WASD move, E mine, R place, 1/2 select material.");
+        "Player controls active: WASD/arrow move, mouse-left mine, mouse-right place, 1/2 select, Q workbench, F wood sword.");
     core::Logger::Info("app", "Novaria started.");
     return true;
 }
@@ -421,10 +434,12 @@ int GameApp::Run() {
                     (gameplay_progress.playable_loop_complete ? "true" : "false"));
         },
         [this](float interpolation_alpha) {
+            const float daylight_factor = ComputeDaylightFactor(simulation_kernel_.CurrentTick());
             const platform::RenderScene scene = render_scene_builder_.Build(
                 player_controller_.State(),
                 config_,
-                world_service_);
+                world_service_,
+                daylight_factor);
             sdl_context_.RenderFrame(interpolation_alpha, scene);
         });
 

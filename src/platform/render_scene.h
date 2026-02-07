@@ -9,12 +9,16 @@ struct RenderTile final {
     int world_tile_x = 0;
     int world_tile_y = 0;
     std::uint16_t material_id = 0;
+    std::uint8_t light_level = 255;
 };
 
 struct RenderHudState final {
     std::uint32_t dirt_count = 0;
     std::uint32_t stone_count = 0;
+    std::uint32_t wood_count = 0;
     std::uint16_t selected_material_id = 1;
+    bool workbench_built = false;
+    bool wood_sword_crafted = false;
 };
 
 struct RenderScene final {
@@ -25,6 +29,7 @@ struct RenderScene final {
     int tile_pixel_size = 32;
     int player_tile_x = 0;
     int player_tile_y = 0;
+    float daylight_factor = 1.0F;
     RenderHudState hud{};
     std::vector<RenderTile> tiles;
 };

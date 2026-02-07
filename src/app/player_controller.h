@@ -14,7 +14,10 @@ struct LocalPlayerState final {
     int facing_x = 1;
     std::uint32_t inventory_dirt_count = 0;
     std::uint32_t inventory_stone_count = 0;
+    std::uint32_t inventory_wood_count = 0;
     std::uint16_t selected_place_material_id = 1;
+    bool workbench_built = false;
+    bool wood_sword_crafted = false;
     bool loaded_chunk_window_ready = false;
     int loaded_chunk_window_center_x = 0;
     int loaded_chunk_window_center_y = 0;

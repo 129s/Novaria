@@ -12,7 +12,8 @@ public:
     platform::RenderScene Build(
         const LocalPlayerState& player_state,
         const core::GameConfig& config,
-        const world::WorldServiceBasic& world_service) const;
+        const world::WorldServiceBasic& world_service,
+        float daylight_factor) const;
 };
 
 }  // namespace novaria::app

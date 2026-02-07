@@ -1,13 +1,24 @@
 #include "app/render_scene_builder.h"
 
 #include <algorithm>
+#include <vector>
 
 namespace novaria::app {
+namespace {
+
+bool IsSunlightBlockingMaterial(std::uint16_t material_id) {
+    return material_id != world::WorldServiceBasic::kMaterialAir &&
+        material_id != world::WorldServiceBasic::kMaterialWater &&
+        material_id != world::WorldServiceBasic::kMaterialLeaves;
+}
+
+}  // namespace
 
 platform::RenderScene RenderSceneBuilder::Build(
     const LocalPlayerState& player_state,
     const core::GameConfig& config,
-    const world::WorldServiceBasic& world_service) const {
+    const world::WorldServiceBasic& world_service,
+    float daylight_factor) const {
     constexpr int kTilePixelSize = 32;
     platform::RenderScene scene{};
     scene.tile_pixel_size = kTilePixelSize;
@@ -20,12 +31,18 @@ platform::RenderScene RenderSceneBuilder::Build(
     scene.hud = platform::RenderHudState{
         .dirt_count = player_state.inventory_dirt_count,
         .stone_count = player_state.inventory_stone_count,
+        .wood_count = player_state.inventory_wood_count,
         .selected_material_id = player_state.selected_place_material_id,
+        .workbench_built = player_state.workbench_built,
+        .wood_sword_crafted = player_state.wood_sword_crafted,
     };
+    scene.daylight_factor = std::clamp(daylight_factor, 0.0F, 1.0F);
 
     const int first_world_tile_x = scene.camera_tile_x - scene.view_tiles_x / 2;
     const int first_world_tile_y = scene.camera_tile_y - scene.view_tiles_y / 2;
     scene.tiles.reserve(static_cast<std::size_t>(scene.view_tiles_x * scene.view_tiles_y));
+    std::vector<bool> column_blocked(static_cast<std::size_t>(scene.view_tiles_x), false);
+    const float sky_light_base = 0.2F + scene.daylight_factor * 0.8F;
     for (int local_y = 0; local_y < scene.view_tiles_y; ++local_y) {
         for (int local_x = 0; local_x < scene.view_tiles_x; ++local_x) {
             const int world_tile_x = first_world_tile_x + local_x;
@@ -36,10 +53,22 @@ platform::RenderScene RenderSceneBuilder::Build(
                 world_tile_y,
                 material_id);
 
+            const bool is_blocked = column_blocked[static_cast<std::size_t>(local_x)];
+            float light_factor = sky_light_base;
+            if (is_blocked) {
+                light_factor *= 0.36F;
+            }
+            const std::uint8_t light_level = static_cast<std::uint8_t>(
+                std::clamp(static_cast<int>(light_factor * 255.0F), 0, 255));
+            if (!is_blocked && IsSunlightBlockingMaterial(material_id)) {
+                column_blocked[static_cast<std::size_t>(local_x)] = true;
+            }
+
             scene.tiles.push_back(platform::RenderTile{
                 .world_tile_x = world_tile_x,
                 .world_tile_y = world_tile_y,
                 .material_id = material_id,
+                .light_level = light_level,
             });
         }
     }

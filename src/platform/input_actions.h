@@ -9,6 +9,8 @@ struct InputActions final {
     bool move_down = false;
     bool player_mine = false;
     bool player_place = false;
+    bool build_workbench = false;
+    bool craft_wood_sword = false;
     bool select_material_dirt = false;
     bool select_material_stone = false;
 };

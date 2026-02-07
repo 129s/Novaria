@@ -17,6 +17,11 @@ void PlayerController::Update(
     world::WorldServiceBasic& world_service,
     sim::SimulationKernel& simulation_kernel,
     std::uint32_t local_player_id) {
+    constexpr std::uint32_t kWorkbenchWoodCost = 10;
+    constexpr std::uint32_t kWorkbenchStoneCost = 5;
+    constexpr std::uint32_t kWoodSwordWoodCost = 8;
+    constexpr std::uint32_t kWoodSwordStoneCost = 12;
+
     auto submit_world_set_tile =
         [&simulation_kernel, local_player_id](int tile_x, int tile_y, std::uint16_t material_id) {
             simulation_kernel.SubmitLocalCommand(net::PlayerCommand{
@@ -44,6 +49,22 @@ void PlayerController::Update(
             .payload = sim::command::BuildWorldChunkPayload(chunk_x, chunk_y),
         });
     };
+
+    auto submit_gameplay_command =
+        [&simulation_kernel, local_player_id](std::string_view command_type, const std::string& payload) {
+            simulation_kernel.SubmitLocalCommand(net::PlayerCommand{
+                .player_id = local_player_id,
+                .command_type = std::string(command_type),
+                .payload = payload,
+            });
+        };
+
+    auto submit_collect_resource =
+        [&submit_gameplay_command](std::uint16_t resource_id, std::uint32_t amount) {
+            submit_gameplay_command(
+                sim::command::kGameplayCollectResource,
+                sim::command::BuildCollectResourcePayload(resource_id, amount));
+        };
 
     const world::ChunkCoord player_chunk = TileToChunkCoord(state_.tile_x, state_.tile_y);
     if (!state_.loaded_chunk_window_ready ||
@@ -128,10 +149,10 @@ void PlayerController::Update(
     }
 
     if (input_intent.select_material_dirt) {
-        state_.selected_place_material_id = 1;
+        state_.selected_place_material_id = world::WorldServiceBasic::kMaterialDirt;
     }
     if (input_intent.select_material_stone) {
-        state_.selected_place_material_id = 2;
+        state_.selected_place_material_id = world::WorldServiceBasic::kMaterialStone;
     }
 
     const int target_tile_x = state_.tile_x + state_.facing_x;
@@ -140,11 +161,16 @@ void PlayerController::Update(
         std::uint16_t target_material = 0;
         if (world_service.TryReadTile(target_tile_x, target_tile_y, target_material) &&
             IsCollectibleMaterial(target_material)) {
-            submit_world_set_tile(target_tile_x, target_tile_y, 0);
-            if (target_material == 1) {
+            submit_world_set_tile(target_tile_x, target_tile_y, world::WorldServiceBasic::kMaterialAir);
+            if (target_material == world::WorldServiceBasic::kMaterialDirt ||
+                target_material == world::WorldServiceBasic::kMaterialGrass) {
                 ++state_.inventory_dirt_count;
-            } else if (target_material == 2) {
+            } else if (target_material == world::WorldServiceBasic::kMaterialStone) {
                 ++state_.inventory_stone_count;
+                submit_collect_resource(sim::command::kResourceStone, 1);
+            } else if (target_material == world::WorldServiceBasic::kMaterialWood) {
+                ++state_.inventory_wood_count;
+                submit_collect_resource(sim::command::kResourceWood, 1);
             }
         }
     }
@@ -154,17 +180,45 @@ void PlayerController::Update(
         const bool has_target_material =
             world_service.TryReadTile(target_tile_x, target_tile_y, target_material);
         if (!has_target_material || !IsSolidMaterial(target_material)) {
-            if (state_.selected_place_material_id == 1 && state_.inventory_dirt_count > 0) {
+            if (state_.selected_place_material_id == world::WorldServiceBasic::kMaterialDirt &&
+                state_.inventory_dirt_count > 0) {
                 --state_.inventory_dirt_count;
-                submit_world_set_tile(target_tile_x, target_tile_y, 1);
+                submit_world_set_tile(
+                    target_tile_x,
+                    target_tile_y,
+                    world::WorldServiceBasic::kMaterialDirt);
             } else if (
-                state_.selected_place_material_id == 2 && state_.inventory_stone_count > 0) {
+                state_.selected_place_material_id == world::WorldServiceBasic::kMaterialStone &&
+                state_.inventory_stone_count > 0) {
                 --state_.inventory_stone_count;
-                submit_world_set_tile(target_tile_x, target_tile_y, 2);
+                submit_world_set_tile(
+                    target_tile_x,
+                    target_tile_y,
+                    world::WorldServiceBasic::kMaterialStone);
             }
         }
     }
 
+    if (input_intent.build_workbench &&
+        !state_.workbench_built &&
+        state_.inventory_wood_count >= kWorkbenchWoodCost &&
+        state_.inventory_stone_count >= kWorkbenchStoneCost) {
+        state_.inventory_wood_count -= kWorkbenchWoodCost;
+        state_.inventory_stone_count -= kWorkbenchStoneCost;
+        state_.workbench_built = true;
+        submit_gameplay_command(sim::command::kGameplayBuildWorkbench, "");
+    }
+
+    if (input_intent.craft_wood_sword &&
+        !state_.wood_sword_crafted &&
+        state_.workbench_built &&
+        state_.inventory_wood_count >= kWoodSwordWoodCost &&
+        state_.inventory_stone_count >= kWoodSwordStoneCost) {
+        state_.inventory_wood_count -= kWoodSwordWoodCost;
+        state_.inventory_stone_count -= kWoodSwordStoneCost;
+        state_.wood_sword_crafted = true;
+        submit_gameplay_command(sim::command::kGameplayCraftSword, "");
+    }
 }
 
 int PlayerController::FloorDiv(int value, int divisor) {
@@ -184,11 +238,17 @@ world::ChunkCoord PlayerController::TileToChunkCoord(int tile_x, int tile_y) {
 }
 
 bool PlayerController::IsSolidMaterial(std::uint16_t material_id) {
-    return material_id != 0;
+    return material_id != world::WorldServiceBasic::kMaterialAir &&
+        material_id != world::WorldServiceBasic::kMaterialWater &&
+        material_id != world::WorldServiceBasic::kMaterialLeaves;
 }
 
 bool PlayerController::IsCollectibleMaterial(std::uint16_t material_id) {
-    return material_id == 1 || material_id == 2;
+    return material_id == world::WorldServiceBasic::kMaterialDirt ||
+        material_id == world::WorldServiceBasic::kMaterialGrass ||
+        material_id == world::WorldServiceBasic::kMaterialStone ||
+        material_id == world::WorldServiceBasic::kMaterialWood ||
+        material_id == world::WorldServiceBasic::kMaterialLeaves;
 }
 
 }  // namespace novaria::app

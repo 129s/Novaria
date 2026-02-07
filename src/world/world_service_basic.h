@@ -13,6 +13,13 @@ namespace novaria::world {
 class WorldServiceBasic final : public IWorldService {
 public:
     static constexpr int kChunkSize = 32;
+    static constexpr std::uint16_t kMaterialAir = 0;
+    static constexpr std::uint16_t kMaterialDirt = 1;
+    static constexpr std::uint16_t kMaterialStone = 2;
+    static constexpr std::uint16_t kMaterialGrass = 3;
+    static constexpr std::uint16_t kMaterialWater = 4;
+    static constexpr std::uint16_t kMaterialWood = 5;
+    static constexpr std::uint16_t kMaterialLeaves = 6;
 
     bool Initialize(std::string& out_error) override;
     void Shutdown() override;

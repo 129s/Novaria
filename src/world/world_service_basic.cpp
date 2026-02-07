@@ -3,9 +3,156 @@
 #include "core/logger.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <string>
 
 namespace novaria::world {
+namespace {
+
+constexpr std::uint32_t kWorldSeed = 0x9e3779b9U;
+constexpr int kTerrainSegmentWidth = 16;
+constexpr int kBaseSurfaceY = -1;
+constexpr int kTopSoilDepth = 5;
+constexpr int kLakeSurfaceY = 0;
+
+int FloorDivInt(int value, int divisor) {
+    const int quotient = value / divisor;
+    const int remainder = value % divisor;
+    if (remainder != 0 && ((remainder < 0) != (divisor < 0))) {
+        return quotient - 1;
+    }
+    return quotient;
+}
+
+int PositiveModInt(int value, int divisor) {
+    const int result = value % divisor;
+    return result < 0 ? result + divisor : result;
+}
+
+std::uint32_t MixHash32(std::uint32_t value) {
+    value ^= value >> 16;
+    value *= 0x7feb352dU;
+    value ^= value >> 15;
+    value *= 0x846ca68bU;
+    value ^= value >> 16;
+    return value;
+}
+
+std::uint32_t HashCoords(int x, int y, std::uint32_t seed) {
+    std::uint32_t hash = seed;
+    hash ^= MixHash32(static_cast<std::uint32_t>(x) + 0x9e3779b9U);
+    hash ^= MixHash32(static_cast<std::uint32_t>(y) + 0x85ebca6bU);
+    return MixHash32(hash);
+}
+
+int SurfaceOffsetForSegment(int segment_x) {
+    if (segment_x == 0) {
+        return 0;
+    }
+
+    const std::uint32_t hash = HashCoords(segment_x, 0, kWorldSeed);
+    return static_cast<int>(hash % 6U) - 2;
+}
+
+int SurfaceHeightAt(int world_tile_x) {
+    const int segment_x = FloorDivInt(world_tile_x, kTerrainSegmentWidth);
+    const int local_x = PositiveModInt(world_tile_x, kTerrainSegmentWidth);
+    const int current_offset = SurfaceOffsetForSegment(segment_x);
+    const int next_offset = SurfaceOffsetForSegment(segment_x + 1);
+    const int weighted_offset =
+        (current_offset * (kTerrainSegmentWidth - local_x) + next_offset * local_x) /
+        kTerrainSegmentWidth;
+    return kBaseSurfaceY + weighted_offset;
+}
+
+bool ShouldSpawnTreeAt(int world_tile_x, int surface_y) {
+    if (surface_y > kLakeSurfaceY + 1) {
+        return false;
+    }
+    if (world_tile_x == 2) {
+        return true;
+    }
+
+    constexpr std::uint32_t kTreeSeed = 0x4f1bbcdcU;
+    const std::uint32_t hash = HashCoords(world_tile_x, surface_y, kTreeSeed);
+    if (hash % 13U != 0U) {
+        return false;
+    }
+
+    const std::uint32_t left_hash =
+        HashCoords(world_tile_x - 2, SurfaceHeightAt(world_tile_x - 2), kTreeSeed);
+    return left_hash % 13U != 0U;
+}
+
+int TreeHeightAt(int world_tile_x) {
+    constexpr std::uint32_t kTreeHeightSeed = 0x6c8e9cf5U;
+    return 4 + static_cast<int>(HashCoords(world_tile_x, 7, kTreeHeightSeed) % 2U);
+}
+
+bool TryResolveTreeMaterial(
+    int world_tile_x,
+    int world_tile_y,
+    std::uint16_t& out_material_id) {
+    for (int root_x = world_tile_x - 2; root_x <= world_tile_x + 2; ++root_x) {
+        const int root_surface_y = SurfaceHeightAt(root_x);
+        if (!ShouldSpawnTreeAt(root_x, root_surface_y)) {
+            continue;
+        }
+
+        const int tree_height = TreeHeightAt(root_x);
+        const int trunk_top_y = root_surface_y - tree_height;
+        if (world_tile_x == root_x &&
+            world_tile_y < root_surface_y &&
+            world_tile_y >= trunk_top_y) {
+            out_material_id = WorldServiceBasic::kMaterialWood;
+            return true;
+        }
+
+        const int leaf_center_y = trunk_top_y;
+        const int dx = std::abs(world_tile_x - root_x);
+        const int dy = std::abs(world_tile_y - leaf_center_y);
+        const bool in_leaf_bounds =
+            dx <= 2 && dy <= 2 && !(dx == 2 && dy == 2) && world_tile_y < root_surface_y;
+        if (in_leaf_bounds) {
+            out_material_id = WorldServiceBasic::kMaterialLeaves;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+std::uint16_t GenerateInitialMaterial(int world_tile_x, int world_tile_y) {
+    int surface_y = SurfaceHeightAt(world_tile_x);
+    if (world_tile_x >= 20 && world_tile_x <= 28) {
+        surface_y = std::max(surface_y, 3);
+    }
+
+    if (world_tile_y < surface_y) {
+        std::uint16_t tree_material = WorldServiceBasic::kMaterialAir;
+        if (TryResolveTreeMaterial(world_tile_x, world_tile_y, tree_material)) {
+            return tree_material;
+        }
+
+        if (world_tile_y >= kLakeSurfaceY &&
+            world_tile_y < surface_y &&
+            surface_y >= kLakeSurfaceY + 2) {
+            return WorldServiceBasic::kMaterialWater;
+        }
+
+        return WorldServiceBasic::kMaterialAir;
+    }
+
+    if (world_tile_y == surface_y) {
+        return WorldServiceBasic::kMaterialGrass;
+    }
+    if (world_tile_y < surface_y + kTopSoilDepth) {
+        return WorldServiceBasic::kMaterialDirt;
+    }
+    return WorldServiceBasic::kMaterialStone;
+}
+
+}  // namespace
 
 std::size_t WorldServiceBasic::ChunkKeyHasher::operator()(const ChunkKey& key) const {
     const std::size_t hx = std::hash<int>{}(key.x);
@@ -221,23 +368,15 @@ ChunkCoord WorldServiceBasic::WorldToChunkCoord(int tile_x, int tile_y) {
 }
 
 std::vector<std::uint16_t> WorldServiceBasic::BuildInitialChunkTiles(const ChunkCoord& chunk_coord) {
-    constexpr std::uint16_t kMaterialAir = 0;
-    constexpr std::uint16_t kMaterialDirt = 1;
-    constexpr std::uint16_t kMaterialStone = 2;
-
-    std::vector<std::uint16_t> tiles(static_cast<std::size_t>(kChunkSize * kChunkSize), kMaterialAir);
+    std::vector<std::uint16_t> tiles(
+        static_cast<std::size_t>(kChunkSize * kChunkSize),
+        kMaterialAir);
     for (int local_y = 0; local_y < kChunkSize; ++local_y) {
         const int world_y = chunk_coord.y * kChunkSize + local_y;
         for (int local_x = 0; local_x < kChunkSize; ++local_x) {
             const std::size_t index = LocalIndex(local_x, local_y);
-
-            if (world_y >= 32) {
-                tiles[index] = kMaterialStone;
-            } else if (world_y >= 0) {
-                tiles[index] = kMaterialDirt;
-            } else {
-                tiles[index] = kMaterialAir;
-            }
+            const int world_x = chunk_coord.x * kChunkSize + local_x;
+            tiles[index] = GenerateInitialMaterial(world_x, world_y);
         }
     }
 

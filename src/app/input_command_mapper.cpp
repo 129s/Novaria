@@ -10,6 +10,8 @@ PlayerInputIntent InputCommandMapper::Map(const platform::InputActions& frame_ac
         .move_down = frame_actions.move_down,
         .player_mine = frame_actions.player_mine,
         .player_place = frame_actions.player_place,
+        .build_workbench = frame_actions.build_workbench,
+        .craft_wood_sword = frame_actions.craft_wood_sword,
         .select_material_dirt = frame_actions.select_material_dirt,
         .select_material_stone = frame_actions.select_material_stone,
     };

@@ -1,6 +1,7 @@
 #include "platform/sdl_context.h"
 
 #include "core/logger.h"
+#include "world/world_service_basic.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -30,21 +31,56 @@ Uint8 ClampToByte(int value) {
     return static_cast<Uint8>(std::clamp(value, 0, 255));
 }
 
+Uint8 LerpByte(Uint8 from, Uint8 to, float factor) {
+    const float clamped = std::clamp(factor, 0.0F, 1.0F);
+    return ClampToByte(
+        static_cast<int>(static_cast<float>(from) * (1.0F - clamped) +
+                         static_cast<float>(to) * clamped));
+}
+
 RgbaColor MaterialColor(std::uint16_t material_id) {
     switch (material_id) {
-        case 1:
+        case world::WorldServiceBasic::kMaterialDirt:
             return RgbaColor{
                 .r = 126,
                 .g = 88,
                 .b = 50,
                 .a = 255,
             };
-        case 2:
+        case world::WorldServiceBasic::kMaterialStone:
             return RgbaColor{
                 .r = 116,
                 .g = 122,
                 .b = 132,
                 .a = 255,
+            };
+        case world::WorldServiceBasic::kMaterialGrass:
+            return RgbaColor{
+                .r = 82,
+                .g = 160,
+                .b = 58,
+                .a = 255,
+            };
+        case world::WorldServiceBasic::kMaterialWater:
+            return RgbaColor{
+                .r = 58,
+                .g = 124,
+                .b = 206,
+                .a = 190,
+            };
+        case world::WorldServiceBasic::kMaterialWood:
+            return RgbaColor{
+                .r = 124,
+                .g = 84,
+                .b = 44,
+                .a = 255,
+            };
+        case world::WorldServiceBasic::kMaterialLeaves:
+            return RgbaColor{
+                .r = 64,
+                .g = 128,
+                .b = 52,
+                .a = 235,
             };
         default:
             return RgbaColor{};
@@ -60,6 +96,15 @@ RgbaColor ApplyTileVariation(
         .r = ClampToByte(static_cast<int>(base_color.r) + shade_delta),
         .g = ClampToByte(static_cast<int>(base_color.g) + shade_delta),
         .b = ClampToByte(static_cast<int>(base_color.b) + shade_delta),
+        .a = base_color.a,
+    };
+}
+
+RgbaColor ApplyLightToColor(const RgbaColor& base_color, std::uint8_t light_level) {
+    return RgbaColor{
+        .r = static_cast<Uint8>((static_cast<unsigned int>(base_color.r) * light_level) / 255U),
+        .g = static_cast<Uint8>((static_cast<unsigned int>(base_color.g) * light_level) / 255U),
+        .b = static_cast<Uint8>((static_cast<unsigned int>(base_color.b) * light_level) / 255U),
         .a = base_color.a,
     };
 }
@@ -119,6 +164,7 @@ bool SdlContext::Initialize(const core::GameConfig& config) {
 
     const int vsync = config.vsync ? 1 : 0;
     (void)SDL_SetRenderVSync(renderer_, vsync);
+    (void)SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_BLEND);
 
     core::Logger::Info("platform", "SDL3 context initialized.");
     return true;
@@ -146,6 +192,23 @@ bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
 
             if (event.key.scancode == SDL_SCANCODE_2) {
                 out_actions.select_material_stone = true;
+            }
+
+            if (event.key.scancode == SDL_SCANCODE_Q) {
+                out_actions.build_workbench = true;
+            }
+
+            if (event.key.scancode == SDL_SCANCODE_F) {
+                out_actions.craft_wood_sword = true;
+            }
+        }
+
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+            if (event.button.button == SDL_BUTTON_LEFT) {
+                out_actions.player_mine = true;
+            }
+            if (event.button.button == SDL_BUTTON_RIGHT) {
+                out_actions.player_place = true;
             }
         }
     }
@@ -179,7 +242,11 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
         return;
     }
     (void)interpolation_alpha;
-    (void)SDL_SetRenderDrawColor(renderer_, 14, 24, 36, 255);
+    const float daylight = std::clamp(scene.daylight_factor, 0.0F, 1.0F);
+    const Uint8 sky_r = LerpByte(12, 112, daylight);
+    const Uint8 sky_g = LerpByte(18, 170, daylight);
+    const Uint8 sky_b = LerpByte(34, 236, daylight);
+    (void)SDL_SetRenderDrawColor(renderer_, sky_r, sky_g, sky_b, 255);
     (void)SDL_RenderClear(renderer_);
 
     int window_width = 0;
@@ -203,7 +270,7 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
     const int origin_y = (window_height - view_tiles_y * tile_pixel_size) / 2;
 
     for (const RenderTile& tile : scene.tiles) {
-        if (tile.material_id == 0) {
+        if (tile.material_id == world::WorldServiceBasic::kMaterialAir) {
             continue;
         }
 
@@ -216,10 +283,11 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
 
         const int screen_x = origin_x + local_tile_x * tile_pixel_size;
         const int screen_y = origin_y + local_tile_y * tile_pixel_size;
-        const RgbaColor tile_color = ApplyTileVariation(
+        const RgbaColor varied_tile_color = ApplyTileVariation(
             MaterialColor(tile.material_id),
             tile.world_tile_x,
             tile.world_tile_y);
+        const RgbaColor tile_color = ApplyLightToColor(varied_tile_color, tile.light_level);
         DrawFilledRect(
             renderer_,
             screen_x,
@@ -246,8 +314,8 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
 
     const int hud_x = 12;
     const int hud_y = 12;
-    const int hud_width = 220;
-    const int hud_height = 74;
+    const int hud_width = 280;
+    const int hud_height = 116;
     DrawFilledRect(
         renderer_,
         hud_x,
@@ -261,45 +329,41 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
             .a = 214,
         });
 
-    const int bar_max_width = 120;
+    const int bar_max_width = 136;
     const int dirt_bar_width =
         std::min<int>(bar_max_width, static_cast<int>(scene.hud.dirt_count) * 4);
     const int stone_bar_width =
         std::min<int>(bar_max_width, static_cast<int>(scene.hud.stone_count) * 4);
+    const int wood_bar_width =
+        std::min<int>(bar_max_width, static_cast<int>(scene.hud.wood_count) * 4);
     DrawFilledRect(
         renderer_,
-        hud_x + 72,
+        hud_x + 96,
         hud_y + 14,
         dirt_bar_width,
-        14,
-        MaterialColor(1));
+        12,
+        MaterialColor(world::WorldServiceBasic::kMaterialDirt));
     DrawFilledRect(
         renderer_,
-        hud_x + 72,
-        hud_y + 38,
+        hud_x + 96,
+        hud_y + 34,
         stone_bar_width,
-        14,
-        MaterialColor(2));
+        12,
+        MaterialColor(world::WorldServiceBasic::kMaterialStone));
+    DrawFilledRect(
+        renderer_,
+        hud_x + 96,
+        hud_y + 54,
+        wood_bar_width,
+        12,
+        MaterialColor(world::WorldServiceBasic::kMaterialWood));
 
     const int selector_x = hud_x + 18;
     const int selector_y = hud_y + 16;
-    DrawFilledRect(
-        renderer_,
-        selector_x,
-        selector_y,
-        20,
-        20,
-        MaterialColor(1));
-    DrawFilledRect(
-        renderer_,
-        selector_x + 28,
-        selector_y,
-        20,
-        20,
-        MaterialColor(2));
-
-    const bool dirt_selected = scene.hud.selected_material_id == 1;
-    const bool stone_selected = scene.hud.selected_material_id == 2;
+    const bool dirt_selected =
+        scene.hud.selected_material_id == world::WorldServiceBasic::kMaterialDirt;
+    const bool stone_selected =
+        scene.hud.selected_material_id == world::WorldServiceBasic::kMaterialStone;
     DrawFilledRect(
         renderer_,
         selector_x - 2,
@@ -322,14 +386,33 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
         selector_y,
         20,
         20,
-        MaterialColor(1));
+        MaterialColor(world::WorldServiceBasic::kMaterialDirt));
     DrawFilledRect(
         renderer_,
         selector_x + 28,
         selector_y,
         20,
         20,
-        MaterialColor(2));
+        MaterialColor(world::WorldServiceBasic::kMaterialStone));
+
+    const int status_x = hud_x + 16;
+    const int status_y = hud_y + 86;
+    DrawFilledRect(
+        renderer_,
+        status_x,
+        status_y,
+        116,
+        12,
+        scene.hud.workbench_built ? RgbaColor{.r = 104, .g = 188, .b = 98, .a = 255}
+                                  : RgbaColor{.r = 70, .g = 42, .b = 28, .a = 255});
+    DrawFilledRect(
+        renderer_,
+        status_x + 128,
+        status_y,
+        116,
+        12,
+        scene.hud.wood_sword_crafted ? RgbaColor{.r = 186, .g = 210, .b = 228, .a = 255}
+                                     : RgbaColor{.r = 54, .g = 58, .b = 64, .a = 255});
 
     SDL_RenderPresent(renderer_);
 }

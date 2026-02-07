@@ -42,6 +42,43 @@ int main() {
     passed &= Expect(world_service.TryReadTile(0, 0, material_id), "Tile (0,0) should be readable.");
     passed &= Expect(material_id == 1, "Tile (0,0) should be initial dirt.");
 
+    for (int chunk_y = -1; chunk_y <= 1; ++chunk_y) {
+        for (int chunk_x = -3; chunk_x <= 3; ++chunk_x) {
+            world_service.LoadChunk({.x = chunk_x, .y = chunk_y});
+        }
+    }
+
+    std::size_t observed_grass_tile_count = 0;
+    std::size_t observed_water_tile_count = 0;
+    std::size_t observed_tree_tile_count = 0;
+    for (int tile_y = -12; tile_y <= 24; ++tile_y) {
+        for (int tile_x = -96; tile_x <= 96; ++tile_x) {
+            if (!world_service.TryReadTile(tile_x, tile_y, material_id)) {
+                continue;
+            }
+
+            if (material_id == novaria::world::WorldServiceBasic::kMaterialGrass) {
+                ++observed_grass_tile_count;
+            }
+            if (material_id == novaria::world::WorldServiceBasic::kMaterialWater) {
+                ++observed_water_tile_count;
+            }
+            if (material_id == novaria::world::WorldServiceBasic::kMaterialWood ||
+                material_id == novaria::world::WorldServiceBasic::kMaterialLeaves) {
+                ++observed_tree_tile_count;
+            }
+        }
+    }
+    passed &= Expect(
+        observed_grass_tile_count > 0,
+        "Initial terrain should generate at least one grass tile in loaded range.");
+    passed &= Expect(
+        observed_water_tile_count > 0,
+        "Initial terrain should generate at least one static water tile in loaded range.");
+    passed &= Expect(
+        observed_tree_tile_count > 0,
+        "Initial terrain should generate at least one tree tile in loaded range.");
+
     {
         novaria::world::ChunkSnapshot snapshot{};
         passed &= Expect(
