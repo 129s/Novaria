@@ -15,6 +15,9 @@ enum class TypedPlayerCommandType : std::uint8_t {
     WorldLoadChunk,
     WorldUnloadChunk,
     GameplayCollectResource,
+    GameplaySpawnDrop,
+    GameplayPickupProbe,
+    GameplayInteraction,
     GameplayBuildWorkbench,
     GameplayCraftSword,
     GameplayAttackEnemy,
@@ -27,6 +30,9 @@ struct TypedPlayerCommand final {
     command::WorldSetTilePayload world_set_tile{};
     command::WorldChunkPayload world_chunk{};
     command::CollectResourcePayload collect_resource{};
+    command::SpawnDropPayload spawn_drop{};
+    command::PickupProbePayload pickup_probe{};
+    command::InteractionPayload interaction{};
     command::FireProjectilePayload fire_projectile{};
 };
 

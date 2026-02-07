@@ -3,14 +3,13 @@
 #include "sim/command_schema.h"
 
 #include <algorithm>
-#include <cstddef>
+#include <string_view>
 
 namespace novaria::app {
 
 void PlayerController::Reset() {
     state_ = {};
     primary_action_progress_ = {};
-    world_drops_.clear();
 }
 
 const LocalPlayerState& PlayerController::State() const {
@@ -84,6 +83,44 @@ void PlayerController::Update(
             submit_gameplay_command(
                 sim::command::kGameplayCollectResource,
                 sim::command::BuildCollectResourcePayload(resource_id, amount));
+        };
+
+    auto submit_spawn_drop =
+        [&submit_gameplay_command](
+            int tile_x,
+            int tile_y,
+            std::uint16_t material_id,
+            std::uint32_t amount) {
+            submit_gameplay_command(
+                sim::command::kGameplaySpawnDrop,
+                sim::command::BuildSpawnDropPayload(
+                    tile_x,
+                    tile_y,
+                    material_id,
+                    amount));
+        };
+
+    auto submit_pickup_probe = [&submit_gameplay_command](int tile_x, int tile_y) {
+        submit_gameplay_command(
+            sim::command::kGameplayPickupProbe,
+            sim::command::BuildPickupProbePayload(tile_x, tile_y));
+    };
+
+    auto submit_interaction =
+        [&submit_gameplay_command](
+            std::uint16_t interaction_type,
+            int tile_x,
+            int tile_y,
+            std::uint16_t target_material_id,
+            std::uint16_t result_code) {
+            submit_gameplay_command(
+                sim::command::kGameplayInteraction,
+                sim::command::BuildInteractionPayload(
+                    interaction_type,
+                    tile_x,
+                    tile_y,
+                    target_material_id,
+                    result_code));
         };
 
     const world::ChunkCoord player_chunk = TileToChunkCoord(state_.tile_x, state_.tile_y);
@@ -413,7 +450,7 @@ void PlayerController::Update(
                             world::WorldServiceBasic::kMaterialAir);
                         std::uint16_t drop_material_id = 0;
                         if (TryResolveHarvestDrop(target_material, drop_material_id)) {
-                            SpawnWorldDrop(target_tile_x, target_tile_y, drop_material_id, 1);
+                            submit_spawn_drop(target_tile_x, target_tile_y, drop_material_id, 1);
                         }
                     } else {
                         if (place_material_id == world::WorldServiceBasic::kMaterialDirt &&
@@ -447,7 +484,17 @@ void PlayerController::Update(
     }
 
     if (input_intent.interaction_primary_pressed) {
+        std::uint16_t interaction_type = sim::command::kInteractionTypeNone;
+        std::uint16_t interaction_result = sim::command::kInteractionResultNone;
+        int interaction_tile_x = target_tile_x;
+        int interaction_tile_y = target_tile_y;
+        std::uint16_t interaction_target_material = 0;
+
         if (state_.inventory_open) {
+            interaction_type = sim::command::kInteractionTypeCraftRecipe;
+            interaction_tile_x = state_.tile_x;
+            interaction_tile_y = state_.tile_y;
+
             auto is_workbench_reachable = [&world_service, this]() {
                 constexpr int kWorkbenchReach = 4;
                 for (int dy = -kWorkbenchReach; dy <= kWorkbenchReach; ++dy) {
@@ -469,12 +516,15 @@ void PlayerController::Update(
                 return false;
             };
 
+            bool recipe_applied = false;
             if (state_.selected_recipe_index == 0 &&
                 state_.inventory_wood_count >= kWorkbenchWoodCost) {
                 state_.inventory_wood_count -= kWorkbenchWoodCost;
                 ++state_.inventory_workbench_count;
                 submit_gameplay_command(sim::command::kGameplayBuildWorkbench, "");
                 state_.workbench_built = true;
+                interaction_target_material = world::WorldServiceBasic::kMaterialWorkbench;
+                recipe_applied = true;
             } else if (
                 state_.selected_recipe_index == 1 &&
                 state_.inventory_wood_count >= kWoodSwordWoodCost &&
@@ -483,6 +533,8 @@ void PlayerController::Update(
                 ++state_.inventory_wood_sword_count;
                 submit_gameplay_command(sim::command::kGameplayCraftSword, "");
                 state_.wood_sword_crafted = true;
+                interaction_target_material = 0;
+                recipe_applied = true;
             } else if (
                 state_.selected_recipe_index == 2 &&
                 state_.inventory_wood_count >= 1 &&
@@ -490,55 +542,64 @@ void PlayerController::Update(
                 --state_.inventory_wood_count;
                 --state_.inventory_coal_count;
                 state_.inventory_torch_count += 4;
+                interaction_target_material = world::WorldServiceBasic::kMaterialTorch;
+                recipe_applied = true;
             }
+            interaction_result = recipe_applied
+                ? sim::command::kInteractionResultSuccess
+                : sim::command::kInteractionResultRejected;
             state_.last_interaction_type = 2;
             state_.last_interaction_ticks_remaining = 60;
         } else {
+            interaction_type = sim::command::kInteractionTypeOpenCrafting;
+            interaction_result = sim::command::kInteractionResultRejected;
             if (target_reachable) {
                 std::uint16_t target_material = 0;
-                if (world_service.TryReadTile(target_tile_x, target_tile_y, target_material) &&
-                    target_material == world::WorldServiceBasic::kMaterialWorkbench) {
-                    state_.inventory_open = true;
-                    state_.last_interaction_type = 1;
-                    state_.last_interaction_ticks_remaining = 60;
+                if (world_service.TryReadTile(target_tile_x, target_tile_y, target_material)) {
+                    interaction_target_material = target_material;
+                    if (target_material == world::WorldServiceBasic::kMaterialWorkbench) {
+                        state_.inventory_open = true;
+                        state_.last_interaction_type = 1;
+                        state_.last_interaction_ticks_remaining = 60;
+                        interaction_result = sim::command::kInteractionResultSuccess;
+                    }
                 }
             }
         }
+
+        submit_interaction(
+            interaction_type,
+            interaction_tile_x,
+            interaction_tile_y,
+            interaction_target_material,
+            interaction_result);
     }
+
+    submit_pickup_probe(state_.tile_x, state_.tile_y);
 
     constexpr std::uint16_t kPickupToastTicks = 90;
-    for (std::size_t index = 0; index < world_drops_.size();) {
-        const WorldDrop& drop = world_drops_[index];
-        if (drop.tile_x != state_.tile_x || drop.tile_y != state_.tile_y) {
-            ++index;
-            continue;
+    for (const sim::GameplayPickupEvent& pickup_event :
+         simulation_kernel.ConsumePickupEventsForPlayer(local_player_id)) {
+        if (pickup_event.material_id == world::WorldServiceBasic::kMaterialDirt ||
+            pickup_event.material_id == world::WorldServiceBasic::kMaterialGrass) {
+            state_.inventory_dirt_count += pickup_event.amount;
+        } else if (pickup_event.material_id == world::WorldServiceBasic::kMaterialStone) {
+            state_.inventory_stone_count += pickup_event.amount;
+            submit_collect_resource(sim::command::kResourceStone, pickup_event.amount);
+        } else if (pickup_event.material_id == world::WorldServiceBasic::kMaterialCoalOre) {
+            state_.inventory_coal_count += pickup_event.amount;
+        } else if (pickup_event.material_id == world::WorldServiceBasic::kMaterialTorch) {
+            state_.inventory_torch_count += pickup_event.amount;
+        } else if (pickup_event.material_id == world::WorldServiceBasic::kMaterialWood) {
+            state_.inventory_wood_count += pickup_event.amount;
+            submit_collect_resource(sim::command::kResourceWood, pickup_event.amount);
         }
 
-        if (drop.material_id == world::WorldServiceBasic::kMaterialDirt ||
-            drop.material_id == world::WorldServiceBasic::kMaterialGrass) {
-            state_.inventory_dirt_count += drop.amount;
-        } else if (drop.material_id == world::WorldServiceBasic::kMaterialStone) {
-            state_.inventory_stone_count += drop.amount;
-            submit_collect_resource(sim::command::kResourceStone, drop.amount);
-        } else if (drop.material_id == world::WorldServiceBasic::kMaterialCoalOre) {
-            state_.inventory_coal_count += drop.amount;
-        } else if (drop.material_id == world::WorldServiceBasic::kMaterialTorch) {
-            state_.inventory_torch_count += drop.amount;
-        } else if (drop.material_id == world::WorldServiceBasic::kMaterialWood) {
-            state_.inventory_wood_count += drop.amount;
-            submit_collect_resource(sim::command::kResourceWood, drop.amount);
-        }
-
-        state_.pickup_toast_material_id = drop.material_id;
-        state_.pickup_toast_amount = drop.amount;
+        state_.pickup_toast_material_id = pickup_event.material_id;
+        state_.pickup_toast_amount = pickup_event.amount;
         state_.pickup_toast_ticks_remaining = kPickupToastTicks;
         ++state_.pickup_event_counter;
-
-        world_drops_.erase(world_drops_.begin() + static_cast<std::ptrdiff_t>(index));
     }
-
-    (void)input_intent.interaction_primary_pressed;
-    (void)submit_gameplay_command;
 }
 
 int PlayerController::FloorDiv(int value, int divisor) {
@@ -631,32 +692,6 @@ bool PlayerController::TryResolveHarvestDrop(
 
 void PlayerController::ResetPrimaryActionProgress() {
     primary_action_progress_ = {};
-}
-
-void PlayerController::SpawnWorldDrop(
-    int tile_x,
-    int tile_y,
-    std::uint16_t material_id,
-    std::uint32_t amount) {
-    if (amount == 0) {
-        return;
-    }
-
-    for (WorldDrop& drop : world_drops_) {
-        if (drop.tile_x == tile_x &&
-            drop.tile_y == tile_y &&
-            drop.material_id == material_id) {
-            drop.amount += amount;
-            return;
-        }
-    }
-
-    world_drops_.push_back(WorldDrop{
-        .tile_x = tile_x,
-        .tile_y = tile_y,
-        .material_id = material_id,
-        .amount = amount,
-    });
 }
 
 }  // namespace novaria::app

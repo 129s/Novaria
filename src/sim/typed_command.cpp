@@ -61,6 +61,39 @@ bool TryDecodePlayerCommand(
         return true;
     }
 
+    if (source_command.command_type == command::kGameplaySpawnDrop) {
+        if (!command::TryParseSpawnDropPayload(
+                source_command.payload,
+                out_typed_command.spawn_drop)) {
+            return false;
+        }
+
+        out_typed_command.type = TypedPlayerCommandType::GameplaySpawnDrop;
+        return true;
+    }
+
+    if (source_command.command_type == command::kGameplayPickupProbe) {
+        if (!command::TryParsePickupProbePayload(
+                source_command.payload,
+                out_typed_command.pickup_probe)) {
+            return false;
+        }
+
+        out_typed_command.type = TypedPlayerCommandType::GameplayPickupProbe;
+        return true;
+    }
+
+    if (source_command.command_type == command::kGameplayInteraction) {
+        if (!command::TryParseInteractionPayload(
+                source_command.payload,
+                out_typed_command.interaction)) {
+            return false;
+        }
+
+        out_typed_command.type = TypedPlayerCommandType::GameplayInteraction;
+        return true;
+    }
+
     if (source_command.command_type == command::kGameplayBuildWorkbench) {
         out_typed_command.type = TypedPlayerCommandType::GameplayBuildWorkbench;
         return true;

@@ -111,12 +111,77 @@ bool TestProjectileLifetimeRecycleWithoutCollision() {
     return passed;
 }
 
+bool TestDropSpawnAndPickupProbeProducesGameplayEvent() {
+    bool passed = true;
+
+    novaria::sim::ecs::Runtime runtime;
+    std::string error;
+    passed &= Expect(runtime.Initialize(error), "ECS runtime should initialize.");
+
+    runtime.QueueSpawnWorldDrop(novaria::sim::command::SpawnDropPayload{
+        .tile_x = 2,
+        .tile_y = -3,
+        .material_id = 2,
+        .amount = 2,
+    });
+    runtime.Tick({
+        .tick_index = 0,
+        .fixed_delta_seconds = 1.0 / 60.0,
+    });
+
+    runtime.QueuePickupProbe(
+        42,
+        novaria::sim::command::PickupProbePayload{
+            .tile_x = 2,
+            .tile_y = -3,
+        });
+    runtime.Tick({
+        .tick_index = 1,
+        .fixed_delta_seconds = 1.0 / 60.0,
+    });
+
+    const std::vector<novaria::sim::ecs::GameplayEvent> gameplay_events =
+        runtime.ConsumeGameplayEvents();
+    passed &= Expect(
+        gameplay_events.size() == 1,
+        "Pickup probe should produce one gameplay event.");
+    if (gameplay_events.size() == 1) {
+        const auto& pickup_event = gameplay_events.front();
+        passed &= Expect(
+            pickup_event.type == novaria::sim::ecs::GameplayEventType::PickupResolved,
+            "Pickup gameplay event should use PickupResolved type.");
+        passed &= Expect(
+            pickup_event.player_id == 42 &&
+                pickup_event.material_id == 2 &&
+                pickup_event.amount == 2 &&
+                pickup_event.tile_x == 2 &&
+                pickup_event.tile_y == -3,
+            "Pickup gameplay event payload should match drop and probe inputs.");
+    }
+
+    const novaria::sim::ecs::RuntimeDiagnostics diagnostics =
+        runtime.DiagnosticsSnapshot();
+    passed &= Expect(
+        diagnostics.total_drop_spawned == 2,
+        "Drop spawn diagnostics should accumulate spawned amount.");
+    passed &= Expect(
+        diagnostics.total_drop_picked_up == 2,
+        "Drop pickup diagnostics should accumulate picked-up amount.");
+    passed &= Expect(
+        diagnostics.active_drop_count == 0,
+        "Picked drop entity should be removed from ECS registry.");
+
+    runtime.Shutdown();
+    return passed;
+}
+
 }  // namespace
 
 int main() {
     bool passed = true;
     passed &= TestProjectilePipelineCompletesKillFlow();
     passed &= TestProjectileLifetimeRecycleWithoutCollision();
+    passed &= TestDropSpawnAndPickupProbeProducesGameplayEvent();
 
     if (!passed) {
         return 1;

@@ -5,7 +5,6 @@
 #include "world/world_service_basic.h"
 
 #include <cstdint>
-#include <vector>
 
 namespace novaria::app {
 
@@ -62,13 +61,6 @@ public:
         std::uint32_t local_player_id);
 
 private:
-    struct WorldDrop final {
-        int tile_x = 0;
-        int tile_y = 0;
-        std::uint16_t material_id = 0;
-        std::uint32_t amount = 0;
-    };
-
     struct PrimaryActionProgress final {
         bool active = false;
         bool is_harvest = false;
@@ -90,11 +82,9 @@ private:
     static bool TryResolveHarvestDrop(std::uint16_t material_id, std::uint16_t& out_drop_material_id);
 
     void ResetPrimaryActionProgress();
-    void SpawnWorldDrop(int tile_x, int tile_y, std::uint16_t material_id, std::uint32_t amount);
 
     LocalPlayerState state_{};
     PrimaryActionProgress primary_action_progress_{};
-    std::vector<WorldDrop> world_drops_{};
 };
 
 }  // namespace novaria::app

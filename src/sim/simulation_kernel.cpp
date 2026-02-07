@@ -1,5 +1,6 @@
 #include "sim/simulation_kernel.h"
 
+#include "core/logger.h"
 #include "sim/command_schema.h"
 #include "world/snapshot_codec.h"
 
@@ -53,6 +54,71 @@ std::string BuildGameplayProgressPayload(
     return payload;
 }
 
+const char* InteractionTypeName(std::uint16_t interaction_type) {
+    switch (interaction_type) {
+        case command::kInteractionTypeOpenCrafting:
+            return "open_crafting";
+        case command::kInteractionTypeCraftRecipe:
+            return "craft_recipe";
+        default:
+            return "none";
+    }
+}
+
+const char* InteractionResultName(std::uint16_t result_code) {
+    switch (result_code) {
+        case command::kInteractionResultSuccess:
+            return "success";
+        case command::kInteractionResultRejected:
+            return "rejected";
+        default:
+            return "none";
+    }
+}
+
+std::string BuildGameplayInteractionPayload(
+    std::uint32_t player_id,
+    const command::InteractionPayload& payload,
+    std::uint64_t tick_index) {
+    std::string output = "player=";
+    output += std::to_string(player_id);
+    output += ";type=";
+    output += InteractionTypeName(payload.interaction_type);
+    output += ";result=";
+    output += InteractionResultName(payload.result_code);
+    output += ";target_material_id=";
+    output += std::to_string(payload.target_material_id);
+    output += ";tile_x=";
+    output += std::to_string(payload.target_tile_x);
+    output += ";tile_y=";
+    output += std::to_string(payload.target_tile_y);
+    output += ";branch=";
+    output += InteractionTypeName(payload.interaction_type);
+    output += ";tick=";
+    output += std::to_string(tick_index);
+    return output;
+}
+
+std::string BuildGameplayPickupPayload(
+    const GameplayPickupEvent& pickup_event,
+    std::uint64_t tick_index) {
+    std::string output = "player=";
+    output += std::to_string(pickup_event.player_id);
+    output += ";material_id=";
+    output += std::to_string(pickup_event.material_id);
+    output += ";amount=";
+    output += std::to_string(pickup_event.amount);
+    output += ";tile_x=";
+    output += std::to_string(pickup_event.tile_x);
+    output += ";tile_y=";
+    output += std::to_string(pickup_event.tile_y);
+    output += ";branch=";
+    output += pickup_event.amount > 1 ? "stack" : "single";
+    output += ";tick=";
+    output += std::to_string(tick_index);
+    return output;
+}
+
 }  // namespace
 
 SimulationKernel::SimulationKernel(
@@ -95,6 +161,7 @@ bool SimulationKernel::Initialize(std::string& out_error) {
     pending_net_session_event_ = {};
     tick_index_ = 0;
     pending_local_commands_.clear();
+    pending_pickup_events_.clear();
     dropped_local_command_count_ = 0;
     ResetGameplayProgress();
     initialized_ = true;
@@ -112,6 +179,7 @@ void SimulationKernel::Shutdown() {
     net_service_.Shutdown();
     world_service_.Shutdown();
     pending_local_commands_.clear();
+    pending_pickup_events_.clear();
     last_observed_net_session_state_ = net::NetSessionState::Disconnected;
     next_auto_reconnect_tick_ = 0;
     next_net_session_event_dispatch_tick_ = 0;
@@ -167,6 +235,32 @@ std::size_t SimulationKernel::PendingLocalCommandCount() const {
 
 std::size_t SimulationKernel::DroppedLocalCommandCount() const {
     return dropped_local_command_count_;
+}
+
+std::vector<GameplayPickupEvent> SimulationKernel::ConsumePickupEventsForPlayer(
+    std::uint32_t player_id) {
+    std::vector<GameplayPickupEvent> events;
+    if (pending_pickup_events_.empty()) {
+        return events;
+    }
+
+    auto write_iter = pending_pickup_events_.begin();
+    for (auto read_iter = pending_pickup_events_.begin();
+         read_iter != pending_pickup_events_.end();
+         ++read_iter) {
+        if (read_iter->player_id == player_id) {
+            events.push_back(*read_iter);
+            continue;
+        }
+
+        if (write_iter != read_iter) {
+            *write_iter = std::move(*read_iter);
+        }
+        ++write_iter;
+    }
+
+    pending_pickup_events_.erase(write_iter, pending_pickup_events_.end());
+    return events;
 }
 
 GameplayProgressSnapshot SimulationKernel::GameplayProgress() const {
@@ -271,7 +365,9 @@ void SimulationKernel::ExecuteWorldCommandIfMatched(const TypedPlayerCommand& co
     }
 }
 
-void SimulationKernel::ExecuteGameplayCommandIfMatched(const TypedPlayerCommand& command) {
+void SimulationKernel::ExecuteGameplayCommandIfMatched(
+    const TypedPlayerCommand& command,
+    std::uint32_t player_id) {
     if (command.type == TypedPlayerCommandType::GameplayCollectResource) {
         const command::CollectResourcePayload& payload = command.collect_resource;
         if (payload.resource_id == command::kResourceWood) {
@@ -284,6 +380,29 @@ void SimulationKernel::ExecuteGameplayCommandIfMatched(const TypedPlayerCommand&
             stone_collected_ += payload.amount;
             DispatchGameplayProgressEvent("collect_stone");
         }
+        return;
+    }
+
+    if (command.type == TypedPlayerCommandType::GameplaySpawnDrop) {
+        ecs_runtime_.QueueSpawnWorldDrop(command.spawn_drop);
+        return;
+    }
+
+    if (command.type == TypedPlayerCommandType::GameplayPickupProbe) {
+        ecs_runtime_.QueuePickupProbe(player_id, command.pickup_probe);
+        return;
+    }
+
+    if (command.type == TypedPlayerCommandType::GameplayInteraction) {
+        const std::string payload =
+            BuildGameplayInteractionPayload(player_id, command.interaction, tick_index_);
+        core::Logger::Info(
+            "script",
+            "Dispatch gameplay interaction event: " + payload);
+        script_host_.DispatchEvent(script::ScriptEvent{
+            .event_name = "gameplay.interaction",
+            .payload = payload,
+        });
         return;
     }
 
@@ -398,7 +517,7 @@ void SimulationKernel::Update(double fixed_delta_seconds) {
             }
 
             ExecuteWorldCommandIfMatched(typed_command);
-            ExecuteGameplayCommandIfMatched(typed_command);
+            ExecuteGameplayCommandIfMatched(typed_command, command.player_id);
             ExecuteCombatCommandIfMatched(typed_command, command.player_id);
         }
     }
@@ -436,6 +555,28 @@ void SimulationKernel::Update(double fixed_delta_seconds) {
 
         enemy_kill_count_ += combat_event.reward_kill_count;
         DispatchGameplayProgressEvent("kill_enemy");
+    }
+    for (const ecs::GameplayEvent& gameplay_event : ecs_runtime_.ConsumeGameplayEvents()) {
+        if (gameplay_event.type != ecs::GameplayEventType::PickupResolved ||
+            gameplay_event.amount == 0) {
+            continue;
+        }
+
+        const GameplayPickupEvent pickup_event{
+            .player_id = gameplay_event.player_id,
+            .tile_x = gameplay_event.tile_x,
+            .tile_y = gameplay_event.tile_y,
+            .material_id = gameplay_event.material_id,
+            .amount = gameplay_event.amount,
+        };
+        pending_pickup_events_.push_back(pickup_event);
+
+        const std::string payload = BuildGameplayPickupPayload(pickup_event, tick_index_);
+        core::Logger::Info("script", "Dispatch gameplay pickup event: " + payload);
+        script_host_.DispatchEvent(script::ScriptEvent{
+            .event_name = "gameplay.pickup",
+            .payload = payload,
+        });
     }
     UpdatePlayableLoopCompletion();
     script_host_.Tick(tick_context);

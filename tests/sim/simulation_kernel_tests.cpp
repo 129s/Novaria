@@ -416,6 +416,60 @@ bool TestCommandSchemaPayloadParsing() {
         !novaria::sim::command::TryParseCollectResourcePayload("1,2,3", collect_payload),
         "Collect payload parser should reject extra tokens.");
 
+    novaria::sim::command::SpawnDropPayload spawn_drop_payload{};
+    passed &= Expect(
+        novaria::sim::command::TryParseSpawnDropPayload(
+            novaria::sim::command::BuildSpawnDropPayload(4, -6, 2, 3),
+            spawn_drop_payload),
+        "Spawn drop payload parser should accept valid payload.");
+    passed &= Expect(
+        spawn_drop_payload.tile_x == 4 &&
+            spawn_drop_payload.tile_y == -6 &&
+            spawn_drop_payload.material_id == 2 &&
+            spawn_drop_payload.amount == 3,
+        "Spawn drop payload parser should parse all fields.");
+    passed &= Expect(
+        !novaria::sim::command::TryParseSpawnDropPayload("4,-6,2,0", spawn_drop_payload),
+        "Spawn drop payload parser should reject zero amount.");
+
+    novaria::sim::command::PickupProbePayload pickup_probe_payload{};
+    passed &= Expect(
+        novaria::sim::command::TryParsePickupProbePayload(
+            novaria::sim::command::BuildPickupProbePayload(9, -3),
+            pickup_probe_payload),
+        "Pickup probe payload parser should accept valid payload.");
+    passed &= Expect(
+        pickup_probe_payload.tile_x == 9 &&
+            pickup_probe_payload.tile_y == -3,
+        "Pickup probe payload parser should parse both coordinates.");
+    passed &= Expect(
+        !novaria::sim::command::TryParsePickupProbePayload("9", pickup_probe_payload),
+        "Pickup probe payload parser should reject missing tokens.");
+
+    novaria::sim::command::InteractionPayload interaction_payload{};
+    passed &= Expect(
+        novaria::sim::command::TryParseInteractionPayload(
+            novaria::sim::command::BuildInteractionPayload(
+                novaria::sim::command::kInteractionTypeOpenCrafting,
+                2,
+                -1,
+                9,
+                novaria::sim::command::kInteractionResultSuccess),
+            interaction_payload),
+        "Interaction payload parser should accept valid payload.");
+    passed &= Expect(
+        interaction_payload.interaction_type ==
+            novaria::sim::command::kInteractionTypeOpenCrafting &&
+            interaction_payload.target_tile_x == 2 &&
+            interaction_payload.target_tile_y == -1 &&
+            interaction_payload.target_material_id == 9 &&
+            interaction_payload.result_code ==
+                novaria::sim::command::kInteractionResultSuccess,
+        "Interaction payload parser should parse all fields.");
+    passed &= Expect(
+        !novaria::sim::command::TryParseInteractionPayload("1,2,-1,9", interaction_payload),
+        "Interaction payload parser should reject missing tokens.");
+
     novaria::sim::command::FireProjectilePayload fire_projectile_payload{};
     passed &= Expect(
         novaria::sim::command::TryParseFireProjectilePayload(
@@ -476,6 +530,21 @@ bool TestCommandSchemaPayloadParsing() {
             },
             typed_command),
         "Typed command bridge should reject invalid projectile payload.");
+    passed &= Expect(
+        novaria::sim::TryDecodePlayerCommand(
+            novaria::net::PlayerCommand{
+                .player_id = 1,
+                .command_type = std::string(novaria::sim::command::kGameplayInteraction),
+                .payload = novaria::sim::command::BuildInteractionPayload(
+                    novaria::sim::command::kInteractionTypeOpenCrafting,
+                    2,
+                    -1,
+                    9,
+                    novaria::sim::command::kInteractionResultSuccess),
+            },
+            typed_command) &&
+            typed_command.type == novaria::sim::TypedPlayerCommandType::GameplayInteraction,
+        "Typed command bridge should decode gameplay interaction command.");
 
     return passed;
 }
@@ -1353,7 +1422,7 @@ bool TestGameplayLoopCommandsReachBossDefeat() {
     const novaria::sim::GameplayProgressSnapshot progress = kernel.GameplayProgress();
 
     passed &= Expect(
-        progress.wood_collected == 2 && progress.stone_collected == 3,
+        progress.wood_collected == 3 && progress.stone_collected == 20,
         "Gameplay resources should deduct build and craft costs.");
     passed &= Expect(progress.workbench_built, "Gameplay loop should build workbench.");
     passed &= Expect(progress.sword_crafted, "Gameplay loop should craft sword.");
@@ -1389,6 +1458,94 @@ bool TestGameplayLoopCommandsReachBossDefeat() {
     return passed;
 }
 
+bool TestGameplayDropPickupAndInteractionDispatchScriptEvents() {
+    bool passed = true;
+
+    FakeWorldService world;
+    FakeNetService net;
+    FakeScriptHost script;
+    net.auto_progress_connection = false;
+    novaria::sim::SimulationKernel kernel(world, net, script);
+
+    std::string error;
+    passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
+
+    kernel.SubmitLocalCommand({
+        .player_id = 7,
+        .command_type = std::string(novaria::sim::command::kGameplaySpawnDrop),
+        .payload = novaria::sim::command::BuildSpawnDropPayload(2, -3, 2, 1),
+    });
+    kernel.SubmitLocalCommand({
+        .player_id = 7,
+        .command_type = std::string(novaria::sim::command::kGameplayPickupProbe),
+        .payload = novaria::sim::command::BuildPickupProbePayload(2, -3),
+    });
+    kernel.SubmitLocalCommand({
+        .player_id = 7,
+        .command_type = std::string(novaria::sim::command::kGameplayInteraction),
+        .payload = novaria::sim::command::BuildInteractionPayload(
+            novaria::sim::command::kInteractionTypeOpenCrafting,
+            2,
+            -3,
+            9,
+            novaria::sim::command::kInteractionResultSuccess),
+    });
+    kernel.Update(1.0 / 60.0);
+
+    const std::vector<novaria::sim::GameplayPickupEvent> pickup_events =
+        kernel.ConsumePickupEventsForPlayer(7);
+    passed &= Expect(
+        pickup_events.size() == 1,
+        "Drop spawn + pickup probe should resolve one pickup event.");
+    if (pickup_events.size() == 1) {
+        passed &= Expect(
+            pickup_events[0].material_id == 2 &&
+                pickup_events[0].amount == 1 &&
+                pickup_events[0].tile_x == 2 &&
+                pickup_events[0].tile_y == -3,
+            "Resolved pickup event should match drop payload.");
+    }
+
+    const std::vector<novaria::sim::GameplayPickupEvent> drained_events =
+        kernel.ConsumePickupEventsForPlayer(7);
+    passed &= Expect(
+        drained_events.empty(),
+        "Pickup event queue should be consumable exactly once per player.");
+
+    bool saw_pickup_event = false;
+    bool saw_interaction_event = false;
+    for (const auto& event : script.dispatched_events) {
+        if (event.event_name == "gameplay.pickup") {
+            saw_pickup_event = true;
+            passed &= Expect(
+                event.payload.find("player=7") != std::string::npos &&
+                    event.payload.find("material_id=2") != std::string::npos &&
+                    event.payload.find("amount=1") != std::string::npos,
+                "Gameplay pickup event payload should include pickup fields.");
+        }
+        if (event.event_name == "gameplay.interaction") {
+            saw_interaction_event = true;
+            passed &= Expect(
+                event.payload.find("type=open_crafting") != std::string::npos &&
+                    event.payload.find("result=success") != std::string::npos &&
+                    event.payload.find("branch=open_crafting") != std::string::npos,
+                "Gameplay interaction event payload should include branch fields.");
+        }
+    }
+    passed &= Expect(
+        saw_pickup_event,
+        "Gameplay pickup should dispatch script event.");
+    passed &= Expect(
+        saw_interaction_event,
+        "Gameplay interaction should dispatch script event.");
+    passed &= Expect(
+        net.submitted_commands.size() == 3,
+        "Gameplay drop/pickup/interaction commands should enter net stream.");
+
+    kernel.Shutdown();
+    return passed;
+}
+
 }  // namespace
 
 int main() {
@@ -1410,6 +1567,7 @@ int main() {
     passed &= TestWorldCommandExecutionFromLocalQueue();
     passed &= TestReplicaModeRejectsLocalWorldWrites();
     passed &= TestGameplayLoopCommandsReachBossDefeat();
+    passed &= TestGameplayDropPickupAndInteractionDispatchScriptEvents();
     passed &= TestUpdateConsumesRemoteChunkPayloads();
     passed &= TestUpdateSkipsNetExchangeWhenSessionNotConnected();
 

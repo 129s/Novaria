@@ -30,6 +30,14 @@ struct GameplayProgressSnapshot final {
     bool playable_loop_complete = false;
 };
 
+struct GameplayPickupEvent final {
+    std::uint32_t player_id = 0;
+    int tile_x = 0;
+    int tile_y = 0;
+    std::uint16_t material_id = 0;
+    std::uint32_t amount = 0;
+};
+
 class SimulationKernel final {
 public:
     static constexpr std::size_t kMaxPendingLocalCommands = 1024;
@@ -51,6 +59,7 @@ public:
     std::size_t PendingLocalCommandCount() const;
     std::size_t DroppedLocalCommandCount() const;
     GameplayProgressSnapshot GameplayProgress() const;
+    std::vector<GameplayPickupEvent> ConsumePickupEventsForPlayer(std::uint32_t player_id);
     void RestoreGameplayProgress(const GameplayProgressSnapshot& snapshot);
     void Update(double fixed_delta_seconds);
 
@@ -63,7 +72,9 @@ private:
     };
 
     void ExecuteWorldCommandIfMatched(const TypedPlayerCommand& command);
-    void ExecuteGameplayCommandIfMatched(const TypedPlayerCommand& command);
+    void ExecuteGameplayCommandIfMatched(
+        const TypedPlayerCommand& command,
+        std::uint32_t player_id);
     void ExecuteCombatCommandIfMatched(
         const TypedPlayerCommand& command,
         std::uint32_t player_id);
@@ -82,6 +93,7 @@ private:
     script::IScriptHost& script_host_;
     ecs::Runtime ecs_runtime_;
     std::vector<net::PlayerCommand> pending_local_commands_;
+    std::vector<GameplayPickupEvent> pending_pickup_events_;
     std::size_t dropped_local_command_count_ = 0;
     net::NetSessionState last_observed_net_session_state_ = net::NetSessionState::Disconnected;
     std::uint64_t next_auto_reconnect_tick_ = 0;

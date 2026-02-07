@@ -14,6 +14,9 @@ inline constexpr std::string_view kWorldSetTile = "world.set_tile";
 inline constexpr std::string_view kWorldLoadChunk = "world.load_chunk";
 inline constexpr std::string_view kWorldUnloadChunk = "world.unload_chunk";
 inline constexpr std::string_view kGameplayCollectResource = "gameplay.collect_resource";
+inline constexpr std::string_view kGameplaySpawnDrop = "gameplay.spawn_drop";
+inline constexpr std::string_view kGameplayPickupProbe = "gameplay.pickup_probe";
+inline constexpr std::string_view kGameplayInteraction = "gameplay.interaction";
 inline constexpr std::string_view kGameplayBuildWorkbench = "gameplay.build_workbench";
 inline constexpr std::string_view kGameplayCraftSword = "gameplay.craft_sword";
 inline constexpr std::string_view kGameplayAttackEnemy = "gameplay.attack_enemy";
@@ -22,6 +25,12 @@ inline constexpr std::string_view kCombatFireProjectile = "combat.fire_projectil
 
 inline constexpr std::uint16_t kResourceWood = 1;
 inline constexpr std::uint16_t kResourceStone = 2;
+inline constexpr std::uint16_t kInteractionTypeNone = 0;
+inline constexpr std::uint16_t kInteractionTypeOpenCrafting = 1;
+inline constexpr std::uint16_t kInteractionTypeCraftRecipe = 2;
+inline constexpr std::uint16_t kInteractionResultNone = 0;
+inline constexpr std::uint16_t kInteractionResultSuccess = 1;
+inline constexpr std::uint16_t kInteractionResultRejected = 2;
 
 struct WorldSetTilePayload final {
     int tile_x = 0;
@@ -37,6 +46,26 @@ struct WorldChunkPayload final {
 struct CollectResourcePayload final {
     std::uint16_t resource_id = 0;
     std::uint32_t amount = 0;
+};
+
+struct SpawnDropPayload final {
+    int tile_x = 0;
+    int tile_y = 0;
+    std::uint16_t material_id = 0;
+    std::uint32_t amount = 0;
+};
+
+struct PickupProbePayload final {
+    int tile_x = 0;
+    int tile_y = 0;
+};
+
+struct InteractionPayload final {
+    std::uint16_t interaction_type = 0;
+    int target_tile_x = 0;
+    int target_tile_y = 0;
+    std::uint16_t target_material_id = 0;
+    std::uint16_t result_code = 0;
 };
 
 struct FireProjectilePayload final {
@@ -199,6 +228,132 @@ inline bool TryParseCollectResourcePayload(
     return true;
 }
 
+inline bool TryParseSpawnDropPayload(
+    std::string_view payload,
+    SpawnDropPayload& out_payload) {
+    std::size_t separators[3]{};
+    std::size_t search_offset = 0;
+    for (std::size_t index = 0; index < 3; ++index) {
+        const std::size_t separator = payload.find(',', search_offset);
+        if (separator == std::string_view::npos) {
+            return false;
+        }
+
+        separators[index] = separator;
+        search_offset = separator + 1;
+    }
+    if (payload.find(',', separators[2] + 1) != std::string_view::npos) {
+        return false;
+    }
+
+    const std::string_view tile_x_token = payload.substr(0, separators[0]);
+    const std::string_view tile_y_token =
+        payload.substr(separators[0] + 1, separators[1] - separators[0] - 1);
+    const std::string_view material_token =
+        payload.substr(separators[1] + 1, separators[2] - separators[1] - 1);
+    const std::string_view amount_token = payload.substr(separators[2] + 1);
+
+    int tile_x = 0;
+    int tile_y = 0;
+    std::uint16_t material_id = 0;
+    std::uint32_t amount = 0;
+    if (!TryParseSignedInt(tile_x_token, tile_x) ||
+        !TryParseSignedInt(tile_y_token, tile_y) ||
+        !TryParseMaterialId(material_token, material_id) ||
+        !TryParseUnsignedInt(amount_token, amount)) {
+        return false;
+    }
+    if (amount == 0) {
+        return false;
+    }
+
+    out_payload = SpawnDropPayload{
+        .tile_x = tile_x,
+        .tile_y = tile_y,
+        .material_id = material_id,
+        .amount = amount,
+    };
+    return true;
+}
+
+inline bool TryParsePickupProbePayload(
+    std::string_view payload,
+    PickupProbePayload& out_payload) {
+    const auto separator = payload.find(',');
+    if (separator == std::string_view::npos) {
+        return false;
+    }
+    if (payload.find(',', separator + 1) != std::string_view::npos) {
+        return false;
+    }
+
+    const std::string_view x_token = payload.substr(0, separator);
+    const std::string_view y_token = payload.substr(separator + 1);
+
+    int tile_x = 0;
+    int tile_y = 0;
+    if (!TryParseSignedInt(x_token, tile_x) ||
+        !TryParseSignedInt(y_token, tile_y)) {
+        return false;
+    }
+
+    out_payload = PickupProbePayload{
+        .tile_x = tile_x,
+        .tile_y = tile_y,
+    };
+    return true;
+}
+
+inline bool TryParseInteractionPayload(
+    std::string_view payload,
+    InteractionPayload& out_payload) {
+    std::size_t separators[4]{};
+    std::size_t search_offset = 0;
+    for (std::size_t index = 0; index < 4; ++index) {
+        const std::size_t separator = payload.find(',', search_offset);
+        if (separator == std::string_view::npos) {
+            return false;
+        }
+
+        separators[index] = separator;
+        search_offset = separator + 1;
+    }
+    if (payload.find(',', separators[3] + 1) != std::string_view::npos) {
+        return false;
+    }
+
+    const std::string_view interaction_type_token = payload.substr(0, separators[0]);
+    const std::string_view target_x_token =
+        payload.substr(separators[0] + 1, separators[1] - separators[0] - 1);
+    const std::string_view target_y_token =
+        payload.substr(separators[1] + 1, separators[2] - separators[1] - 1);
+    const std::string_view target_material_token =
+        payload.substr(separators[2] + 1, separators[3] - separators[2] - 1);
+    const std::string_view result_code_token = payload.substr(separators[3] + 1);
+
+    std::uint16_t interaction_type = 0;
+    int target_tile_x = 0;
+    int target_tile_y = 0;
+    std::uint16_t target_material_id = 0;
+    std::uint16_t result_code = 0;
+    if (!TryParseMaterialId(interaction_type_token, interaction_type) ||
+        !TryParseSignedInt(target_x_token, target_tile_x) ||
+        !TryParseSignedInt(target_y_token, target_tile_y) ||
+        !TryParseMaterialId(target_material_token, target_material_id) ||
+        !TryParseMaterialId(result_code_token, result_code)) {
+        return false;
+    }
+
+    out_payload = InteractionPayload{
+        .interaction_type = interaction_type,
+        .target_tile_x = target_tile_x,
+        .target_tile_y = target_tile_y,
+        .target_material_id = target_material_id,
+        .result_code = result_code,
+    };
+    return true;
+}
+
 inline bool TryParseFireProjectilePayload(
     std::string_view payload,
     FireProjectilePayload& out_payload) {
@@ -270,6 +425,30 @@ inline std::string BuildWorldChunkPayload(int chunk_x, int chunk_y) {
 
 inline std::string BuildCollectResourcePayload(std::uint16_t resource_id, std::uint32_t amount) {
     return std::to_string(resource_id) + "," + std::to_string(amount);
+}
+
+inline std::string BuildSpawnDropPayload(
+    int tile_x,
+    int tile_y,
+    std::uint16_t material_id,
+    std::uint32_t amount) {
+    return std::to_string(tile_x) + "," + std::to_string(tile_y) + "," +
+        std::to_string(material_id) + "," + std::to_string(amount);
+}
+
+inline std::string BuildPickupProbePayload(int tile_x, int tile_y) {
+    return std::to_string(tile_x) + "," + std::to_string(tile_y);
+}
+
+inline std::string BuildInteractionPayload(
+    std::uint16_t interaction_type,
+    int target_tile_x,
+    int target_tile_y,
+    std::uint16_t target_material_id,
+    std::uint16_t result_code) {
+    return std::to_string(interaction_type) + "," + std::to_string(target_tile_x) + "," +
+        std::to_string(target_tile_y) + "," + std::to_string(target_material_id) + "," +
+        std::to_string(result_code);
 }
 
 inline std::string BuildFireProjectilePayload(

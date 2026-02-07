@@ -11,6 +11,9 @@ bool Runtime::Initialize(std::string& out_error) {
     pending_projectile_spawns_.clear();
     pending_damage_requests_.clear();
     pending_combat_events_.clear();
+    pending_drop_spawns_.clear();
+    pending_pickup_probes_.clear();
+    pending_gameplay_events_.clear();
     diagnostics_ = {};
 
     SpawnTrainingHostileTarget();
@@ -29,6 +32,9 @@ void Runtime::Shutdown() {
     pending_projectile_spawns_.clear();
     pending_damage_requests_.clear();
     pending_combat_events_.clear();
+    pending_drop_spawns_.clear();
+    pending_pickup_probes_.clear();
+    pending_gameplay_events_.clear();
     diagnostics_ = {};
     initialized_ = false;
 }
@@ -46,21 +52,52 @@ void Runtime::QueueSpawnProjectile(
     });
 }
 
+void Runtime::QueueSpawnWorldDrop(const command::SpawnDropPayload& payload) {
+    if (!initialized_ || payload.amount == 0) {
+        return;
+    }
+
+    pending_drop_spawns_.push_back(DropSpawnRequest{
+        .payload = payload,
+    });
+}
+
+void Runtime::QueuePickupProbe(
+    std::uint32_t player_id,
+    const command::PickupProbePayload& payload) {
+    if (!initialized_) {
+        return;
+    }
+
+    pending_pickup_probes_.push_back(PickupProbeRequest{
+        .player_id = player_id,
+        .payload = payload,
+    });
+}
+
 void Runtime::Tick(const TickContext& tick_context) {
     if (!initialized_) {
         return;
     }
 
     RunSpawnSystem();
+    RunDropSpawnSystem();
     RunMovementSystem(tick_context.fixed_delta_seconds);
     RunCollisionSystem();
     RunDamageSystem();
+    RunPickupProbeSystem();
     RunLifetimeRecycleSystem();
 }
 
 std::vector<CombatEvent> Runtime::ConsumeCombatEvents() {
     std::vector<CombatEvent> events = std::move(pending_combat_events_);
     pending_combat_events_.clear();
+    return events;
+}
+
+std::vector<GameplayEvent> Runtime::ConsumeGameplayEvents() {
+    std::vector<GameplayEvent> events = std::move(pending_gameplay_events_);
+    pending_gameplay_events_.clear();
     return events;
 }
 
@@ -77,6 +114,12 @@ RuntimeDiagnostics Runtime::DiagnosticsSnapshot() const {
     for (const entt::entity entity : registry_.view<const HostileTarget, const Health>()) {
         (void)entity;
         ++snapshot.active_hostile_count;
+    }
+
+    snapshot.active_drop_count = 0;
+    for (const entt::entity entity : registry_.view<const WorldDrop, const Transform>()) {
+        (void)entity;
+        ++snapshot.active_drop_count;
     }
 
     return snapshot;
@@ -132,6 +175,46 @@ void Runtime::RunSpawnSystem() {
     }
 
     pending_projectile_spawns_.clear();
+}
+
+void Runtime::RunDropSpawnSystem() {
+    for (const DropSpawnRequest& request : pending_drop_spawns_) {
+        if (request.payload.material_id == 0 || request.payload.amount == 0) {
+            continue;
+        }
+
+        bool merged = false;
+        auto drop_view = registry_.view<Transform, WorldDrop>();
+        for (const entt::entity entity : drop_view) {
+            auto& transform = drop_view.get<Transform>(entity);
+            auto& world_drop = drop_view.get<WorldDrop>(entity);
+            if (static_cast<int>(transform.tile_x) != request.payload.tile_x ||
+                static_cast<int>(transform.tile_y) != request.payload.tile_y ||
+                world_drop.material_id != request.payload.material_id) {
+                continue;
+            }
+
+            world_drop.amount += request.payload.amount;
+            merged = true;
+            break;
+        }
+
+        if (!merged) {
+            const entt::entity drop_entity = registry_.create();
+            registry_.emplace<Transform>(drop_entity, Transform{
+                .tile_x = static_cast<float>(request.payload.tile_x),
+                .tile_y = static_cast<float>(request.payload.tile_y),
+            });
+            registry_.emplace<WorldDrop>(drop_entity, WorldDrop{
+                .material_id = request.payload.material_id,
+                .amount = request.payload.amount,
+            });
+        }
+
+        diagnostics_.total_drop_spawned += request.payload.amount;
+    }
+
+    pending_drop_spawns_.clear();
 }
 
 void Runtime::RunMovementSystem(double fixed_delta_seconds) {
@@ -219,6 +302,51 @@ void Runtime::RunDamageSystem() {
     }
 
     pending_damage_requests_.clear();
+}
+
+void Runtime::RunPickupProbeSystem() {
+    if (pending_pickup_probes_.empty()) {
+        return;
+    }
+
+    auto drop_view = registry_.view<const Transform, const WorldDrop>();
+    if (drop_view.begin() == drop_view.end()) {
+        pending_pickup_probes_.clear();
+        return;
+    }
+
+    std::vector<entt::entity> consumed_drop_entities;
+    for (const PickupProbeRequest& request : pending_pickup_probes_) {
+        for (const entt::entity entity : drop_view) {
+            if (std::find(
+                    consumed_drop_entities.begin(),
+                    consumed_drop_entities.end(),
+                    entity) != consumed_drop_entities.end()) {
+                continue;
+            }
+
+            const auto& transform = drop_view.get<const Transform>(entity);
+            if (static_cast<int>(transform.tile_x) != request.payload.tile_x ||
+                static_cast<int>(transform.tile_y) != request.payload.tile_y) {
+                continue;
+            }
+
+            const auto& drop_data = drop_view.get<const WorldDrop>(entity);
+            pending_gameplay_events_.push_back(GameplayEvent{
+                .type = GameplayEventType::PickupResolved,
+                .player_id = request.player_id,
+                .tile_x = request.payload.tile_x,
+                .tile_y = request.payload.tile_y,
+                .material_id = drop_data.material_id,
+                .amount = drop_data.amount,
+            });
+            diagnostics_.total_drop_picked_up += drop_data.amount;
+            consumed_drop_entities.push_back(entity);
+        }
+    }
+
+    pending_pickup_probes_.clear();
+    DestroyEntities(consumed_drop_entities);
 }
 
 void Runtime::RunLifetimeRecycleSystem() {
