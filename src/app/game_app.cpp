@@ -4,6 +4,7 @@
 #include "core/logger.h"
 #include "sim/command_schema.h"
 
+#include <algorithm>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -115,6 +116,30 @@ bool BuildModScriptModules(
 
     out_error.clear();
     return true;
+}
+
+int FloorDiv(int value, int divisor) {
+    const int quotient = value / divisor;
+    const int remainder = value % divisor;
+    if (remainder != 0 && ((remainder < 0) != (divisor < 0))) {
+        return quotient - 1;
+    }
+    return quotient;
+}
+
+world::ChunkCoord TileToChunkCoord(int tile_x, int tile_y) {
+    return world::ChunkCoord{
+        .x = FloorDiv(tile_x, world::WorldServiceBasic::kChunkSize),
+        .y = FloorDiv(tile_y, world::WorldServiceBasic::kChunkSize),
+    };
+}
+
+bool IsSolidMaterial(std::uint16_t material_id) {
+    return material_id != 0;
+}
+
+bool IsCollectibleMaterial(std::uint16_t material_id) {
+    return material_id == 1 || material_id == 2;
 }
 
 }  // namespace
@@ -304,8 +329,21 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
         core::Logger::Warn("save", mismatch_message);
     }
 
+    player_tile_x_ = 0;
+    player_tile_y_ = -4;
+    player_facing_x_ = 1;
+    inventory_dirt_count_ = 0;
+    inventory_stone_count_ = 0;
+    selected_place_material_id_ = 1;
+    loaded_chunk_window_ready_ = false;
+    loaded_chunk_window_center_x_ = 0;
+    loaded_chunk_window_center_y_ = 0;
+
     initialized_ = true;
     last_net_diagnostics_tick_ = 0;
+    core::Logger::Info(
+        "input",
+        "Player controls active: WASD move, E mine, R place, 1/2 select material.");
     core::Logger::Info("app", "Novaria started.");
     return true;
 }
@@ -323,6 +361,118 @@ int GameApp::Run() {
             if (!sdl_context_.PumpEvents(quit_requested_, frame_actions_)) {
                 core::Logger::Error("platform", "Event pump failed.");
                 return false;
+            }
+
+            auto submit_world_set_tile =
+                [this](int tile_x, int tile_y, std::uint16_t material_id) {
+                    simulation_kernel_.SubmitLocalCommand(net::PlayerCommand{
+                        .player_id = local_player_id_,
+                        .command_type = std::string(sim::command::kWorldSetTile),
+                        .payload = sim::command::BuildWorldSetTilePayload(
+                            tile_x,
+                            tile_y,
+                            material_id),
+                    });
+                };
+
+            auto submit_world_load_chunk = [this](int chunk_x, int chunk_y) {
+                simulation_kernel_.SubmitLocalCommand(net::PlayerCommand{
+                    .player_id = local_player_id_,
+                    .command_type = std::string(sim::command::kWorldLoadChunk),
+                    .payload = sim::command::BuildWorldChunkPayload(chunk_x, chunk_y),
+                });
+            };
+
+            const world::ChunkCoord player_chunk =
+                TileToChunkCoord(player_tile_x_, player_tile_y_);
+            if (!loaded_chunk_window_ready_ ||
+                player_chunk.x != loaded_chunk_window_center_x_ ||
+                player_chunk.y != loaded_chunk_window_center_y_) {
+                constexpr int kChunkWindowRadius = 2;
+                for (int offset_y = -kChunkWindowRadius;
+                     offset_y <= kChunkWindowRadius;
+                     ++offset_y) {
+                    for (int offset_x = -kChunkWindowRadius;
+                         offset_x <= kChunkWindowRadius;
+                         ++offset_x) {
+                        submit_world_load_chunk(
+                            player_chunk.x + offset_x,
+                            player_chunk.y + offset_y);
+                    }
+                }
+
+                loaded_chunk_window_ready_ = true;
+                loaded_chunk_window_center_x_ = player_chunk.x;
+                loaded_chunk_window_center_y_ = player_chunk.y;
+            }
+
+            auto try_move_player = [this](int delta_x, int delta_y) {
+                const int next_x = player_tile_x_ + delta_x;
+                const int next_y = player_tile_y_ + delta_y;
+                std::uint16_t destination_material = 0;
+                if (world_service_.TryReadTile(next_x, next_y, destination_material) &&
+                    IsSolidMaterial(destination_material)) {
+                    return;
+                }
+
+                player_tile_x_ = next_x;
+                player_tile_y_ = next_y;
+            };
+
+            if (frame_actions_.move_left) {
+                player_facing_x_ = -1;
+                try_move_player(-1, 0);
+            }
+            if (frame_actions_.move_right) {
+                player_facing_x_ = 1;
+                try_move_player(1, 0);
+            }
+            if (frame_actions_.move_up) {
+                try_move_player(0, -1);
+            }
+            if (frame_actions_.move_down) {
+                try_move_player(0, 1);
+            }
+
+            if (frame_actions_.select_material_dirt) {
+                selected_place_material_id_ = 1;
+            }
+            if (frame_actions_.select_material_stone) {
+                selected_place_material_id_ = 2;
+            }
+
+            const int target_tile_x = player_tile_x_ + player_facing_x_;
+            const int target_tile_y = player_tile_y_;
+            if (frame_actions_.player_mine) {
+                std::uint16_t target_material = 0;
+                if (world_service_.TryReadTile(
+                        target_tile_x,
+                        target_tile_y,
+                        target_material) &&
+                    IsCollectibleMaterial(target_material)) {
+                    submit_world_set_tile(target_tile_x, target_tile_y, 0);
+                    if (target_material == 1) {
+                        ++inventory_dirt_count_;
+                    } else if (target_material == 2) {
+                        ++inventory_stone_count_;
+                    }
+                }
+            }
+
+            if (frame_actions_.player_place) {
+                std::uint16_t target_material = 0;
+                const bool has_target_material =
+                    world_service_.TryReadTile(target_tile_x, target_tile_y, target_material);
+                if (!has_target_material || !IsSolidMaterial(target_material)) {
+                    if (selected_place_material_id_ == 1 && inventory_dirt_count_ > 0) {
+                        --inventory_dirt_count_;
+                        submit_world_set_tile(target_tile_x, target_tile_y, 1);
+                    } else if (
+                        selected_place_material_id_ == 2 && inventory_stone_count_ > 0) {
+                        --inventory_stone_count_;
+                        submit_world_set_tile(target_tile_x, target_tile_y, 2);
+                    }
+                }
             }
 
             if (frame_actions_.send_jump_command) {
@@ -487,7 +637,45 @@ int GameApp::Run() {
                     ", loop_complete=" +
                     (gameplay_progress.playable_loop_complete ? "true" : "false"));
         },
-        [this](float interpolation_alpha) { sdl_context_.RenderFrame(interpolation_alpha); });
+        [this](float interpolation_alpha) {
+            constexpr int kTilePixelSize = 32;
+            platform::RenderScene scene{};
+            scene.tile_pixel_size = kTilePixelSize;
+            scene.camera_tile_x = player_tile_x_;
+            scene.camera_tile_y = player_tile_y_;
+            scene.view_tiles_x = std::max(1, config_.window_width / kTilePixelSize);
+            scene.view_tiles_y = std::max(1, config_.window_height / kTilePixelSize);
+            scene.player_tile_x = player_tile_x_;
+            scene.player_tile_y = player_tile_y_;
+            scene.hud = platform::RenderHudState{
+                .dirt_count = inventory_dirt_count_,
+                .stone_count = inventory_stone_count_,
+                .selected_material_id = selected_place_material_id_,
+            };
+
+            const int first_world_tile_x = scene.camera_tile_x - scene.view_tiles_x / 2;
+            const int first_world_tile_y = scene.camera_tile_y - scene.view_tiles_y / 2;
+            scene.tiles.reserve(static_cast<std::size_t>(scene.view_tiles_x * scene.view_tiles_y));
+            for (int local_y = 0; local_y < scene.view_tiles_y; ++local_y) {
+                for (int local_x = 0; local_x < scene.view_tiles_x; ++local_x) {
+                    const int world_tile_x = first_world_tile_x + local_x;
+                    const int world_tile_y = first_world_tile_y + local_y;
+                    std::uint16_t material_id = 0;
+                    (void)world_service_.TryReadTile(
+                        world_tile_x,
+                        world_tile_y,
+                        material_id);
+
+                    scene.tiles.push_back(platform::RenderTile{
+                        .world_tile_x = world_tile_x,
+                        .world_tile_y = world_tile_y,
+                        .material_id = material_id,
+                    });
+                }
+            }
+
+            sdl_context_.RenderFrame(interpolation_alpha, scene);
+        });
 
     core::Logger::Info("app", "Main loop exited.");
     return 0;
@@ -534,6 +722,15 @@ void GameApp::Shutdown() {
     sdl_context_.Shutdown();
     initialized_ = false;
     last_net_diagnostics_tick_ = 0;
+    player_tile_x_ = 0;
+    player_tile_y_ = -4;
+    player_facing_x_ = 1;
+    inventory_dirt_count_ = 0;
+    inventory_stone_count_ = 0;
+    selected_place_material_id_ = 1;
+    loaded_chunk_window_ready_ = false;
+    loaded_chunk_window_center_x_ = 0;
+    loaded_chunk_window_center_y_ = 0;
     core::Logger::Info("app", "Novaria shutdown complete.");
 }
 

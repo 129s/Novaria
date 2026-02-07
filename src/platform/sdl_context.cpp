@@ -2,7 +2,9 @@
 
 #include "core/logger.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <string>
 
 namespace novaria::platform {
@@ -29,6 +31,59 @@ bool IsQuitEvent(Uint32 event_type) {
 #endif
 
     return false;
+}
+
+struct RgbaColor final {
+    Uint8 r = 0;
+    Uint8 g = 0;
+    Uint8 b = 0;
+    Uint8 a = 255;
+};
+
+Uint8 ClampToByte(int value) {
+    return static_cast<Uint8>(std::clamp(value, 0, 255));
+}
+
+RgbaColor MaterialColor(std::uint16_t material_id) {
+    switch (material_id) {
+        case 1:
+            return RgbaColor{
+                .r = 126,
+                .g = 88,
+                .b = 50,
+                .a = 255,
+            };
+        case 2:
+            return RgbaColor{
+                .r = 116,
+                .g = 122,
+                .b = 132,
+                .a = 255,
+            };
+        default:
+            return RgbaColor{};
+    }
+}
+
+void DrawFilledRect(
+    SDL_Renderer* renderer,
+    int x,
+    int y,
+    int width,
+    int height,
+    const RgbaColor& color) {
+    if (renderer == nullptr || width <= 0 || height <= 0) {
+        return;
+    }
+
+    (void)SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
+    const SDL_FRect rect{
+        static_cast<float>(x),
+        static_cast<float>(y),
+        static_cast<float>(width),
+        static_cast<float>(height),
+    };
+    (void)SDL_RenderFillRect(renderer, &rect);
 }
 
 }  // namespace
@@ -83,6 +138,30 @@ bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
 
 #if defined(SDL_EVENT_KEY_DOWN)
         if (event.type == SDL_EVENT_KEY_DOWN) {
+#if defined(SDL_SCANCODE_E)
+            if (event.key.scancode == SDL_SCANCODE_E) {
+                out_actions.player_mine = true;
+            }
+#endif
+
+#if defined(SDL_SCANCODE_R)
+            if (event.key.scancode == SDL_SCANCODE_R) {
+                out_actions.player_place = true;
+            }
+#endif
+
+#if defined(SDL_SCANCODE_1)
+            if (event.key.scancode == SDL_SCANCODE_1) {
+                out_actions.select_material_dirt = true;
+            }
+#endif
+
+#if defined(SDL_SCANCODE_2)
+            if (event.key.scancode == SDL_SCANCODE_2) {
+                out_actions.select_material_stone = true;
+            }
+#endif
+
 #if defined(SDL_SCANCODE_J)
             if (event.key.scancode == SDL_SCANCODE_J) {
                 out_actions.send_jump_command = true;
@@ -169,21 +248,180 @@ bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
         }
 #endif
     }
+
+#if defined(SDL_SCANCODE_A) && defined(SDL_SCANCODE_D) && defined(SDL_SCANCODE_W) && defined(SDL_SCANCODE_S)
+    const bool* keyboard_state = SDL_GetKeyboardState(nullptr);
+    if (keyboard_state != nullptr) {
+        out_actions.move_left = keyboard_state[SDL_SCANCODE_A];
+        out_actions.move_right = keyboard_state[SDL_SCANCODE_D];
+        out_actions.move_up = keyboard_state[SDL_SCANCODE_W];
+        out_actions.move_down = keyboard_state[SDL_SCANCODE_S];
+    }
+#endif
+
     return true;
 }
 
-void SdlContext::RenderFrame(float interpolation_alpha) {
+void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene) {
     if (renderer_ == nullptr) {
         return;
     }
 
     const float seconds = static_cast<float>(SDL_GetTicks()) / 1000.0F;
-    const float pulse = (std::sin(seconds * 2.0F) + 1.0F) * 0.5F;
-    const Uint8 blue = static_cast<Uint8>(80 + static_cast<int>(pulse * 100.0F));
-    const Uint8 green = static_cast<Uint8>(20 + static_cast<int>(interpolation_alpha * 30.0F));
+    const float pulse = (std::sin(seconds * 1.2F) + 1.0F) * 0.5F;
+    const Uint8 blue = ClampToByte(28 + static_cast<int>(pulse * 20.0F));
+    const Uint8 green =
+        ClampToByte(20 + static_cast<int>(interpolation_alpha * 10.0F));
 
-    (void)SDL_SetRenderDrawColor(renderer_, 24, green, blue, 255);
+    (void)SDL_SetRenderDrawColor(renderer_, 12, green, blue, 255);
     (void)SDL_RenderClear(renderer_);
+
+    int window_width = 0;
+    int window_height = 0;
+    if (window_ != nullptr) {
+        (void)SDL_GetWindowSize(window_, &window_width, &window_height);
+    }
+    if (window_width <= 0 || window_height <= 0) {
+        SDL_RenderPresent(renderer_);
+        return;
+    }
+
+    const int tile_pixel_size = std::max(scene.tile_pixel_size, 8);
+    const int view_tiles_x = std::max(scene.view_tiles_x, 1);
+    const int view_tiles_y = std::max(scene.view_tiles_y, 1);
+    const int half_tiles_x = view_tiles_x / 2;
+    const int half_tiles_y = view_tiles_y / 2;
+    const int first_world_tile_x = scene.camera_tile_x - half_tiles_x;
+    const int first_world_tile_y = scene.camera_tile_y - half_tiles_y;
+    const int origin_x = (window_width - view_tiles_x * tile_pixel_size) / 2;
+    const int origin_y = (window_height - view_tiles_y * tile_pixel_size) / 2;
+
+    for (const RenderTile& tile : scene.tiles) {
+        if (tile.material_id == 0) {
+            continue;
+        }
+
+        const int local_tile_x = tile.world_tile_x - first_world_tile_x;
+        const int local_tile_y = tile.world_tile_y - first_world_tile_y;
+        if (local_tile_x < 0 || local_tile_x >= view_tiles_x ||
+            local_tile_y < 0 || local_tile_y >= view_tiles_y) {
+            continue;
+        }
+
+        const int screen_x = origin_x + local_tile_x * tile_pixel_size;
+        const int screen_y = origin_y + local_tile_y * tile_pixel_size;
+        const RgbaColor tile_color = MaterialColor(tile.material_id);
+        DrawFilledRect(
+            renderer_,
+            screen_x,
+            screen_y,
+            tile_pixel_size,
+            tile_pixel_size,
+            tile_color);
+    }
+
+    const int player_local_x = scene.player_tile_x - first_world_tile_x;
+    const int player_local_y = scene.player_tile_y - first_world_tile_y;
+    DrawFilledRect(
+        renderer_,
+        origin_x + player_local_x * tile_pixel_size + tile_pixel_size / 6,
+        origin_y + player_local_y * tile_pixel_size + tile_pixel_size / 8,
+        tile_pixel_size * 2 / 3,
+        tile_pixel_size * 3 / 4,
+        RgbaColor{
+            .r = 72,
+            .g = 196,
+            .b = 248,
+            .a = 255,
+        });
+
+    const int hud_x = 12;
+    const int hud_y = 12;
+    const int hud_width = 220;
+    const int hud_height = 74;
+    DrawFilledRect(
+        renderer_,
+        hud_x,
+        hud_y,
+        hud_width,
+        hud_height,
+        RgbaColor{
+            .r = 18,
+            .g = 18,
+            .b = 22,
+            .a = 214,
+        });
+
+    const int bar_max_width = 120;
+    const int dirt_bar_width =
+        std::min<int>(bar_max_width, static_cast<int>(scene.hud.dirt_count) * 4);
+    const int stone_bar_width =
+        std::min<int>(bar_max_width, static_cast<int>(scene.hud.stone_count) * 4);
+    DrawFilledRect(
+        renderer_,
+        hud_x + 72,
+        hud_y + 14,
+        dirt_bar_width,
+        14,
+        MaterialColor(1));
+    DrawFilledRect(
+        renderer_,
+        hud_x + 72,
+        hud_y + 38,
+        stone_bar_width,
+        14,
+        MaterialColor(2));
+
+    const int selector_x = hud_x + 18;
+    const int selector_y = hud_y + 16;
+    DrawFilledRect(
+        renderer_,
+        selector_x,
+        selector_y,
+        20,
+        20,
+        MaterialColor(1));
+    DrawFilledRect(
+        renderer_,
+        selector_x + 28,
+        selector_y,
+        20,
+        20,
+        MaterialColor(2));
+
+    const bool dirt_selected = scene.hud.selected_material_id == 1;
+    const bool stone_selected = scene.hud.selected_material_id == 2;
+    DrawFilledRect(
+        renderer_,
+        selector_x - 2,
+        selector_y - 2,
+        24,
+        24,
+        dirt_selected ? RgbaColor{.r = 240, .g = 214, .b = 108, .a = 255}
+                      : RgbaColor{.r = 36, .g = 36, .b = 38, .a = 255});
+    DrawFilledRect(
+        renderer_,
+        selector_x + 26,
+        selector_y - 2,
+        24,
+        24,
+        stone_selected ? RgbaColor{.r = 240, .g = 214, .b = 108, .a = 255}
+                       : RgbaColor{.r = 36, .g = 36, .b = 38, .a = 255});
+    DrawFilledRect(
+        renderer_,
+        selector_x,
+        selector_y,
+        20,
+        20,
+        MaterialColor(1));
+    DrawFilledRect(
+        renderer_,
+        selector_x + 28,
+        selector_y,
+        20,
+        20,
+        MaterialColor(2));
+
     SDL_RenderPresent(renderer_);
 }
 

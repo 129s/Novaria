@@ -2,8 +2,8 @@
 
 - `status`: authoritative
 - `owner`: @novaria-core
-- `last_verified_commit`: ba9714c
-- `updated`: 2026-02-06
+- `last_verified_commit`: cd15573
+- `updated`: 2026-02-07
 
 ## 1. 目标
 
@@ -144,7 +144,16 @@
 - 可选解析脚本入口元信息：`script_entry`、`script_api_version`（用于脚本运行时装载与一致性校验）。
 - 指纹已纳入依赖、内容定义与脚本元信息，支持联机一致性校验。
 
-## 4. 输入映射（调试）
+## 4. 输入映射（当前）
+
+正式玩家输入（M6）：
+
+- `W/A/S/D`：移动角色
+- `E`：挖掘角色面向方向的方块
+- `R`：放置当前选中材料到角色面向方向
+- `1/2`：切换放置材料（`dirt/stone`）
+
+兼容调试输入（保留）：
 
 - `J`：提交 `jump`
 - `K`：提交 `attack`

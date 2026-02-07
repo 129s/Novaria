@@ -2,8 +2,8 @@
 
 - `status`: authoritative
 - `owner`: @novaria-core
-- `last_verified_commit`: 6fa4e85
-- `updated`: 2026-02-06
+- `last_verified_commit`: cd15573
+- `updated`: 2026-02-07
 
 ## 1. 前置条件
 
@@ -98,7 +98,16 @@ net_udp_remote_port = 0
 - 服务端：`net_udp_local_host = "0.0.0.0"`，`net_udp_local_port = 25000`，`net_udp_remote_host = "<客户端IP>"`，`net_udp_remote_port = 25001`
 - 客户端：`net_udp_local_host = "0.0.0.0"`，`net_udp_local_port = 25001`，`net_udp_remote_host = "<服务端IP>"`，`net_udp_remote_port = 25000`
 
-## 6. 调试热键（当前）
+## 6. 玩家输入与调试热键（当前）
+
+正式玩家输入（M6）：
+
+- `W/A/S/D`：移动角色。
+- `E`：挖掘角色面向方向的方块（可采集 `dirt/stone`）。
+- `R`：放置当前选中材料到角色面向方向。
+- `1/2`：切换放置材料（`dirt/stone`）。
+
+兼容调试热键（保留）：
 
 - `J/K`：提交基础动作命令。
 - `F1`：脚本调试事件 `debug.ping`。
