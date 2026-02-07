@@ -17,11 +17,6 @@ void PlayerController::Update(
     world::WorldServiceBasic& world_service,
     sim::SimulationKernel& simulation_kernel,
     std::uint32_t local_player_id) {
-    constexpr std::uint32_t kWorkbenchWoodCost = 10;
-    constexpr std::uint32_t kWorkbenchStoneCost = 5;
-    constexpr std::uint32_t kWoodSwordWoodCost = 8;
-    constexpr std::uint32_t kWoodSwordStoneCost = 12;
-
     auto submit_world_set_tile =
         [&simulation_kernel, local_player_id](int tile_x, int tile_y, std::uint16_t material_id) {
             simulation_kernel.SubmitLocalCommand(net::PlayerCommand{
@@ -148,19 +143,20 @@ void PlayerController::Update(
         try_move_player(0, 1);
     }
 
-    if (input_intent.select_material_dirt) {
+    if (input_intent.hotbar_select_slot_1) {
         state_.selected_place_material_id = world::WorldServiceBasic::kMaterialDirt;
     }
-    if (input_intent.select_material_stone) {
+    if (input_intent.hotbar_select_slot_2) {
         state_.selected_place_material_id = world::WorldServiceBasic::kMaterialStone;
     }
 
     const int target_tile_x = state_.tile_x + state_.facing_x;
     const int target_tile_y = state_.tile_y;
-    if (input_intent.player_mine) {
+    if (input_intent.action_primary_held) {
         std::uint16_t target_material = 0;
-        if (world_service.TryReadTile(target_tile_x, target_tile_y, target_material) &&
-            IsCollectibleMaterial(target_material)) {
+        const bool has_target_material =
+            world_service.TryReadTile(target_tile_x, target_tile_y, target_material);
+        if (has_target_material && IsCollectibleMaterial(target_material)) {
             submit_world_set_tile(target_tile_x, target_tile_y, world::WorldServiceBasic::kMaterialAir);
             if (target_material == world::WorldServiceBasic::kMaterialDirt ||
                 target_material == world::WorldServiceBasic::kMaterialGrass) {
@@ -172,14 +168,7 @@ void PlayerController::Update(
                 ++state_.inventory_wood_count;
                 submit_collect_resource(sim::command::kResourceWood, 1);
             }
-        }
-    }
-
-    if (input_intent.player_place) {
-        std::uint16_t target_material = 0;
-        const bool has_target_material =
-            world_service.TryReadTile(target_tile_x, target_tile_y, target_material);
-        if (!has_target_material || !IsSolidMaterial(target_material)) {
+        } else if (!has_target_material || !IsSolidMaterial(target_material)) {
             if (state_.selected_place_material_id == world::WorldServiceBasic::kMaterialDirt &&
                 state_.inventory_dirt_count > 0) {
                 --state_.inventory_dirt_count;
@@ -199,26 +188,8 @@ void PlayerController::Update(
         }
     }
 
-    if (input_intent.build_workbench &&
-        !state_.workbench_built &&
-        state_.inventory_wood_count >= kWorkbenchWoodCost &&
-        state_.inventory_stone_count >= kWorkbenchStoneCost) {
-        state_.inventory_wood_count -= kWorkbenchWoodCost;
-        state_.inventory_stone_count -= kWorkbenchStoneCost;
-        state_.workbench_built = true;
-        submit_gameplay_command(sim::command::kGameplayBuildWorkbench, "");
-    }
-
-    if (input_intent.craft_wood_sword &&
-        !state_.wood_sword_crafted &&
-        state_.workbench_built &&
-        state_.inventory_wood_count >= kWoodSwordWoodCost &&
-        state_.inventory_stone_count >= kWoodSwordStoneCost) {
-        state_.inventory_wood_count -= kWoodSwordWoodCost;
-        state_.inventory_stone_count -= kWoodSwordStoneCost;
-        state_.wood_sword_crafted = true;
-        submit_gameplay_command(sim::command::kGameplayCraftSword, "");
-    }
+    (void)input_intent.interaction_primary_pressed;
+    (void)submit_gameplay_command;
 }
 
 int PlayerController::FloorDiv(int value, int divisor) {

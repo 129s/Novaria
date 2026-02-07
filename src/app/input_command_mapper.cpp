@@ -8,12 +8,16 @@ PlayerInputIntent InputCommandMapper::Map(const platform::InputActions& frame_ac
         .move_right = frame_actions.move_right,
         .move_up = frame_actions.move_up,
         .move_down = frame_actions.move_down,
-        .player_mine = frame_actions.player_mine,
-        .player_place = frame_actions.player_place,
-        .build_workbench = frame_actions.build_workbench,
-        .craft_wood_sword = frame_actions.craft_wood_sword,
-        .select_material_dirt = frame_actions.select_material_dirt,
-        .select_material_stone = frame_actions.select_material_stone,
+        .action_primary_held = frame_actions.action_primary_held,
+        .interaction_primary_pressed = frame_actions.interaction_primary_pressed,
+        .hotbar_select_slot_1 = frame_actions.hotbar_select_slot_1,
+        .hotbar_select_slot_2 = frame_actions.hotbar_select_slot_2,
+        .hotbar_select_slot_3 = frame_actions.hotbar_select_slot_3,
+        .hotbar_select_slot_4 = frame_actions.hotbar_select_slot_4,
+        .ui_inventory_toggle_pressed = frame_actions.ui_inventory_toggle_pressed,
+        .hotbar_select_next_row = frame_actions.hotbar_select_next_row,
+        .smart_mode_toggle_pressed = frame_actions.smart_mode_toggle_pressed,
+        .smart_context_held = frame_actions.smart_context_held,
     };
 
     if (intent.move_left && intent.move_right) {

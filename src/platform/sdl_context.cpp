@@ -178,42 +178,51 @@ bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
         }
 
         if (event.type == SDL_EVENT_KEY_DOWN) {
-            if (event.key.scancode == SDL_SCANCODE_E) {
-                out_actions.player_mine = true;
-            }
-
-            if (event.key.scancode == SDL_SCANCODE_R) {
-                out_actions.player_place = true;
-            }
-
             if (event.key.scancode == SDL_SCANCODE_1) {
-                out_actions.select_material_dirt = true;
+                out_actions.hotbar_select_slot_1 = true;
             }
 
             if (event.key.scancode == SDL_SCANCODE_2) {
-                out_actions.select_material_stone = true;
+                out_actions.hotbar_select_slot_2 = true;
             }
 
-            if (event.key.scancode == SDL_SCANCODE_Q) {
-                out_actions.build_workbench = true;
+            if (event.key.scancode == SDL_SCANCODE_3) {
+                out_actions.hotbar_select_slot_3 = true;
             }
 
-            if (event.key.scancode == SDL_SCANCODE_F) {
-                out_actions.craft_wood_sword = true;
+            if (event.key.scancode == SDL_SCANCODE_4) {
+                out_actions.hotbar_select_slot_4 = true;
+            }
+
+            if (event.key.scancode == SDL_SCANCODE_ESCAPE) {
+                out_actions.ui_inventory_toggle_pressed = true;
+            }
+
+            if (event.key.scancode == SDL_SCANCODE_TAB) {
+                out_actions.hotbar_select_next_row = true;
+            }
+
+            if (event.key.scancode == SDL_SCANCODE_LCTRL ||
+                event.key.scancode == SDL_SCANCODE_RCTRL) {
+                out_actions.smart_mode_toggle_pressed = true;
             }
         }
 
         if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-            if (event.button.button == SDL_BUTTON_LEFT) {
-                out_actions.player_mine = true;
-            }
             if (event.button.button == SDL_BUTTON_RIGHT) {
-                out_actions.player_place = true;
+                out_actions.interaction_primary_pressed = true;
             }
         }
     }
 
     SDL_PumpEvents();
+    float mouse_x = 0.0F;
+    float mouse_y = 0.0F;
+    const SDL_MouseButtonFlags mouse_buttons = SDL_GetMouseState(&mouse_x, &mouse_y);
+    (void)mouse_x;
+    (void)mouse_y;
+    out_actions.action_primary_held = (mouse_buttons & SDL_BUTTON_LMASK) != 0U;
+
     const bool* keyboard_state = SDL_GetKeyboardState(nullptr);
     if (keyboard_state != nullptr) {
         const bool move_left_wasd = keyboard_state[SDL_SCANCODE_A];
@@ -232,6 +241,8 @@ bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
         out_actions.move_right = move_right_wasd || move_right_arrow;
         out_actions.move_up = move_up_wasd || move_up_arrow;
         out_actions.move_down = move_down_wasd || move_down_arrow;
+        out_actions.smart_context_held = keyboard_state[SDL_SCANCODE_LSHIFT] ||
+            keyboard_state[SDL_SCANCODE_RSHIFT];
     }
 
     return true;
