@@ -7,28 +7,30 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(NOVARIA_WARNINGS_AS_ERRORS "Treat compiler warnings as errors." OFF)
-option(NOVARIA_FETCH_SDL3 "Fetch SDL3 when local package is unavailable." OFF)
-option(NOVARIA_FETCH_ENTT "Fetch EnTT when local package is unavailable." ON)
 option(NOVARIA_BUILD_TESTS "Build unit tests." ON)
 option(NOVARIA_ENABLE_LUAJIT "Enable LuaJIT backend when library is available." ON)
+option(
+    NOVARIA_ALLOW_SYSTEM_DEPS
+    "Allow fallback to system package manager dependencies when third_party is incomplete."
+    OFF
+)
 
-set(NOVARIA_LOCAL_SDL3_DIR "${CMAKE_SOURCE_DIR}/third_party/SDL3-3.2.0/cmake")
-if(NOT DEFINED SDL3_DIR AND EXISTS "${NOVARIA_LOCAL_SDL3_DIR}/SDL3Config.cmake")
-    set(SDL3_DIR "${NOVARIA_LOCAL_SDL3_DIR}" CACHE PATH "Path to SDL3Config.cmake directory.")
+set(NOVARIA_VENDOR_DIR "${CMAKE_SOURCE_DIR}/third_party")
+set(NOVARIA_LOCAL_SDL3_DIR "${NOVARIA_VENDOR_DIR}/SDL3-3.2.0/cmake")
+set(NOVARIA_LOCAL_ENTT_INCLUDE_DIR "${NOVARIA_VENDOR_DIR}/entt-3.13.2/src")
+set(NOVARIA_LOCAL_LUAJIT_INCLUDE_DIR "${NOVARIA_VENDOR_DIR}/LuaJIT-2.1/src")
+if(WIN32)
+    set(NOVARIA_LOCAL_LUAJIT_LIBRARY "${NOVARIA_VENDOR_DIR}/LuaJIT-2.1/src/lua51.lib")
+else()
+    set(NOVARIA_LOCAL_LUAJIT_LIBRARY "${NOVARIA_VENDOR_DIR}/LuaJIT-2.1/src/libluajit-5.1.a")
 endif()
 
-find_package(SDL3 CONFIG QUIET)
-
-include(FetchContent)
-
-if(NOT SDL3_FOUND AND NOVARIA_FETCH_SDL3)
-    FetchContent_Declare(
-        SDL3
-        URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.0.tar.gz
-        DOWNLOAD_EXTRACT_TIMESTAMP FALSE
-        EXCLUDE_FROM_ALL
-    )
-    FetchContent_MakeAvailable(SDL3)
+set(SDL3_FOUND FALSE)
+if(EXISTS "${NOVARIA_LOCAL_SDL3_DIR}/SDL3Config.cmake")
+    find_package(SDL3 CONFIG QUIET PATHS "${NOVARIA_LOCAL_SDL3_DIR}" NO_DEFAULT_PATH)
+endif()
+if(NOT SDL3_FOUND AND NOVARIA_ALLOW_SYSTEM_DEPS)
+    find_package(SDL3 CONFIG QUIET)
 endif()
 
 set(NOVARIA_SDL3_TARGET "")
@@ -43,63 +45,94 @@ if(NOT NOVARIA_SDL3_TARGET)
     message(
         FATAL_ERROR
         "SDL3 target not found.\n"
-        "1) Install SDL3 with your package manager (vcpkg/msys2).\n"
-        "2) Set SDL3_DIR manually.\n"
-        "3) If network allows, configure with -DNOVARIA_FETCH_SDL3=ON.\n"
+        "1) Install vendor dependency at third_party/SDL3-3.2.0.\n"
+        "2) Or set -DNOVARIA_ALLOW_SYSTEM_DEPS=ON and provide SDL3 via system package manager.\n"
+        "3) Or set SDL3_DIR manually.\n"
     )
-endif()
-
-find_package(EnTT CONFIG QUIET)
-
-if(NOT EnTT_FOUND AND NOVARIA_FETCH_ENTT)
-    FetchContent_Declare(
-        entt
-        URL https://github.com/skypjack/entt/archive/refs/tags/v3.13.2.tar.gz
-        DOWNLOAD_EXTRACT_TIMESTAMP FALSE
-        EXCLUDE_FROM_ALL
-    )
-    FetchContent_MakeAvailable(entt)
 endif()
 
 set(NOVARIA_ENTT_TARGET "")
 set(NOVARIA_ENTT_INCLUDE_DIR "")
-foreach(candidate_target EnTT::EnTT entt::entt)
-    if(TARGET ${candidate_target})
-        set(NOVARIA_ENTT_TARGET ${candidate_target})
-        break()
-    endif()
-endforeach()
+if(EXISTS "${NOVARIA_LOCAL_ENTT_INCLUDE_DIR}/entt/entt.hpp")
+    set(NOVARIA_ENTT_INCLUDE_DIR "${NOVARIA_LOCAL_ENTT_INCLUDE_DIR}")
+elseif(NOVARIA_ALLOW_SYSTEM_DEPS)
+    find_package(EnTT CONFIG QUIET)
+    foreach(candidate_target EnTT::EnTT entt::entt)
+        if(TARGET ${candidate_target})
+            set(NOVARIA_ENTT_TARGET ${candidate_target})
+            break()
+        endif()
+    endforeach()
+endif()
 
-if(NOT NOVARIA_ENTT_TARGET)
-    if(DEFINED entt_SOURCE_DIR AND EXISTS "${entt_SOURCE_DIR}/src/entt/entt.hpp")
-        set(NOVARIA_ENTT_INCLUDE_DIR "${entt_SOURCE_DIR}/src")
-    else()
-        message(
-            FATAL_ERROR
-            "EnTT target not found.\n"
-            "1) Install EnTT package and set EnTT_DIR.\n"
-            "2) Enable fetch with -DNOVARIA_FETCH_ENTT=ON.\n"
-        )
-    endif()
+if(NOT NOVARIA_ENTT_TARGET AND NOT NOVARIA_ENTT_INCLUDE_DIR)
+    message(
+        FATAL_ERROR
+        "EnTT dependency not found.\n"
+        "1) Install vendor dependency at third_party/entt-3.13.2/src.\n"
+        "2) Or set -DNOVARIA_ALLOW_SYSTEM_DEPS=ON and provide EnTT via system package manager.\n"
+        "3) Or set EnTT_DIR manually.\n"
+    )
 endif()
 
 set(NOVARIA_LUAJIT_FOUND OFF)
 if(NOVARIA_ENABLE_LUAJIT)
-    find_path(
-        NOVARIA_LUAJIT_INCLUDE_DIR
-        NAMES lua.h luajit.h
-        PATH_SUFFIXES luajit-2.1 lua5.1 lua
-    )
-    find_library(
-        NOVARIA_LUAJIT_LIBRARY
-        NAMES luajit-5.1 luajit lua51
-    )
+    set(novaria_luajit_include_candidate "")
+    set(novaria_luajit_library_candidate "")
 
-    if(NOVARIA_LUAJIT_INCLUDE_DIR AND NOVARIA_LUAJIT_LIBRARY)
+    if(DEFINED NOVARIA_LUAJIT_INCLUDE_DIR AND EXISTS "${NOVARIA_LUAJIT_INCLUDE_DIR}/lua.h")
+        set(novaria_luajit_include_candidate "${NOVARIA_LUAJIT_INCLUDE_DIR}")
+    elseif(EXISTS "${NOVARIA_LOCAL_LUAJIT_INCLUDE_DIR}/lua.h")
+        set(novaria_luajit_include_candidate "${NOVARIA_LOCAL_LUAJIT_INCLUDE_DIR}")
+    endif()
+
+    if(DEFINED NOVARIA_LUAJIT_LIBRARY AND EXISTS "${NOVARIA_LUAJIT_LIBRARY}")
+        set(novaria_luajit_library_candidate "${NOVARIA_LUAJIT_LIBRARY}")
+    elseif(EXISTS "${NOVARIA_LOCAL_LUAJIT_LIBRARY}")
+        set(novaria_luajit_library_candidate "${NOVARIA_LOCAL_LUAJIT_LIBRARY}")
+    endif()
+
+    if((NOT novaria_luajit_include_candidate OR NOT novaria_luajit_library_candidate) AND
+       NOVARIA_ALLOW_SYSTEM_DEPS)
+        if(NOT novaria_luajit_include_candidate)
+            find_path(
+                novaria_luajit_include_candidate
+                NAMES lua.h luajit.h
+                PATH_SUFFIXES luajit-2.1 lua5.1 lua
+            )
+        endif()
+
+        if(NOT novaria_luajit_library_candidate)
+            find_library(
+                novaria_luajit_library_candidate
+                NAMES luajit-5.1 luajit lua51
+            )
+        endif()
+    endif()
+
+    if(novaria_luajit_include_candidate AND novaria_luajit_library_candidate)
+        set(
+            NOVARIA_LUAJIT_INCLUDE_DIR
+            "${novaria_luajit_include_candidate}"
+            CACHE PATH
+            "Path to LuaJIT headers."
+            FORCE
+        )
+        set(
+            NOVARIA_LUAJIT_LIBRARY
+            "${novaria_luajit_library_candidate}"
+            CACHE FILEPATH
+            "Path to LuaJIT library."
+            FORCE
+        )
         set(NOVARIA_LUAJIT_FOUND ON)
         message(STATUS "LuaJIT found: ${NOVARIA_LUAJIT_LIBRARY}")
     else()
-        message(STATUS "LuaJIT not found, script runtime will fail-fast at initialization.")
+        message(
+            STATUS
+            "LuaJIT not found, script runtime will fail-fast at initialization. "
+            "Expected vendor path: ${NOVARIA_LOCAL_LUAJIT_INCLUDE_DIR}"
+        )
     endif()
 endif()
 
@@ -214,7 +247,7 @@ novaria_link_entt(novaria_server)
 novaria_link_luajit_if_available(novaria_server)
 novaria_link_winsock_if_needed(novaria_server)
 
-set(NOVARIA_LOCAL_SDL3_DLL "${CMAKE_SOURCE_DIR}/third_party/SDL3-3.2.0/lib/x64/SDL3.dll")
+set(NOVARIA_LOCAL_SDL3_DLL "${NOVARIA_VENDOR_DIR}/SDL3-3.2.0/lib/x64/SDL3.dll")
 if(EXISTS "${NOVARIA_LOCAL_SDL3_DLL}")
     add_custom_command(
         TARGET novaria

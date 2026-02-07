@@ -6,11 +6,14 @@
 - CMake 3.24+
 - Visual Studio 2022（含 C++ 工具链）
 
-## 2. SDL3 选择策略
+## 2. 第三方依赖策略（统一）
 
-- 默认优先使用本地目录：`third_party/SDL3-3.2.0/cmake`。
-- 若系统已安装 SDL3，可手动指定 `SDL3_DIR`。
-- 若允许联网，可启用 `NOVARIA_FETCH_SDL3=ON` 自动拉取。
+- 统一采用 `vendor-first`：默认只从 `third_party/` 读取依赖，不在配置阶段在线拉取。
+- 三方依赖统一目录约定：
+  - `third_party/SDL3-3.2.0/`
+  - `third_party/entt-3.13.2/`
+  - `third_party/LuaJIT-2.1/`
+- 若必须使用系统包管理器兜底，可显式开启：`-DNOVARIA_ALLOW_SYSTEM_DEPS=ON`。
 
 ## 3. 配置与编译
 
@@ -45,22 +48,30 @@ cmake --build build --config Debug
 
 ## 5. 常用可选参数
 
-使用系统 SDL3：
+使用系统依赖兜底（不推荐，默认关闭）：
+
+```powershell
+cmake -S . -B build -DNOVARIA_ALLOW_SYSTEM_DEPS=ON
+```
+
+使用系统 SDL3（仅在兜底模式下）：
 
 ```powershell
 cmake -S . -B build -DSDL3_DIR="你的SDL3Config.cmake所在目录"
-```
-
-允许联网自动拉取 SDL3：
-
-```powershell
-cmake -S . -B build -DNOVARIA_FETCH_SDL3=ON
 ```
 
 启用 LuaJIT 自动探测（默认开启）：
 
 ```powershell
 cmake -S . -B build -DNOVARIA_ENABLE_LUAJIT=ON
+```
+
+显式指定 LuaJIT 头文件与库（手工安装场景）：
+
+```powershell
+cmake -S . -B build `
+  -DNOVARIA_LUAJIT_INCLUDE_DIR="D:/Dev/Novaria/third_party/LuaJIT-2.1/src" `
+  -DNOVARIA_LUAJIT_LIBRARY="D:/Dev/Novaria/third_party/LuaJIT-2.1/src/lua51.lib"
 ```
 
 说明：若未找到 LuaJIT，脚本运行时会在初始化阶段 fail-fast，不再回退到 stub。
