@@ -15,21 +15,8 @@ std::string SdlError() {
 }
 
 bool IsQuitEvent(Uint32 event_type) {
-    (void)event_type;
-
-#if defined(SDL_EVENT_QUIT)
-    if (event_type == SDL_EVENT_QUIT) {
-        return true;
-    }
-#endif
-
-#if defined(SDL_EVENT_WINDOW_CLOSE_REQUESTED)
-    if (event_type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
-        return true;
-    }
-#endif
-
-    return false;
+    return event_type == SDL_EVENT_QUIT ||
+        event_type == SDL_EVENT_WINDOW_CLOSE_REQUESTED;
 }
 
 struct RgbaColor final {
@@ -138,130 +125,87 @@ bool SdlContext::Initialize(const core::GameConfig& config) {
 }
 
 bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
-#if !defined(SDL_EVENT_KEY_DOWN)
-    (void)out_actions;
-#endif
-
     SDL_Event event{};
     while (SDL_PollEvent(&event)) {
         if (IsQuitEvent(event.type)) {
             quit_requested = true;
         }
 
-#if defined(SDL_EVENT_KEY_DOWN)
         if (event.type == SDL_EVENT_KEY_DOWN) {
-#if defined(SDL_SCANCODE_E)
             if (event.key.scancode == SDL_SCANCODE_E) {
                 out_actions.player_mine = true;
             }
-#endif
 
-#if defined(SDL_SCANCODE_R)
             if (event.key.scancode == SDL_SCANCODE_R) {
                 out_actions.player_place = true;
             }
-#endif
 
-#if defined(SDL_SCANCODE_1)
             if (event.key.scancode == SDL_SCANCODE_1) {
                 out_actions.select_material_dirt = true;
             }
-#endif
 
-#if defined(SDL_SCANCODE_2)
             if (event.key.scancode == SDL_SCANCODE_2) {
                 out_actions.select_material_stone = true;
             }
-#endif
 
-#if defined(SDL_SCANCODE_J)
             if (event.key.scancode == SDL_SCANCODE_J) {
                 out_actions.send_jump_command = true;
             }
-#endif
 
-#if defined(SDL_SCANCODE_K)
             if (event.key.scancode == SDL_SCANCODE_K) {
                 out_actions.send_attack_command = true;
             }
-#endif
 
-#if defined(SDL_SCANCODE_F1)
             if (event.key.scancode == SDL_SCANCODE_F1) {
                 out_actions.emit_script_ping = true;
             }
-#endif
 
-#if defined(SDL_SCANCODE_F2)
             if (event.key.scancode == SDL_SCANCODE_F2) {
                 out_actions.debug_set_tile_air = true;
             }
-#endif
 
-#if defined(SDL_SCANCODE_F3)
             if (event.key.scancode == SDL_SCANCODE_F3) {
                 out_actions.debug_set_tile_stone = true;
             }
-#endif
 
-#if defined(SDL_SCANCODE_F4)
             if (event.key.scancode == SDL_SCANCODE_F4) {
                 out_actions.debug_net_disconnect = true;
             }
-#endif
 
-#if defined(SDL_SCANCODE_F5)
             if (event.key.scancode == SDL_SCANCODE_F5) {
                 out_actions.debug_net_heartbeat = true;
             }
-#endif
 
-#if defined(SDL_SCANCODE_F6)
             if (event.key.scancode == SDL_SCANCODE_F6) {
                 out_actions.debug_net_connect = true;
             }
-#endif
 
-#if defined(SDL_SCANCODE_F7)
             if (event.key.scancode == SDL_SCANCODE_F7) {
                 out_actions.gameplay_collect_wood = true;
             }
-#endif
 
-#if defined(SDL_SCANCODE_F8)
             if (event.key.scancode == SDL_SCANCODE_F8) {
                 out_actions.gameplay_collect_stone = true;
             }
-#endif
 
-#if defined(SDL_SCANCODE_F9)
             if (event.key.scancode == SDL_SCANCODE_F9) {
                 out_actions.gameplay_build_workbench = true;
             }
-#endif
 
-#if defined(SDL_SCANCODE_F10)
             if (event.key.scancode == SDL_SCANCODE_F10) {
                 out_actions.gameplay_craft_sword = true;
             }
-#endif
 
-#if defined(SDL_SCANCODE_F11)
             if (event.key.scancode == SDL_SCANCODE_F11) {
                 out_actions.gameplay_attack_enemy = true;
             }
-#endif
 
-#if defined(SDL_SCANCODE_F12)
             if (event.key.scancode == SDL_SCANCODE_F12) {
                 out_actions.gameplay_attack_boss = true;
             }
-#endif
         }
-#endif
     }
 
-#if defined(SDL_SCANCODE_A) && defined(SDL_SCANCODE_D) && defined(SDL_SCANCODE_W) && defined(SDL_SCANCODE_S)
     SDL_PumpEvents();
     const bool* keyboard_state = SDL_GetKeyboardState(nullptr);
     if (keyboard_state != nullptr) {
@@ -273,24 +217,15 @@ bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
         bool move_right_arrow = false;
         bool move_up_arrow = false;
         bool move_down_arrow = false;
-#if defined(SDL_SCANCODE_LEFT)
         move_left_arrow = keyboard_state[SDL_SCANCODE_LEFT];
-#endif
-#if defined(SDL_SCANCODE_RIGHT)
         move_right_arrow = keyboard_state[SDL_SCANCODE_RIGHT];
-#endif
-#if defined(SDL_SCANCODE_UP)
         move_up_arrow = keyboard_state[SDL_SCANCODE_UP];
-#endif
-#if defined(SDL_SCANCODE_DOWN)
         move_down_arrow = keyboard_state[SDL_SCANCODE_DOWN];
-#endif
         out_actions.move_left = move_left_wasd || move_left_arrow;
         out_actions.move_right = move_right_wasd || move_right_arrow;
         out_actions.move_up = move_up_wasd || move_up_arrow;
         out_actions.move_down = move_down_wasd || move_down_arrow;
     }
-#endif
 
     return true;
 }
