@@ -57,6 +57,20 @@ int main() {
     bool got_payload = false;
     std::string received_payload;
     novaria::net::UdpEndpoint sender_endpoint{};
+
+    passed &= Expect(
+        sender.SendTo({.host = "127.0.0.1", .port = 65534}, "unreachable_probe", error),
+        "Send to unreachable loopback port should still succeed on UDP.");
+    passed &= Expect(error.empty(), "Unreachable probe send should not return error.");
+
+    for (int index = 0; index < 8; ++index) {
+        (void)sender.Receive(received_payload, sender_endpoint, error);
+        passed &= Expect(
+            error.empty(),
+            "Unreachable probe should not produce hard receive error.");
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
     for (int index = 0; index < 200; ++index) {
         if (receiver.Receive(received_payload, sender_endpoint, error)) {
             got_payload = true;

@@ -138,19 +138,23 @@ std::string AddressToString(const sockaddr_in& address) {
     return std::string(text);
 }
 
-bool IsWouldBlockError() {
+bool IsWouldBlockError(int error_code) {
 #if defined(_WIN32)
-    const int error_code = WSAGetLastError();
-    return error_code == WSAEWOULDBLOCK;
+    return error_code == WSAEWOULDBLOCK || error_code == WSAECONNRESET;
 #else
+    (void)error_code;
     return errno == EWOULDBLOCK || errno == EAGAIN;
 #endif
 }
 
-std::string BuildSocketErrorMessage(const char* prefix) {
+std::string BuildSocketErrorMessage(const char* prefix, int error_code = 0) {
 #if defined(_WIN32)
-    return std::string(prefix) + ", code=" + std::to_string(WSAGetLastError());
+    if (error_code == 0) {
+        error_code = WSAGetLastError();
+    }
+    return std::string(prefix) + ", code=" + std::to_string(error_code);
 #else
+    (void)error_code;
     return std::string(prefix) + ": " + std::string(std::strerror(errno));
 #endif
 }
@@ -333,12 +337,17 @@ bool UdpTransport::Receive(std::string& out_payload, UdpEndpoint& out_sender, st
         reinterpret_cast<sockaddr*>(&sender_address),
         &sender_address_size);
     if (receive_result < 0) {
-        if (IsWouldBlockError()) {
+#if defined(_WIN32)
+        const int socket_error = WSAGetLastError();
+#else
+        const int socket_error = errno;
+#endif
+        if (IsWouldBlockError(socket_error)) {
             out_error.clear();
             return false;
         }
 
-        out_error = BuildSocketErrorMessage("recvfrom failed");
+        out_error = BuildSocketErrorMessage("recvfrom failed", socket_error);
         return false;
     }
 

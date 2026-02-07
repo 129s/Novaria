@@ -83,6 +83,7 @@
 - `udp_loopback` 已引入最小握手与心跳控制报文（`SYN/ACK/HEARTBEAT`）。
 - 已引入连接探测指数退避（`kConnectProbeIntervalTicks` -> `kMaxConnectProbeIntervalTicks`）并提供探测诊断计数。
 - 已引入对端来源校验与动态对端采纳（配置 `remote_port=0` 时可由 `SYN` 建立 peer）。
+- UDP 不可达噪声（Windows `WSAECONNRESET`）按可恢复空读处理，避免误判为传输层硬错误。
 - 心跳超时断线：`kHeartbeatTimeoutTicks`。
 - 断线态拒收本地命令与远端 payload。
 - 提供可观测诊断：迁移计数、探测计数、来源过滤计数、丢弃计数、最近迁移原因、最后心跳 Tick。
