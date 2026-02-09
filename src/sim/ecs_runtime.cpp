@@ -740,11 +740,7 @@ void Runtime::QueuePickupProbe(std::uint32_t player_id, const command::PickupPro
     });
 }
 
-<<<<<<< HEAD
 void Runtime::Tick(const core::TickContext& tick_context, const world::IWorldService& world_service) {
-=======
-void Runtime::Tick(const TickContext& tick_context, const world::IWorldService& world_service) {
->>>>>>> 77c2e72a388234fbfa90639e804362c787d0e052
     if (!impl_->initialized) {
         return;
     }

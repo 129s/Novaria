@@ -3,11 +3,7 @@
 #include "sim/command_schema.h"
 #include "sim/gameplay_types.h"
 #include "sim/player_motion.h"
-<<<<<<< HEAD
 #include "core/tick_context.h"
-=======
-#include "sim/tick_context.h"
->>>>>>> 77c2e72a388234fbfa90639e804362c787d0e052
 
 #include <cstdint>
 #include <memory>
@@ -112,11 +108,7 @@ public:
         const command::FireProjectilePayload& payload);
     void QueueSpawnWorldDrop(const command::SpawnDropPayload& payload);
     void QueuePickupProbe(std::uint32_t player_id, const command::PickupProbePayload& payload);
-<<<<<<< HEAD
     void Tick(const core::TickContext& tick_context, const world::IWorldService& world_service);
-=======
-    void Tick(const TickContext& tick_context, const world::IWorldService& world_service);
->>>>>>> 77c2e72a388234fbfa90639e804362c787d0e052
     std::vector<CombatEvent> ConsumeCombatEvents();
     std::vector<GameplayEvent> ConsumeGameplayEvents();
     RuntimeDiagnostics DiagnosticsSnapshot() const;

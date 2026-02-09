@@ -26,11 +26,7 @@ public:
         return true;
     }
     void Shutdown() override {}
-<<<<<<< HEAD
     void Tick(const novaria::core::TickContext& tick_context) override {
-=======
-    void Tick(const novaria::sim::TickContext& tick_context) override {
->>>>>>> 77c2e72a388234fbfa90639e804362c787d0e052
         (void)tick_context;
     }
     void LoadChunk(const novaria::world::ChunkCoord& chunk_coord) override {

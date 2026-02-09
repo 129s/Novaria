@@ -141,7 +141,6 @@ function(novaria_enable_default_warnings target_name)
 endfunction()
 
 add_library(
-<<<<<<< HEAD
     novaria_core
     STATIC
     src/core/logger.cpp
@@ -228,24 +227,12 @@ target_link_libraries(novaria_save PUBLIC novaria_wire novaria_core)
 add_library(
     novaria_sim
     STATIC
-=======
-    novaria_engine
-    STATIC
-    src/wire/byte_io.cpp
-    src/wire/envelope.cpp
-    src/runtime/mod_script_loader.cpp
-    src/runtime/world_service_factory.cpp
-    src/runtime/mod_pipeline.cpp
-    src/runtime/save_state_loader.cpp
-    src/runtime/mod_fingerprint_policy.cpp
->>>>>>> 77c2e72a388234fbfa90639e804362c787d0e052
     src/sim/simulation_kernel.cpp
     src/sim/player_motion.cpp
     src/sim/gameplay_ruleset.cpp
     src/sim/command_schema.cpp
     src/sim/typed_command.cpp
     src/sim/ecs_runtime.cpp
-<<<<<<< HEAD
 )
 target_include_directories(novaria_sim PUBLIC "${NOVARIA_PUBLIC_INCLUDE_DIR}" PRIVATE src)
 target_link_libraries(novaria_sim PUBLIC novaria_world novaria_wire novaria_core)
@@ -284,40 +271,10 @@ add_library(
 )
 target_include_directories(novaria_platform PUBLIC "${NOVARIA_PUBLIC_INCLUDE_DIR}")
 target_link_libraries(novaria_platform PUBLIC novaria_core ${NOVARIA_SDL3_TARGET})
-=======
-    src/world/material_catalog.cpp
-    src/world/world_service_basic.cpp
-    src/world/snapshot_codec.cpp
-    src/net/net_service_udp_peer.cpp
-    src/net/udp_transport.cpp
-    src/script/lua_jit_script_host.cpp
-    src/mod/mod_loader.cpp
-    src/save/save_repository.cpp
-    src/core/logger.cpp
-    src/core/cfg_parser.cpp
-    src/core/config.cpp
-    src/core/sha256.cpp
-    src/core/base64.cpp
-    src/runtime/net_service_factory.cpp
-    src/runtime/script_host_factory.cpp
-)
-target_include_directories(
-    novaria_engine
-    PUBLIC
-        "${NOVARIA_PUBLIC_INCLUDE_DIR}"
-    PRIVATE
-        src
-        "${NOVARIA_GENERATED_DIR}"
-)
-novaria_link_entt(novaria_engine)
-novaria_link_winsock_if_needed(novaria_engine)
-novaria_link_luajit_if_available(novaria_engine)
->>>>>>> 77c2e72a388234fbfa90639e804362c787d0e052
 
 add_library(
     novaria_app
     STATIC
-<<<<<<< HEAD
     src/app/game_app.cpp
     src/app/game_loop.cpp
     src/app/input_command_mapper.cpp
@@ -351,29 +308,6 @@ add_executable(
 
 target_include_directories(novaria PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
 target_link_libraries(novaria PRIVATE novaria_app)
-=======
-    src/app/input_command_mapper.cpp
-    src/app/player_controller_components.cpp
-    src/app/player_controller.cpp
-    src/app/render_scene_builder.cpp
-)
-target_include_directories(novaria_app PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
-target_link_libraries(novaria_app PRIVATE novaria_engine)
-novaria_link_entt(novaria_app)
-novaria_link_winsock_if_needed(novaria_app)
-
-add_executable(
-    novaria
-    src/main.cpp
-    src/app/game_app.cpp
-    src/app/game_loop.cpp
-    src/platform/sdl_context.cpp
-)
-
-target_include_directories(novaria PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}" "${NOVARIA_GENERATED_DIR}")
-target_link_libraries(novaria PRIVATE novaria_engine novaria_app ${NOVARIA_SDL3_TARGET})
-novaria_link_entt(novaria)
->>>>>>> 77c2e72a388234fbfa90639e804362c787d0e052
 
 add_executable(
     novaria_net_smoke
@@ -401,14 +335,8 @@ add_executable(
     novaria_server
     tools/server_main.cpp
 )
-<<<<<<< HEAD
 target_include_directories(novaria_server PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
 target_link_libraries(novaria_server PRIVATE novaria_engine)
-=======
-target_include_directories(novaria_server PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}" "${NOVARIA_GENERATED_DIR}")
-target_link_libraries(novaria_server PRIVATE novaria_engine)
-novaria_link_entt(novaria_server)
->>>>>>> 77c2e72a388234fbfa90639e804362c787d0e052
 
 set(NOVARIA_LOCAL_SDL3_DLL "${NOVARIA_VENDOR_DIR}/SDL3-3.2.0/lib/x64/SDL3.dll")
 if(EXISTS "${NOVARIA_LOCAL_SDL3_DLL}")

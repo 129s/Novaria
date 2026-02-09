@@ -52,7 +52,6 @@ struct WhitelistedGlobal final {
     bool required = false;
 };
 
-<<<<<<< HEAD
 std::string ReadEnvironmentString(const char* name) {
 #if defined(_MSC_VER)
     char* value = nullptr;
@@ -73,14 +72,6 @@ std::string ReadEnvironmentString(const char* name) {
 std::string LoadBootstrapScriptSource() {
     std::string bootstrap_override_path;
     bootstrap_override_path = ReadEnvironmentString("NOVARIA_LUA_BOOTSTRAP_FILE");
-=======
-std::string LoadBootstrapScriptSource() {
-    std::string bootstrap_override_path;
-    if (const char* env_path = std::getenv("NOVARIA_LUA_BOOTSTRAP_FILE");
-        env_path != nullptr && env_path[0] != '\0') {
-        bootstrap_override_path = env_path;
-    }
->>>>>>> 77c2e72a388234fbfa90639e804362c787d0e052
 
     if (!bootstrap_override_path.empty()) {
         std::string override_source;

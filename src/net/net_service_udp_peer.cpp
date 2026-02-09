@@ -375,11 +375,7 @@ NetDiagnosticsSnapshot NetServiceUdpPeer::DiagnosticsSnapshot() const {
     };
 }
 
-<<<<<<< HEAD
 void NetServiceUdpPeer::Tick(const core::TickContext& tick_context) {
-=======
-void NetServiceUdpPeer::Tick(const sim::TickContext& tick_context) {
->>>>>>> 77c2e72a388234fbfa90639e804362c787d0e052
     if (!initialized_) {
         return;
     }

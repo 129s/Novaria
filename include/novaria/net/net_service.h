@@ -1,10 +1,6 @@
 #pragma once
 
-<<<<<<< HEAD
 #include "core/tick_context.h"
-=======
-#include "sim/tick_context.h"
->>>>>>> 77c2e72a388234fbfa90639e804362c787d0e052
 #include "wire/byte_io.h"
 
 #include <cstddef>
