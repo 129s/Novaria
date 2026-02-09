@@ -1,5 +1,6 @@
 #include "sim/ecs_runtime.h"
 
+#include "sim/tile_collision.h"
 #include "world/material_catalog.h"
 #include "world/world_service.h"
 
@@ -678,6 +679,28 @@ void Runtime::ApplyActionPrimary(
             },
         });
     } else if (progress.is_place) {
+        if (world::material::CollisionShapeFor(progress.place_material_id) !=
+            world::material::CollisionShape::Empty) {
+            const auto* motion = impl_->registry.try_get<PlayerMotion>(player);
+            if (motion != nullptr) {
+                const PlayerMotionSettings& settings = DefaultPlayerMotionSettings();
+                const collision::Aabb player_aabb = collision::MakePlayerAabb(
+                    motion->state.position_x,
+                    motion->state.position_y,
+                    settings.half_width,
+                    settings.height,
+                    0.002F);
+                if (collision::WouldMaterialOverlapAabb(
+                        static_cast<world::material::MaterialId>(progress.place_material_id),
+                        progress.target_tile_x,
+                        progress.target_tile_y,
+                        player_aabb)) {
+                    progress = {};
+                    return;
+                }
+            }
+        }
+
         std::string error;
         if (!world_service.ApplyTileMutation(
                 world::TileMutation{

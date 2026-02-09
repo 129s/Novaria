@@ -256,6 +256,7 @@ add_library(
     STATIC
     src/sim/simulation_kernel.cpp
     src/sim/player_motion.cpp
+    src/sim/tile_collision.cpp
     src/sim/gameplay_ruleset.cpp
     src/sim/command_schema.cpp
     src/sim/typed_command.cpp

@@ -1823,6 +1823,92 @@ bool TestGameplayDropPickupAndInteractionDispatchScriptEvents() {
     return passed;
 }
 
+bool TestPlaceRejectedWhenTileOverlapsPlayerCollider() {
+    bool passed = true;
+
+    FakeWorldService world;
+    FakeNetService net;
+    FakeScriptHost script;
+    net.auto_progress_connection = false;
+    novaria::sim::SimulationKernel kernel(world, net, script);
+
+    std::string error;
+    passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
+
+    constexpr int kGroundY = 10;
+    for (int x = -16; x <= 16; ++x) {
+        for (int y = kGroundY; y <= kGroundY + 32; ++y) {
+            world.SetTile(x, y, novaria::world::material::kStone);
+        }
+    }
+
+    bool settled = false;
+    for (int tick = 0; tick < 360; ++tick) {
+        kernel.Update(1.0 / 60.0);
+        const novaria::sim::PlayerMotionSnapshot motion = kernel.LocalPlayerMotion();
+        if (motion.on_ground && std::fabs(motion.position_y - static_cast<float>(kGroundY)) <= 0.05F) {
+            settled = true;
+            break;
+        }
+    }
+    passed &= Expect(settled, "Player should settle on the configured ground before placement test.");
+
+    kernel.SubmitLocalCommand({
+        .player_id = 1,
+        .command_id = novaria::sim::command::kGameplaySpawnDrop,
+        .payload = novaria::sim::command::EncodeSpawnDropPayload({
+            .tile_x = 0,
+            .tile_y = kGroundY - 1,
+            .material_id = novaria::world::material::kDirt,
+            .amount = 1,
+        }),
+    });
+    kernel.SubmitLocalCommand({
+        .player_id = 1,
+        .command_id = novaria::sim::command::kGameplayPickupProbe,
+        .payload = novaria::sim::command::EncodePickupProbePayload({.tile_x = 0, .tile_y = kGroundY - 1}),
+    });
+    kernel.Update(1.0 / 60.0);
+
+    const novaria::sim::PlayerInventorySnapshot inventory_after_pickup = kernel.InventorySnapshot(1);
+    passed &= Expect(
+        inventory_after_pickup.dirt_count >= 1,
+        "Pickup should grant at least 1 dirt for placement test.");
+
+    const novaria::sim::PlayerMotionSnapshot motion_before_place = kernel.LocalPlayerMotion();
+    const int player_tile_x = static_cast<int>(std::floor(motion_before_place.position_x));
+    const int player_tile_y = static_cast<int>(std::floor(motion_before_place.position_y));
+    const int target_tile_x = player_tile_x;
+    const int target_tile_y = player_tile_y - 1;
+
+    const std::size_t mutation_count_before = world.applied_tile_mutations.size();
+    for (int tick = 0; tick < 8; ++tick) {
+        kernel.SubmitLocalCommand({
+            .player_id = 1,
+            .command_id = novaria::sim::command::kGameplayActionPrimary,
+            .payload = novaria::sim::command::EncodeActionPrimaryPayload({
+                .target_tile_x = target_tile_x,
+                .target_tile_y = target_tile_y,
+                .hotbar_row = 0,
+                .hotbar_slot = 2,
+            }),
+        });
+        kernel.Update(1.0 / 60.0);
+    }
+
+    passed &= Expect(
+        world.applied_tile_mutations.size() == mutation_count_before,
+        "Placing a solid tile overlapping the player should be rejected (no world mutation).");
+
+    const novaria::sim::PlayerInventorySnapshot inventory_after_place = kernel.InventorySnapshot(1);
+    passed &= Expect(
+        inventory_after_place.dirt_count == inventory_after_pickup.dirt_count,
+        "Rejected placement should not consume inventory.");
+
+    kernel.Shutdown();
+    return passed;
+}
+
 }  // namespace
 
 int main() {
@@ -1845,6 +1931,7 @@ int main() {
     passed &= TestReplicaModeRejectsLocalWorldWrites();
     passed &= TestGameplayLoopCommandsReachBossDefeat();
     passed &= TestGameplayDropPickupAndInteractionDispatchScriptEvents();
+    passed &= TestPlaceRejectedWhenTileOverlapsPlayerCollider();
     passed &= TestUpdateConsumesRemoteChunkPayloads();
     passed &= TestUpdateSkipsNetExchangeWhenSessionNotConnected();
     passed &= TestAuthorityPublishesLoadedChunksAfterConnectionEstablished();

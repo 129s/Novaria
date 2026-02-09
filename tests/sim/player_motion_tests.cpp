@@ -285,6 +285,45 @@ bool TestJumpFromOneTilePitAfterPushing() {
     return passed;
 }
 
+bool TestResolvePenetrationWhenBlockAppearsInsidePlayer() {
+    bool passed = true;
+    TestWorldService world;
+    std::string error;
+    (void)world.Initialize(error);
+
+    constexpr int kGroundY = 10;
+    world.SetLoadedBounds(-64, 64, -64, kGroundY + 64);
+    for (int x = -16; x <= 16; ++x) {
+        for (int y = kGroundY; y <= kGroundY + 32; ++y) {
+            world.SetSolidTile(x, y, novaria::world::material::kStone);
+        }
+    }
+
+    const novaria::sim::PlayerMotionSettings& settings = novaria::sim::DefaultPlayerMotionSettings();
+    novaria::sim::PlayerMotionState state{};
+    state.position_x = 0.5F;
+    state.position_y = static_cast<float>(kGroundY) - 0.7F; // falling toward ground
+    state.velocity_y = 0.0F;
+    state.on_ground = false;
+
+    const int embedded_tile_x = static_cast<int>(std::floor(state.position_x));
+    const int embedded_tile_y = static_cast<int>(std::floor(state.position_y - 0.05F));
+    world.SetSolidTile(embedded_tile_x, embedded_tile_y, novaria::world::material::kStone);
+
+    novaria::sim::PlayerMotionInput input{};
+    for (int tick = 0; tick < 180; ++tick) {
+        novaria::sim::UpdatePlayerMotion(input, settings, world, 1.0 / 60.0, state);
+    }
+
+    passed &= Expect(
+        state.on_ground,
+        "Player embedded by a new solid block should resolve penetration and settle on a floor.");
+    passed &= Expect(
+        state.position_y <= static_cast<float>(kGroundY) + 0.01F,
+        "After resolving penetration and gravity, player should not keep falling through the world.");
+    return passed;
+}
+
 }  // namespace
 
 int main() {
@@ -293,6 +332,7 @@ int main() {
     passed &= TestJumpFromGapDoesNotClipIntoCeiling();
     passed &= TestGroundSnapAcquiresFloorWithoutReachingInTick();
     passed &= TestJumpFromOneTilePitAfterPushing();
+    passed &= TestResolvePenetrationWhenBlockAppearsInsidePlayer();
 
     if (!passed) {
         return 1;
