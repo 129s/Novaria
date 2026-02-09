@@ -54,6 +54,9 @@
 | 滚轮/`1-0` | `hotbar.select_slot` | 切槽 |
 | `Esc` | `ui.inventory.toggle` | 背包与制作界面开关 |
 | `Tab` | `hotbar.select_next_row` | 切换到下一行热栏 |
+| `W`/`↑` | `ui.nav.up` | UI 向上导航（配方/列表） |
+| `S`/`↓` | `ui.nav.down` | UI 向下导航（配方/列表） |
+| `Enter` | `ui.nav.confirm` | UI 确认/执行（制作/选择） |
 | `Ctrl` | `smart_mode.toggle` | 智能选择模式开关 |
 | `Shift`（按住） | `smart_context.hold` | 高亮目标与上下文槽 |
 

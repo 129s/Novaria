@@ -237,17 +237,6 @@ void ApplyHotbarInput(
     const PlayerInputIntent& input_intent,
     std::uint8_t hotbar_rows,
     const std::function<void(std::uint8_t)>& apply_hotbar_slot) {
-    if (state.inventory_open) {
-        if (input_intent.hotbar_select_slot_1) {
-            state.selected_recipe_index = 0;
-        } else if (input_intent.hotbar_select_slot_2) {
-            state.selected_recipe_index = 1;
-        } else if (input_intent.hotbar_select_slot_3) {
-            state.selected_recipe_index = 2;
-        }
-        return;
-    }
-
     if (input_intent.hotbar_select_slot_1) {
         apply_hotbar_slot(0);
     }
@@ -287,6 +276,88 @@ void ApplyHotbarInput(
         state.active_hotbar_row =
             static_cast<std::uint8_t>((state.active_hotbar_row + 1) % hotbar_rows);
     }
+}
+
+void ApplyInventoryUiInput(
+    LocalPlayerState& state,
+    const PlayerInputIntent& input_intent,
+    int recipe_count) {
+    if (!state.inventory_open || recipe_count <= 0) {
+        return;
+    }
+
+    int selected = static_cast<int>(state.selected_recipe_index);
+    selected = std::clamp(selected, 0, recipe_count - 1);
+
+    auto apply_recipe_index = [&](int index) {
+        selected = std::clamp(index, 0, recipe_count - 1);
+    };
+
+    if (input_intent.hotbar_select_slot_1) {
+        apply_recipe_index(0);
+    } else if (input_intent.hotbar_select_slot_2) {
+        apply_recipe_index(1);
+    } else if (input_intent.hotbar_select_slot_3) {
+        apply_recipe_index(2);
+    } else if (input_intent.hotbar_select_slot_4) {
+        apply_recipe_index(3);
+    } else if (input_intent.hotbar_select_slot_5) {
+        apply_recipe_index(4);
+    } else if (input_intent.hotbar_select_slot_6) {
+        apply_recipe_index(5);
+    } else if (input_intent.hotbar_select_slot_7) {
+        apply_recipe_index(6);
+    } else if (input_intent.hotbar_select_slot_8) {
+        apply_recipe_index(7);
+    } else if (input_intent.hotbar_select_slot_9) {
+        apply_recipe_index(8);
+    } else if (input_intent.hotbar_select_slot_10) {
+        apply_recipe_index(9);
+    } else if (input_intent.ui_nav_up_pressed) {
+        selected = (selected - 1 + recipe_count) % recipe_count;
+    } else if (input_intent.ui_nav_down_pressed) {
+        selected = (selected + 1) % recipe_count;
+    }
+
+    state.selected_recipe_index = static_cast<std::uint8_t>(selected);
+}
+
+bool IsWorkbenchInRange(
+    const LocalPlayerState& state,
+    const world::IWorldService& world_service,
+    int reach_distance_tiles) {
+    if (reach_distance_tiles <= 0) {
+        return false;
+    }
+
+    const int radius = reach_distance_tiles;
+    const float reach = static_cast<float>(reach_distance_tiles);
+    const float reach_sq = reach * reach;
+
+    for (int dy = -radius; dy <= radius; ++dy) {
+        for (int dx = -radius; dx <= radius; ++dx) {
+            const int tile_x = state.tile_x + dx;
+            const int tile_y = state.tile_y + dy;
+            std::uint16_t material_id = 0;
+            if (!world_service.TryReadTile(tile_x, tile_y, material_id)) {
+                continue;
+            }
+            if (material_id != world::material::kWorkbench) {
+                continue;
+            }
+
+            const float tile_center_x = static_cast<float>(tile_x) + 0.5F;
+            const float tile_center_y = static_cast<float>(tile_y) + 0.5F;
+            const float delta_x = state.position_x - tile_center_x;
+            const float delta_y = state.position_y - tile_center_y;
+            const float dist_sq = delta_x * delta_x + delta_y * delta_y;
+            if (dist_sq <= reach_sq) {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 std::uint8_t ResolveSmartContextSlot(

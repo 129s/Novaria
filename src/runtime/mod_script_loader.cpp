@@ -1,5 +1,7 @@
 #include "runtime/mod_script_loader.h"
 
+#include "content/pak.h"
+
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -108,25 +110,45 @@ bool BuildModScriptModules(
             return false;
         }
 
-        const std::filesystem::path module_file_path =
-            manifest.root_path / script_entry_path;
-        std::string path_validation_error;
-        if (!IsPathInsideRoot(
-                manifest.root_path,
-                module_file_path,
-                path_validation_error)) {
-            out_error =
-                "Invalid script entry path in mod '" + manifest.name +
-                "': " + manifest.script_entry + " (" +
-                path_validation_error + ")";
-            return false;
-        }
-
         std::string module_source;
-        if (!ReadTextFile(module_file_path, module_source, out_error)) {
-            out_error =
-                "Failed to load script entry for mod '" + manifest.name +
-                "': " + out_error;
+        if (manifest.container_kind == mod::ModContainerKind::Directory) {
+            const std::filesystem::path module_file_path =
+                manifest.container_path / script_entry_path;
+            std::string path_validation_error;
+            if (!IsPathInsideRoot(
+                    manifest.container_path,
+                    module_file_path,
+                    path_validation_error)) {
+                out_error =
+                    "Invalid script entry path in mod '" + manifest.name +
+                    "': " + manifest.script_entry + " (" +
+                    path_validation_error + ")";
+                return false;
+            }
+
+            if (!ReadTextFile(module_file_path, module_source, out_error)) {
+                out_error =
+                    "Failed to load script entry for mod '" + manifest.name +
+                    "': " + out_error;
+                return false;
+            }
+        } else if (manifest.container_kind == mod::ModContainerKind::Pak) {
+            content::PakReader pak;
+            if (!pak.Open(manifest.container_path, out_error)) {
+                out_error =
+                    "Failed to open mod pak for mod '" + manifest.name +
+                    "': " + out_error;
+                return false;
+            }
+
+            if (!pak.ReadTextFile(script_entry_path.generic_string(), module_source, out_error)) {
+                out_error =
+                    "Failed to load script entry for mod '" + manifest.name +
+                    "': " + out_error;
+                return false;
+            }
+        } else {
+            out_error = "Unsupported mod container kind for mod '" + manifest.name + "'.";
             return false;
         }
 

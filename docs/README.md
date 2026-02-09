@@ -2,8 +2,6 @@
 
 ## 先看这里
 
-- 5 分钟了解项目概览：`docs/status/overview.md`
-- 5 分钟了解当前进度：`docs/status/progress.md`
 - 查玩法蓝图与规则字典：`docs/gameplay/README.md`
 - 查模块边界与契约：`docs/architecture/README.md`
 - 查构建运行命令：`docs/engineering/build-and-run.md`
@@ -13,7 +11,6 @@
 
 ## 文档分层（强约束）
 
-- `status/`：项目概览、当前状态、里程碑与问题清单。
 - `gameplay/`：玩法蓝图、系统规则与数据字典。
 - `architecture/`：模块契约、边界、数据流、约束。
 - `engineering/`：构建、调试、测试、发布脚本。

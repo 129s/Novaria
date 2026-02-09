@@ -185,6 +185,14 @@ target_include_directories(
 )
 
 add_library(
+    novaria_content
+    STATIC
+    src/content/pak.cpp
+)
+target_include_directories(novaria_content PUBLIC "${NOVARIA_PUBLIC_INCLUDE_DIR}" PRIVATE src)
+target_link_libraries(novaria_content PUBLIC novaria_core)
+
+add_library(
     novaria_wire
     STATIC
     src/wire/byte_io.cpp
@@ -239,9 +247,10 @@ add_library(
     novaria_mod
     STATIC
     src/mod/mod_loader.cpp
+    src/mod/mod_fingerprint.cpp
 )
 target_include_directories(novaria_mod PUBLIC "${NOVARIA_PUBLIC_INCLUDE_DIR}" PRIVATE src)
-target_link_libraries(novaria_mod PUBLIC novaria_core)
+target_link_libraries(novaria_mod PUBLIC novaria_core novaria_content)
 
 add_library(
     novaria_save
@@ -310,6 +319,7 @@ add_library(
     src/app/player_controller_components.cpp
     src/app/player_controller.cpp
     src/app/render_scene_builder.cpp
+    src/ui/gameplay_ui.cpp
 )
 target_include_directories(novaria_app PUBLIC "${NOVARIA_PUBLIC_INCLUDE_DIR}")
 target_link_libraries(novaria_app PUBLIC novaria_runtime novaria_platform)
@@ -367,6 +377,14 @@ add_executable(
 target_include_directories(novaria_server PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
 target_link_libraries(novaria_server PRIVATE novaria_engine)
 
+add_executable(
+    novaria_content_tool
+    tools/content_main.cpp
+)
+set_target_properties(novaria_content_tool PROPERTIES OUTPUT_NAME "novaria_content")
+target_include_directories(novaria_content_tool PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+target_link_libraries(novaria_content_tool PRIVATE novaria_mod novaria_content novaria_core)
+
 set(NOVARIA_LOCAL_SDL3_DLL "${NOVARIA_VENDOR_DIR}/SDL3-3.2.0/lib/x64/SDL3.dll")
 if(EXISTS "${NOVARIA_LOCAL_SDL3_DLL}")
     add_custom_command(
@@ -399,6 +417,7 @@ set(NOVARIA_RUNTIME_TARGETS
     novaria_server
     novaria_net_smoke
     novaria_net_soak
+    novaria_content_tool
 )
 foreach(runtime_target IN LISTS NOVARIA_RUNTIME_TARGETS)
     novaria_enable_default_warnings(${runtime_target})
@@ -406,6 +425,7 @@ endforeach()
 
 set(NOVARIA_LIBRARY_TARGETS
     novaria_core
+    novaria_content
     novaria_wire
     novaria_world
     novaria_world_basic

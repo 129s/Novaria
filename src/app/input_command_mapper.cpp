@@ -30,6 +30,9 @@ PlayerInputIntent InputCommandMapper::Map(const platform::InputActions& frame_ac
         .hotbar_select_next_row = frame_actions.hotbar_select_next_row,
         .smart_mode_toggle_pressed = frame_actions.smart_mode_toggle_pressed,
         .smart_context_held = frame_actions.smart_context_held,
+        .ui_nav_up_pressed = frame_actions.ui_nav_up_pressed,
+        .ui_nav_down_pressed = frame_actions.ui_nav_down_pressed,
+        .ui_nav_confirm_pressed = frame_actions.ui_nav_confirm_pressed,
     };
 
     if (intent.move_left && intent.move_right) {

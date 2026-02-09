@@ -37,7 +37,8 @@ novaria::mod::ModManifest BuildManifest(
     novaria::mod::ModManifest manifest{};
     manifest.name = "mod_path_guard";
     manifest.version = "0.1.0";
-    manifest.root_path = root_path;
+    manifest.container_kind = novaria::mod::ModContainerKind::Directory;
+    manifest.container_path = root_path;
     manifest.script_entry = std::move(script_entry);
     return manifest;
 }

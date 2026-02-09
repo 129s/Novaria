@@ -38,6 +38,9 @@ void PlayerController::SyncFromSimulation(sim::SimulationKernel& simulation_kern
     state_.inventory_wood_sword_count = inventory.wood_sword_count;
     state_.has_pickaxe_tool = inventory.has_pickaxe_tool;
     state_.has_axe_tool = inventory.has_axe_tool;
+
+    state_.action_primary_progress =
+        simulation_kernel.ActionPrimaryProgressSnapshot(simulation_kernel.LocalPlayerId());
 }
 
 void PlayerController::Update(
@@ -69,15 +72,23 @@ void PlayerController::Update(
         simulation_kernel.GameplayProgress();
     state_.workbench_built = gameplay_progress.workbench_built;
     state_.wood_sword_crafted = gameplay_progress.sword_crafted;
+    if (input_intent.ui_inventory_toggle_pressed) {
+        state_.inventory_open = !state_.inventory_open;
+    }
+
+    // Soft-pause: keep sim ticking (crafting still works) but force neutral motion input
+    // while the inventory overlay is open.
     sim::command::PlayerMotionInputPayload motion_input_payload{};
-    if (input_intent.move_left) {
-        motion_input_payload.move_axis_milli -= 1000;
-    }
-    if (input_intent.move_right) {
-        motion_input_payload.move_axis_milli += 1000;
-    }
-    if (input_intent.jump_pressed) {
-        motion_input_payload.input_flags |= sim::command::kMotionInputFlagJumpPressed;
+    if (!state_.inventory_open) {
+        if (input_intent.move_left) {
+            motion_input_payload.move_axis_milli -= 1000;
+        }
+        if (input_intent.move_right) {
+            motion_input_payload.move_axis_milli += 1000;
+        }
+        if (input_intent.jump_pressed) {
+            motion_input_payload.input_flags |= sim::command::kMotionInputFlagJumpPressed;
+        }
     }
     simulation_kernel.SubmitLocalCommand(net::PlayerCommand{
         .player_id = local_player_id,
@@ -156,15 +167,16 @@ void PlayerController::Update(
         }
     };
 
-    if (input_intent.ui_inventory_toggle_pressed) {
-        state_.inventory_open = !state_.inventory_open;
+    if (!state_.inventory_open) {
+        controller::ApplyHotbarInput(
+            state_,
+            input_intent,
+            kHotbarRows,
+            apply_hotbar_slot);
     }
 
-    controller::ApplyHotbarInput(
-        state_,
-        input_intent,
-        kHotbarRows,
-        apply_hotbar_slot);
+    constexpr int kRecipeCount = 3;
+    controller::ApplyInventoryUiInput(state_, input_intent, kRecipeCount);
 
     const controller::TargetResolution target_resolution = controller::ResolveTarget(
         state_,
@@ -181,9 +193,12 @@ void PlayerController::Update(
     }
 
     const bool target_reachable = target_resolution.reachable;
+    state_.target_reachable = target_reachable;
     state_.target_highlight_visible = input_intent.smart_context_held;
     state_.target_highlight_tile_x = target_tile_x;
     state_.target_highlight_tile_y = target_tile_y;
+    state_.target_material_id = 0;
+    (void)world_service.TryReadTile(target_tile_x, target_tile_y, state_.target_material_id);
 
     if (input_intent.smart_mode_toggle_pressed) {
         state_.smart_mode_enabled = !state_.smart_mode_enabled;
@@ -223,13 +238,17 @@ void PlayerController::Update(
             }));
     }
 
-    if (input_intent.interaction_primary_pressed) {
+    const bool craft_confirm_pressed =
+        state_.inventory_open &&
+        (input_intent.interaction_primary_pressed || input_intent.ui_nav_confirm_pressed);
+
+    if (input_intent.interaction_primary_pressed || craft_confirm_pressed) {
         std::uint16_t interaction_type = sim::command::kInteractionTypeNone;
         int interaction_tile_x = target_tile_x;
         int interaction_tile_y = target_tile_y;
         std::uint16_t interaction_target_material = 0;
 
-        if (state_.inventory_open) {
+        if (craft_confirm_pressed) {
             submit_command(
                 sim::command::kGameplayCraftRecipe,
                 sim::command::EncodeCraftRecipePayload(sim::command::CraftRecipePayload{
@@ -268,6 +287,11 @@ void PlayerController::Update(
                 }));
         }
     }
+
+    state_.workbench_in_range = controller::IsWorkbenchInRange(
+        state_,
+        world_service,
+        kReachDistanceTiles);
 
     submit_pickup_probe(state_.tile_x, state_.tile_y);
 

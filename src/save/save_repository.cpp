@@ -169,7 +169,8 @@ bool FileSaveRepository::SaveWorldState(const WorldSaveState& state, std::string
     file << "tick_index=" << state.tick_index << '\n';
     file << "format_version=" << state.format_version << '\n';
     file << "local_player_id=" << state.local_player_id << '\n';
-    file << "mod_manifest_fingerprint=" << state.mod_manifest_fingerprint << '\n';
+    file << "gameplay_fingerprint=" << state.gameplay_fingerprint << '\n';
+    file << "cosmetic_fingerprint=" << state.cosmetic_fingerprint << '\n';
     if (state.has_gameplay_snapshot) {
         file << kGameplaySectionVersionKey << "=" << kCurrentGameplaySectionVersion << '\n';
         file << kGameplayWoodCollectedKey << "=" << state.gameplay_wood_collected << '\n';
@@ -307,8 +308,13 @@ bool FileSaveRepository::LoadWorldState(WorldSaveState& out_state, std::string& 
             continue;
         }
 
-        if (key == "mod_manifest_fingerprint") {
-            parsed_state.mod_manifest_fingerprint = value;
+        if (key == "gameplay_fingerprint") {
+            parsed_state.gameplay_fingerprint = value;
+            continue;
+        }
+
+        if (key == "cosmetic_fingerprint") {
+            parsed_state.cosmetic_fingerprint = value;
             continue;
         }
 

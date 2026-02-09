@@ -1,6 +1,7 @@
 #include "runtime/mod_pipeline.h"
 
 #include "core/logger.h"
+#include "mod/mod_fingerprint.h"
 #include "runtime/mod_script_loader.h"
 
 #include <algorithm>
@@ -49,7 +50,12 @@ bool LoadModsAndScripts(
         return false;
     }
 
-    out_fingerprint = mod::ModLoader::BuildManifestFingerprint(out_manifests);
+    const std::string manifest_fingerprint = mod::ModLoader::BuildManifestFingerprint(out_manifests);
+    if (!mod::BuildGameplayFingerprint(out_manifests, out_fingerprint, out_error)) {
+        out_manifests.clear();
+        out_fingerprint.clear();
+        return false;
+    }
     std::size_t item_definition_count = 0;
     std::size_t recipe_definition_count = 0;
     std::size_t npc_definition_count = 0;
@@ -64,7 +70,8 @@ bool LoadModsAndScripts(
         "Loaded mod content definitions: items=" + std::to_string(item_definition_count) +
             ", recipes=" + std::to_string(recipe_definition_count) +
             ", npcs=" + std::to_string(npc_definition_count));
-    core::Logger::Info("mod", "Manifest fingerprint: " + out_fingerprint);
+    core::Logger::Info("mod", "Manifest fingerprint: " + manifest_fingerprint);
+    core::Logger::Info("mod", "Gameplay fingerprint: " + out_fingerprint);
 
     if (!BuildModScriptModules(out_manifests, out_modules, out_error)) {
         out_manifests.clear();

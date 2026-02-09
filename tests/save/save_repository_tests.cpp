@@ -49,7 +49,8 @@ int main() {
         .format_version = novaria::save::kCurrentWorldSaveFormatVersion,
         .tick_index = 12345,
         .local_player_id = 9,
-        .mod_manifest_fingerprint = "mods:v1:abc123",
+        .gameplay_fingerprint = "mods:v1:abc123",
+        .cosmetic_fingerprint = "cosmetic:v1:def456",
         .gameplay_wood_collected = 42,
         .gameplay_stone_collected = 27,
         .gameplay_workbench_built = true,
@@ -156,8 +157,11 @@ int main() {
         actual.local_player_id == expected.local_player_id,
         "Loaded local player id should match saved value.");
     passed &= Expect(
-        actual.mod_manifest_fingerprint == expected.mod_manifest_fingerprint,
-        "Loaded mod manifest fingerprint should match saved value.");
+        actual.gameplay_fingerprint == expected.gameplay_fingerprint,
+        "Loaded gameplay fingerprint should match saved value.");
+    passed &= Expect(
+        actual.cosmetic_fingerprint == expected.cosmetic_fingerprint,
+        "Loaded cosmetic fingerprint should match saved value.");
     passed &= Expect(
         actual.gameplay_wood_collected == expected.gameplay_wood_collected &&
             actual.gameplay_stone_collected == expected.gameplay_stone_collected,

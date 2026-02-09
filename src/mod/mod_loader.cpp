@@ -1,4 +1,5 @@
 #include "mod/mod_loader.h"
+#include "content/pak.h"
 #include "core/sha256.h"
 #include "core/cfg_parser.h"
 
@@ -16,6 +17,14 @@
 
 namespace novaria::mod {
 namespace {
+
+bool HasPakExtension(const std::filesystem::path& path) {
+    std::string ext = path.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return ext == ".pak";
+}
 
 std::vector<std::string> SplitCsvLine(const std::string& line) {
     std::vector<std::string> tokens;
@@ -73,6 +82,89 @@ void AppendLengthPrefixedStringListField(
     }
 }
 
+bool ParseManifestLines(
+    const std::vector<core::cfg::KeyValueLine>& lines,
+    ModManifest& out_manifest,
+    std::string& out_error) {
+    for (const core::cfg::KeyValueLine& line : lines) {
+        const std::string& key = line.key;
+        const std::string& value = line.value;
+        const int line_number = line.line_number;
+
+        if (key == "name") {
+            if (!core::cfg::ParseQuotedString(value, out_manifest.name)) {
+                out_error = "name must be quoted string: line " + std::to_string(line_number);
+                return false;
+            }
+            continue;
+        }
+
+        if (key == "version") {
+            if (!core::cfg::ParseQuotedString(value, out_manifest.version)) {
+                out_error = "version must be quoted string: line " + std::to_string(line_number);
+                return false;
+            }
+            continue;
+        }
+
+        if (key == "description") {
+            if (!core::cfg::ParseQuotedString(value, out_manifest.description)) {
+                out_error = "description must be quoted string: line " + std::to_string(line_number);
+                return false;
+            }
+            continue;
+        }
+
+        if (key == "dependencies") {
+            if (!core::cfg::ParseQuotedStringArray(value, out_manifest.dependencies)) {
+                out_error = "dependencies must be quoted string array: line " +
+                    std::to_string(line_number);
+                return false;
+            }
+            continue;
+        }
+
+        if (key == "script_entry") {
+            if (!core::cfg::ParseQuotedString(value, out_manifest.script_entry)) {
+                out_error = "script_entry must be quoted string: line " + std::to_string(line_number);
+                return false;
+            }
+            continue;
+        }
+
+        if (key == "script_api_version") {
+            if (!core::cfg::ParseQuotedString(value, out_manifest.script_api_version)) {
+                out_error = "script_api_version must be quoted string: line " +
+                    std::to_string(line_number);
+                return false;
+            }
+            continue;
+        }
+
+        if (key == "script_capabilities") {
+            if (!core::cfg::ParseQuotedStringArray(value, out_manifest.script_capabilities)) {
+                out_error = "script_capabilities must be quoted string array: line " +
+                    std::to_string(line_number);
+                return false;
+            }
+            continue;
+        }
+    }
+
+    if (out_manifest.name.empty()) {
+        out_error = "missing required field 'name'";
+        return false;
+    }
+
+    if (out_manifest.version.empty()) {
+        out_error = "missing required field 'version'";
+        return false;
+    }
+
+    out_error.clear();
+    return true;
+}
+
 }  // namespace
 
 bool ModLoader::Initialize(const std::filesystem::path& mod_root, std::string& out_error) {
@@ -112,47 +204,115 @@ bool ModLoader::LoadAll(std::vector<ModManifest>& out_manifests, std::string& ou
             return false;
         }
 
-        if (!entry.is_directory()) {
+        if (entry.is_directory()) {
+            const std::filesystem::path manifest_path = entry.path() / "mod.cfg";
+            if (!std::filesystem::exists(manifest_path)) {
+                continue;
+            }
+
+            ModManifest manifest{};
+            if (!ParseManifestFile(manifest_path, manifest, out_error)) {
+                out_error = "Invalid mod manifest '" + manifest_path.string() + "': " + out_error;
+                return false;
+            }
+
+            manifest.container_kind = ModContainerKind::Directory;
+            manifest.container_path = entry.path();
+
+            const std::filesystem::path content_root = entry.path() / "content";
+            if (std::filesystem::exists(content_root) && std::filesystem::is_directory(content_root)) {
+                const std::filesystem::path items_path = content_root / "items.csv";
+                if (std::filesystem::exists(items_path) &&
+                    !ParseItemDefinitions(items_path, manifest.items, out_error)) {
+                    out_error = "Invalid mod items file '" + items_path.string() + "': " + out_error;
+                    return false;
+                }
+
+                const std::filesystem::path recipes_path = content_root / "recipes.csv";
+                if (std::filesystem::exists(recipes_path) &&
+                    !ParseRecipeDefinitions(recipes_path, manifest.recipes, out_error)) {
+                    out_error = "Invalid mod recipes file '" + recipes_path.string() + "': " + out_error;
+                    return false;
+                }
+
+                const std::filesystem::path npcs_path = content_root / "npcs.csv";
+                if (std::filesystem::exists(npcs_path) &&
+                    !ParseNpcDefinitions(npcs_path, manifest.npcs, out_error)) {
+                    out_error = "Invalid mod npcs file '" + npcs_path.string() + "': " + out_error;
+                    return false;
+                }
+            }
+
+            loaded_manifests.push_back(std::move(manifest));
             continue;
         }
 
-        const std::filesystem::path manifest_path = entry.path() / "mod.cfg";
-        if (!std::filesystem::exists(manifest_path)) {
-            continue;
-        }
-
-        ModManifest manifest{};
-        if (!ParseManifestFile(manifest_path, manifest, out_error)) {
-            out_error = "Invalid mod manifest '" + manifest_path.string() + "': " + out_error;
-            return false;
-        }
-
-        manifest.root_path = entry.path();
-        const std::filesystem::path content_root = entry.path() / "content";
-        if (std::filesystem::exists(content_root) && std::filesystem::is_directory(content_root)) {
-            const std::filesystem::path items_path = content_root / "items.csv";
-            if (std::filesystem::exists(items_path) &&
-                !ParseItemDefinitions(items_path, manifest.items, out_error)) {
-                out_error = "Invalid mod items file '" + items_path.string() + "': " + out_error;
+        if (entry.is_regular_file() && HasPakExtension(entry.path())) {
+            content::PakReader pak;
+            if (!pak.Open(entry.path(), out_error)) {
+                out_error = "Invalid mod pak '" + entry.path().string() + "': " + out_error;
                 return false;
             }
 
-            const std::filesystem::path recipes_path = content_root / "recipes.csv";
-            if (std::filesystem::exists(recipes_path) &&
-                !ParseRecipeDefinitions(recipes_path, manifest.recipes, out_error)) {
-                out_error = "Invalid mod recipes file '" + recipes_path.string() + "': " + out_error;
+            std::string manifest_text;
+            if (!pak.ReadTextFile("mod.cfg", manifest_text, out_error)) {
+                out_error = "Invalid mod pak '" + entry.path().string() + "': " + out_error;
                 return false;
             }
 
-            const std::filesystem::path npcs_path = content_root / "npcs.csv";
-            if (std::filesystem::exists(npcs_path) &&
-                !ParseNpcDefinitions(npcs_path, manifest.npcs, out_error)) {
-                out_error = "Invalid mod npcs file '" + npcs_path.string() + "': " + out_error;
+            std::vector<core::cfg::KeyValueLine> lines;
+            if (!core::cfg::ParseText(manifest_text, lines, out_error)) {
+                out_error = "Invalid mod pak manifest 'mod.cfg' in '" + entry.path().string() + "': " + out_error;
                 return false;
             }
+
+            ModManifest manifest{};
+            if (!ParseManifestLines(lines, manifest, out_error)) {
+                out_error = "Invalid mod pak manifest 'mod.cfg' in '" + entry.path().string() + "': " + out_error;
+                return false;
+            }
+
+            manifest.container_kind = ModContainerKind::Pak;
+            manifest.container_path = entry.path();
+
+            std::string items_text;
+            if (pak.Contains("content/items.csv") &&
+                !pak.ReadTextFile("content/items.csv", items_text, out_error)) {
+                out_error = "Invalid mod items file 'content/items.csv' in pak '" + entry.path().string() + "': " + out_error;
+                return false;
+            }
+            if (!items_text.empty() &&
+                !ParseItemDefinitionsText(items_text, manifest.items, out_error)) {
+                out_error = "Invalid mod items file 'content/items.csv' in pak '" + entry.path().string() + "': " + out_error;
+                return false;
+            }
+
+            std::string recipes_text;
+            if (pak.Contains("content/recipes.csv") &&
+                !pak.ReadTextFile("content/recipes.csv", recipes_text, out_error)) {
+                out_error = "Invalid mod recipes file 'content/recipes.csv' in pak '" + entry.path().string() + "': " + out_error;
+                return false;
+            }
+            if (!recipes_text.empty() &&
+                !ParseRecipeDefinitionsText(recipes_text, manifest.recipes, out_error)) {
+                out_error = "Invalid mod recipes file 'content/recipes.csv' in pak '" + entry.path().string() + "': " + out_error;
+                return false;
+            }
+
+            std::string npcs_text;
+            if (pak.Contains("content/npcs.csv") &&
+                !pak.ReadTextFile("content/npcs.csv", npcs_text, out_error)) {
+                out_error = "Invalid mod npcs file 'content/npcs.csv' in pak '" + entry.path().string() + "': " + out_error;
+                return false;
+            }
+            if (!npcs_text.empty() &&
+                !ParseNpcDefinitionsText(npcs_text, manifest.npcs, out_error)) {
+                out_error = "Invalid mod npcs file 'content/npcs.csv' in pak '" + entry.path().string() + "': " + out_error;
+                return false;
+            }
+
+            loaded_manifests.push_back(std::move(manifest));
         }
-
-        loaded_manifests.push_back(std::move(manifest));
     }
 
     return BuildDependencyOrderedManifestList(loaded_manifests, out_manifests, out_error);
@@ -244,6 +404,22 @@ bool ModLoader::ParseItemDefinitions(
         return false;
     }
 
+    return ParseItemDefinitionsStream(file, out_items, out_error);
+}
+
+bool ModLoader::ParseItemDefinitionsText(
+    const std::string& text,
+    std::vector<ModItemDefinition>& out_items,
+    std::string& out_error) {
+    out_items.clear();
+    std::istringstream stream(text);
+    return ParseItemDefinitionsStream(stream, out_items, out_error);
+}
+
+bool ModLoader::ParseItemDefinitionsStream(
+    std::istream& file,
+    std::vector<ModItemDefinition>& out_items,
+    std::string& out_error) {
     std::unordered_map<std::string, bool> item_ids;
     std::string line;
     int line_number = 0;
@@ -298,6 +474,22 @@ bool ModLoader::ParseRecipeDefinitions(
         return false;
     }
 
+    return ParseRecipeDefinitionsStream(file, out_recipes, out_error);
+}
+
+bool ModLoader::ParseRecipeDefinitionsText(
+    const std::string& text,
+    std::vector<ModRecipeDefinition>& out_recipes,
+    std::string& out_error) {
+    out_recipes.clear();
+    std::istringstream stream(text);
+    return ParseRecipeDefinitionsStream(stream, out_recipes, out_error);
+}
+
+bool ModLoader::ParseRecipeDefinitionsStream(
+    std::istream& file,
+    std::vector<ModRecipeDefinition>& out_recipes,
+    std::string& out_error) {
     std::unordered_map<std::string, bool> recipe_ids;
     std::string line;
     int line_number = 0;
@@ -365,6 +557,22 @@ bool ModLoader::ParseNpcDefinitions(
         return false;
     }
 
+    return ParseNpcDefinitionsStream(file, out_npcs, out_error);
+}
+
+bool ModLoader::ParseNpcDefinitionsText(
+    const std::string& text,
+    std::vector<ModNpcDefinition>& out_npcs,
+    std::string& out_error) {
+    out_npcs.clear();
+    std::istringstream stream(text);
+    return ParseNpcDefinitionsStream(stream, out_npcs, out_error);
+}
+
+bool ModLoader::ParseNpcDefinitionsStream(
+    std::istream& file,
+    std::vector<ModNpcDefinition>& out_npcs,
+    std::string& out_error) {
     std::unordered_map<std::string, bool> npc_ids;
     std::string line;
     int line_number = 0;
@@ -422,79 +630,7 @@ bool ModLoader::ParseManifestFile(
         return false;
     }
 
-    for (const core::cfg::KeyValueLine& line : lines) {
-        const std::string& key = line.key;
-        const std::string& value = line.value;
-        const int line_number = line.line_number;
-
-        if (key == "name") {
-            if (!core::cfg::ParseQuotedString(value, out_manifest.name)) {
-                out_error = "name must be quoted string: line " + std::to_string(line_number);
-                return false;
-            }
-            continue;
-        }
-
-        if (key == "version") {
-            if (!core::cfg::ParseQuotedString(value, out_manifest.version)) {
-                out_error = "version must be quoted string: line " + std::to_string(line_number);
-                return false;
-            }
-            continue;
-        }
-
-        if (key == "description") {
-            if (!core::cfg::ParseQuotedString(value, out_manifest.description)) {
-                out_error = "description must be quoted string: line " + std::to_string(line_number);
-                return false;
-            }
-            continue;
-        }
-
-        if (key == "dependencies") {
-            if (!core::cfg::ParseQuotedStringArray(value, out_manifest.dependencies)) {
-                out_error = "dependencies must be quoted string array: line " + std::to_string(line_number);
-                return false;
-            }
-            continue;
-        }
-
-        if (key == "script_entry") {
-            if (!core::cfg::ParseQuotedString(value, out_manifest.script_entry)) {
-                out_error = "script_entry must be quoted string: line " + std::to_string(line_number);
-                return false;
-            }
-            continue;
-        }
-
-        if (key == "script_api_version") {
-            if (!core::cfg::ParseQuotedString(value, out_manifest.script_api_version)) {
-                out_error = "script_api_version must be quoted string: line " + std::to_string(line_number);
-                return false;
-            }
-            continue;
-        }
-
-        if (key == "script_capabilities") {
-            if (!core::cfg::ParseQuotedStringArray(value, out_manifest.script_capabilities)) {
-                out_error = "script_capabilities must be quoted string array: line " + std::to_string(line_number);
-                return false;
-            }
-            continue;
-        }
-    }
-
-    if (out_manifest.name.empty()) {
-        out_error = "missing required field 'name'";
-        return false;
-    }
-
-    if (out_manifest.version.empty()) {
-        out_error = "missing required field 'version'";
-        return false;
-    }
-
-    return true;
+    return ParseManifestLines(lines, out_manifest, out_error);
 }
 
 bool ModLoader::BuildDependencyOrderedManifestList(

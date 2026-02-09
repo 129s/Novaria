@@ -506,6 +506,28 @@ PlayerInventorySnapshot Runtime::InventorySnapshot(std::uint32_t player_id) cons
     };
 }
 
+ActionPrimaryProgressSnapshot Runtime::ActionPrimaryProgressSnapshot(std::uint32_t player_id) const {
+    const entt::entity entity = impl_->FindPlayerEntity(player_id);
+    if (entity == entt::null || !impl_->registry.all_of<PrimaryActionProgress>(entity)) {
+        return ::novaria::sim::ActionPrimaryProgressSnapshot{};
+    }
+
+    const auto& progress = impl_->registry.get<const PrimaryActionProgress>(entity);
+    return ::novaria::sim::ActionPrimaryProgressSnapshot{
+        .active = progress.active,
+        .is_harvest = progress.is_harvest,
+        .is_place = progress.is_place,
+        .target_tile_x = progress.target_tile_x,
+        .target_tile_y = progress.target_tile_y,
+        .target_material_id = progress.target_material_id,
+        .place_material_id = progress.place_material_id,
+        .hotbar_row = progress.hotbar_row,
+        .hotbar_slot = progress.hotbar_slot,
+        .required_ticks = progress.required_ticks,
+        .elapsed_ticks = progress.elapsed_ticks,
+    };
+}
+
 PlayerMotionSnapshot Runtime::MotionSnapshot(std::uint32_t player_id) const {
     const entt::entity entity = impl_->FindPlayerEntity(player_id);
     if (entity == entt::null || !impl_->registry.all_of<PlayerMotion>(entity)) {

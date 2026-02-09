@@ -244,7 +244,8 @@ bool TestPlayableLoopAndSaveReload() {
     const novaria::save::WorldSaveState save_state{
         .tick_index = kernel.CurrentTick(),
         .local_player_id = 7,
-        .mod_manifest_fingerprint = "mvp_acceptance",
+        .gameplay_fingerprint = "mvp_acceptance",
+        .cosmetic_fingerprint = std::string(),
         .gameplay_wood_collected = progress.wood_collected,
         .gameplay_stone_collected = progress.stone_collected,
         .gameplay_workbench_built = progress.workbench_built,

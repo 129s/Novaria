@@ -226,13 +226,13 @@ int main(int argc, char** argv) {
 
     novaria::mod::ModLoader mod_loader;
     std::vector<novaria::mod::ModManifest> loaded_mods;
-    std::string mod_manifest_fingerprint;
+    std::string gameplay_fingerprint;
     std::vector<novaria::script::ScriptModuleSource> script_modules;
     if (!novaria::runtime::LoadModsAndScripts(
             mod_root,
             mod_loader,
             loaded_mods,
-            mod_manifest_fingerprint,
+            gameplay_fingerprint,
             script_modules,
             error)) {
         std::cerr << "[ERROR] load mods and scripts failed: " << error << '\n';

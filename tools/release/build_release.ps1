@@ -107,7 +107,17 @@ Invoke-Step "Copy runtime binaries" {
 Invoke-Step "Copy config and mods" {
     Copy-Item (Join-Path $RepoRoot "config/override_template.cfg") -Destination (Join-Path $packageRoot "novaria.cfg") -Force
     Copy-Item (Join-Path $RepoRoot "config/override_template.cfg") -Destination (Join-Path $packageRoot "novaria_server.cfg") -Force
-    Copy-Item (Join-Path $RepoRoot "mods/core") -Destination (Join-Path $modsDir "core") -Recurse -Force
+
+    $contentTool = Join-Path $runtimeBin "novaria_content.exe"
+    Require-File $contentTool
+
+    Invoke-ExternalChecked -Name "novaria_content validate" -Action {
+        & $contentTool validate --mods (Join-Path $RepoRoot "mods")
+    }
+
+    Invoke-ExternalChecked -Name "novaria_content pack" -Action {
+        & $contentTool pack --mods (Join-Path $RepoRoot "mods") --out $modsDir
+    }
 }
 
 Invoke-Step "Collect symbols" {

@@ -47,6 +47,7 @@ public:
     std::size_t DroppedLocalCommandCount() const;
     GameplayProgressSnapshot GameplayProgress() const;
     PlayerInventorySnapshot InventorySnapshot(std::uint32_t player_id) const;
+    ActionPrimaryProgressSnapshot ActionPrimaryProgressSnapshot(std::uint32_t player_id) const;
     PlayerMotionSnapshot LocalPlayerMotion() const;
     std::vector<GameplayPickupEvent> ConsumePickupEventsForPlayer(std::uint32_t player_id);
     void RestoreGameplayProgress(const GameplayProgressSnapshot& snapshot);

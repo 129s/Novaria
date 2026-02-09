@@ -86,6 +86,7 @@ public:
 
     void EnsurePlayer(std::uint32_t player_id);
     PlayerInventorySnapshot InventorySnapshot(std::uint32_t player_id) const;
+    ActionPrimaryProgressSnapshot ActionPrimaryProgressSnapshot(std::uint32_t player_id) const;
     PlayerMotionSnapshot MotionSnapshot(std::uint32_t player_id) const;
     void SetPlayerMotionInput(std::uint32_t player_id, const PlayerMotionInput& input);
     void AddResourceToInventory(

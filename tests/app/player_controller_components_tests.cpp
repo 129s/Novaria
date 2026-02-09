@@ -186,16 +186,24 @@ bool TestHotbarAndSmartSlotComponents() {
         "Hotbar component should route slot shortcut to expected slot index.");
 
     state.inventory_open = true;
-    novaria::app::PlayerInputIntent recipe_input{};
-    recipe_input.hotbar_select_slot_2 = true;
+    applied_slots.clear();
+    novaria::app::PlayerInputIntent inventory_hotbar_input{};
+    inventory_hotbar_input.hotbar_select_slot_2 = true;
     novaria::app::controller::ApplyHotbarInput(
         state,
-        recipe_input,
+        inventory_hotbar_input,
         2,
         [&applied_slots](std::uint8_t slot) { applied_slots.push_back(slot); });
     passed &= Expect(
+        applied_slots.size() == 1 && applied_slots.front() == 1,
+        "Inventory-open hotbar input should still select hotbar slot.");
+
+    novaria::app::PlayerInputIntent inventory_nav_input{};
+    inventory_nav_input.ui_nav_down_pressed = true;
+    novaria::app::controller::ApplyInventoryUiInput(state, inventory_nav_input, 3);
+    passed &= Expect(
         state.selected_recipe_index == 1,
-        "Inventory-open hotbar input should switch selected recipe.");
+        "Inventory navigation should switch selected recipe.");
 
     FakeWorldService world;
     std::string error;

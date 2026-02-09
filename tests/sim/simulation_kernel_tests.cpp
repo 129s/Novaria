@@ -1210,7 +1210,8 @@ bool TestReconnectHeartbeatAndSaveDiagnosticsEndToEnd() {
     const novaria::save::WorldSaveState expected_save_state{
         .tick_index = kernel.CurrentTick(),
         .local_player_id = 42,
-        .mod_manifest_fingerprint = "mods:v1:e2e",
+        .gameplay_fingerprint = "mods:v1:e2e",
+        .cosmetic_fingerprint = std::string(),
         .debug_net_session_transitions = diagnostics.session_transition_count,
         .debug_net_timeout_disconnects = diagnostics.timeout_disconnect_count,
         .debug_net_manual_disconnects = diagnostics.manual_disconnect_count,

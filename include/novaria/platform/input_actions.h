@@ -29,6 +29,11 @@ struct InputActions final {
     bool hotbar_select_next_row = false;
     bool smart_mode_toggle_pressed = false;
     bool smart_context_held = false;
+
+    // UI navigation (edge-triggered; no repeat).
+    bool ui_nav_up_pressed = false;
+    bool ui_nav_down_pressed = false;
+    bool ui_nav_confirm_pressed = false;
 };
 
 }  // namespace novaria::platform

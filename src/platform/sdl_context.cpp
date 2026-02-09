@@ -275,6 +275,21 @@ bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
                 out_actions.jump_pressed = true;
             }
 
+            if (event.key.scancode == SDL_SCANCODE_W ||
+                event.key.scancode == SDL_SCANCODE_UP) {
+                out_actions.ui_nav_up_pressed = true;
+            }
+
+            if (event.key.scancode == SDL_SCANCODE_S ||
+                event.key.scancode == SDL_SCANCODE_DOWN) {
+                out_actions.ui_nav_down_pressed = true;
+            }
+
+            if (event.key.scancode == SDL_SCANCODE_RETURN ||
+                event.key.scancode == SDL_SCANCODE_KP_ENTER) {
+                out_actions.ui_nav_confirm_pressed = true;
+            }
+
             if (event.key.scancode == SDL_SCANCODE_1) {
                 out_actions.hotbar_select_slot_1 = true;
             }

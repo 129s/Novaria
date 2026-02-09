@@ -119,7 +119,7 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
         }
     }
 
-    mod_manifest_fingerprint_.clear();
+    gameplay_fingerprint_.clear();
     loaded_mods_.clear();
     std::vector<script::ScriptModuleSource> script_modules;
     std::string runtime_error;
@@ -127,11 +127,11 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
             mod_root_,
             mod_loader_,
             loaded_mods_,
-            mod_manifest_fingerprint_,
+            gameplay_fingerprint_,
             script_modules,
             runtime_error)) {
         core::Logger::Error("script", "Build mod script modules failed: " + runtime_error);
-        mod_manifest_fingerprint_.clear();
+        gameplay_fingerprint_.clear();
         loaded_mods_.clear();
         mod_loader_.Shutdown();
         save_repository_.Shutdown();
@@ -142,12 +142,12 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
     if (has_loaded_save_state) {
         const runtime::ModFingerprintCheck fingerprint_check =
             runtime::EvaluateModFingerprint(
-                loaded_save_state.mod_manifest_fingerprint,
-                mod_manifest_fingerprint_,
+                loaded_save_state.gameplay_fingerprint,
+                gameplay_fingerprint_,
                 config_.strict_save_mod_fingerprint);
         if (fingerprint_check.decision == runtime::ModFingerprintDecision::Reject) {
             core::Logger::Error("save", fingerprint_check.message);
-            mod_manifest_fingerprint_.clear();
+            gameplay_fingerprint_.clear();
             loaded_mods_.clear();
             mod_loader_.Shutdown();
             save_repository_.Shutdown();
@@ -172,7 +172,7 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
 
     if (!script_host_->SetScriptModules(std::move(script_modules), runtime_error)) {
         core::Logger::Error("script", "Load mod script modules failed: " + runtime_error);
-        mod_manifest_fingerprint_.clear();
+        gameplay_fingerprint_.clear();
         loaded_mods_.clear();
         mod_loader_.Shutdown();
         save_repository_.Shutdown();
@@ -195,7 +195,7 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
         net_service_.reset();
         script_host_.reset();
         world_service_.reset();
-        mod_manifest_fingerprint_.clear();
+        gameplay_fingerprint_.clear();
         loaded_mods_.clear();
         mod_loader_.Shutdown();
         save_repository_.Shutdown();
@@ -221,7 +221,7 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
     last_net_diagnostics_tick_ = 0;
     core::Logger::Info(
         "input",
-        "Player controls active: A/D move, Space jump, mouse-left action hold, mouse-right interaction, 1-0/wheel hotbar, Esc inventory, Tab row, Ctrl smart toggle, Shift smart context.");
+        "Player controls active: A/D move, Space jump, mouse-left action hold, mouse-right interaction, 1-0/wheel hotbar, Esc inventory, Tab row, Ctrl smart toggle, Shift smart context, W/S recipe select, Enter craft.");
     core::Logger::Info("app", "Novaria started.");
     return true;
 }
@@ -378,7 +378,8 @@ void GameApp::Shutdown() {
     const save::WorldSaveState save_state{
         .tick_index = simulation_kernel_->CurrentTick(),
         .local_player_id = local_player_id_,
-        .mod_manifest_fingerprint = mod_manifest_fingerprint_,
+        .gameplay_fingerprint = gameplay_fingerprint_,
+        .cosmetic_fingerprint = std::string(),
         .gameplay_wood_collected = gameplay_progress.wood_collected,
         .gameplay_stone_collected = gameplay_progress.stone_collected,
         .gameplay_workbench_built = gameplay_progress.workbench_built,
@@ -402,7 +403,7 @@ void GameApp::Shutdown() {
         core::Logger::Warn("save", "World save write failed: " + save_error);
     }
 
-    mod_manifest_fingerprint_.clear();
+    gameplay_fingerprint_.clear();
     loaded_mods_.clear();
     mod_loader_.Shutdown();
     save_repository_.Shutdown();

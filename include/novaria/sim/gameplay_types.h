@@ -36,4 +36,18 @@ struct PlayerInventorySnapshot final {
     bool has_axe_tool = true;
 };
 
+struct ActionPrimaryProgressSnapshot final {
+    bool active = false;
+    bool is_harvest = false;
+    bool is_place = false;
+    int target_tile_x = 0;
+    int target_tile_y = 0;
+    std::uint16_t target_material_id = 0;
+    std::uint16_t place_material_id = 0;
+    std::uint8_t hotbar_row = 0;
+    std::uint8_t hotbar_slot = 0;
+    int required_ticks = 0;
+    int elapsed_ticks = 0;
+};
+
 }  // namespace novaria::sim

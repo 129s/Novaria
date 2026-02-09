@@ -46,6 +46,16 @@ void ApplyHotbarInput(
     std::uint8_t hotbar_rows,
     const std::function<void(std::uint8_t)>& apply_hotbar_slot);
 
+void ApplyInventoryUiInput(
+    LocalPlayerState& state,
+    const PlayerInputIntent& input_intent,
+    int recipe_count);
+
+bool IsWorkbenchInRange(
+    const LocalPlayerState& state,
+    const world::IWorldService& world_service,
+    int reach_distance_tiles);
+
 std::uint8_t ResolveSmartContextSlot(
     const LocalPlayerState& state,
     const world::IWorldService& world_service,

@@ -9,7 +9,7 @@
 
 namespace novaria::save {
 
-inline constexpr std::uint32_t kCurrentWorldSaveFormatVersion = 2;
+inline constexpr std::uint32_t kCurrentWorldSaveFormatVersion = 3;
 inline constexpr std::uint32_t kCurrentWorldSectionVersion = 1;
 inline constexpr std::uint32_t kCurrentNetDebugSectionVersion = 1;
 
@@ -17,7 +17,8 @@ struct WorldSaveState final {
     std::uint32_t format_version = kCurrentWorldSaveFormatVersion;
     std::uint64_t tick_index = 0;
     std::uint32_t local_player_id = 0;
-    std::string mod_manifest_fingerprint;
+    std::string gameplay_fingerprint;
+    std::string cosmetic_fingerprint;
     std::uint32_t gameplay_wood_collected = 0;
     std::uint32_t gameplay_stone_collected = 0;
     bool gameplay_workbench_built = false;

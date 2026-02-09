@@ -16,7 +16,7 @@ ModFingerprintCheck EvaluateModFingerprint(
     result.decision =
         strict ? ModFingerprintDecision::Reject : ModFingerprintDecision::Warn;
     result.message =
-        "Mod manifest fingerprint mismatch: save=" +
+        "Gameplay fingerprint mismatch: save=" +
         std::string(save_fingerprint) +
         ", runtime=" +
         std::string(runtime_fingerprint);

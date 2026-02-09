@@ -39,6 +39,11 @@ struct LocalPlayerState final {
     bool target_highlight_visible = false;
     int target_highlight_tile_x = 0;
     int target_highlight_tile_y = 0;
+    bool target_reachable = false;
+    std::uint16_t target_material_id = 0;
+
+    bool workbench_in_range = false;
+
     std::uint8_t last_interaction_type = 0;
     std::uint16_t last_interaction_ticks_remaining = 0;
     std::uint8_t active_hotbar_row = 0;
@@ -49,6 +54,8 @@ struct LocalPlayerState final {
     bool loaded_chunk_window_ready = false;
     int loaded_chunk_window_center_x = 0;
     int loaded_chunk_window_center_y = 0;
+
+    sim::ActionPrimaryProgressSnapshot action_primary_progress{};
 };
 
 class PlayerController final {

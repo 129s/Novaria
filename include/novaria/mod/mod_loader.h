@@ -1,11 +1,17 @@
 #pragma once
 
 #include <cstdint>
+#include <iosfwd>
 #include <filesystem>
 #include <string>
 #include <vector>
 
 namespace novaria::mod {
+
+enum class ModContainerKind : std::uint8_t {
+    Directory = 0,
+    Pak = 1,
+};
 
 struct ModItemDefinition final {
     std::string id;
@@ -37,7 +43,8 @@ struct ModManifest final {
     std::vector<ModItemDefinition> items;
     std::vector<ModRecipeDefinition> recipes;
     std::vector<ModNpcDefinition> npcs;
-    std::filesystem::path root_path;
+    ModContainerKind container_kind = ModContainerKind::Directory;
+    std::filesystem::path container_path;
 };
 
 class ModLoader final {
@@ -57,12 +64,36 @@ private:
         const std::filesystem::path& file_path,
         std::vector<ModItemDefinition>& out_items,
         std::string& out_error);
+    static bool ParseItemDefinitionsText(
+        const std::string& text,
+        std::vector<ModItemDefinition>& out_items,
+        std::string& out_error);
+    static bool ParseItemDefinitionsStream(
+        std::istream& stream,
+        std::vector<ModItemDefinition>& out_items,
+        std::string& out_error);
     static bool ParseRecipeDefinitions(
         const std::filesystem::path& file_path,
         std::vector<ModRecipeDefinition>& out_recipes,
         std::string& out_error);
+    static bool ParseRecipeDefinitionsText(
+        const std::string& text,
+        std::vector<ModRecipeDefinition>& out_recipes,
+        std::string& out_error);
+    static bool ParseRecipeDefinitionsStream(
+        std::istream& stream,
+        std::vector<ModRecipeDefinition>& out_recipes,
+        std::string& out_error);
     static bool ParseNpcDefinitions(
         const std::filesystem::path& file_path,
+        std::vector<ModNpcDefinition>& out_npcs,
+        std::string& out_error);
+    static bool ParseNpcDefinitionsText(
+        const std::string& text,
+        std::vector<ModNpcDefinition>& out_npcs,
+        std::string& out_error);
+    static bool ParseNpcDefinitionsStream(
+        std::istream& stream,
         std::vector<ModNpcDefinition>& out_npcs,
         std::string& out_error);
     static bool BuildDependencyOrderedManifestList(

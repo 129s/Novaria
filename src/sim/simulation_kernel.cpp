@@ -273,6 +273,10 @@ PlayerInventorySnapshot SimulationKernel::InventorySnapshot(std::uint32_t player
     return ecs_runtime_.InventorySnapshot(player_id);
 }
 
+ActionPrimaryProgressSnapshot SimulationKernel::ActionPrimaryProgressSnapshot(std::uint32_t player_id) const {
+    return ecs_runtime_.ActionPrimaryProgressSnapshot(player_id);
+}
+
 PlayerMotionSnapshot SimulationKernel::LocalPlayerMotion() const {
     if (!initialized_) {
         return PlayerMotionSnapshot{};

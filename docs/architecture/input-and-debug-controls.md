@@ -38,6 +38,9 @@
   - `hotbar_cycle_prev/next`：滚轮切换
   - `ui_inventory_toggle_pressed`：背包开关（默认 `Esc`）
   - `hotbar_select_next_row`：切换热栏行（默认 `Tab`）
+  - `ui_nav_up_pressed`：UI 向上导航（默认 `W`/方向上）
+  - `ui_nav_down_pressed`：UI 向下导航（默认 `S`/方向下）
+  - `ui_nav_confirm_pressed`：UI 确认/执行（默认 `Enter`）
 - 智能模式：
   - `smart_mode_toggle_pressed`：切换智能模式（默认 `Ctrl`）
   - `smart_context_held`：智能上下文（默认 `Shift` 按住）
