@@ -18,6 +18,11 @@ bool ParseFile(
     std::vector<KeyValueLine>& out_lines,
     std::string& out_error);
 
+bool ParseText(
+    std::string_view content,
+    std::vector<KeyValueLine>& out_lines,
+    std::string& out_error);
+
 std::string Trim(std::string_view text);
 
 bool ParseQuotedString(std::string_view value, std::string& out_text);

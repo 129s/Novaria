@@ -12,6 +12,8 @@ struct GameConfig final {
     bool vsync = true;
     bool debug_input_enabled = false;
     bool strict_save_mod_fingerprint = false;
+    std::string mod_root;
+    std::string save_root;
     std::string net_udp_local_host = "127.0.0.1";
     int net_udp_local_port = 0;
     std::string net_udp_remote_host = "127.0.0.1";
@@ -24,6 +26,8 @@ public:
         const std::filesystem::path& file_path,
         GameConfig& out_config,
         std::string& out_error);
+
+    static bool LoadEmbeddedDefaults(GameConfig& out_config, std::string& out_error);
 };
 
 }  // namespace novaria::core

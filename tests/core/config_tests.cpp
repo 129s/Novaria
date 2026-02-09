@@ -130,6 +130,26 @@ int main() {
     passed &= Expect(
         WriteConfigFile(
             config_path,
+            "window_title = \"PartialApplyShouldNotHappen\"\n"
+            "net_udp_local_port = 70000\n"),
+        "Atomic apply config file write should succeed.");
+
+    novaria::core::GameConfig atomic_config{};
+    atomic_config.window_title = "AtomicSentinel";
+    atomic_config.net_udp_local_port = 12345;
+    passed &= Expect(
+        !novaria::core::ConfigLoader::Load(config_path, atomic_config, error),
+        "Atomic apply should fail config load.");
+    passed &= Expect(
+        atomic_config.window_title == "AtomicSentinel",
+        "Atomic apply should not modify already valid fields on failure.");
+    passed &= Expect(
+        atomic_config.net_udp_local_port == 12345,
+        "Atomic apply should not modify other fields on failure.");
+
+    passed &= Expect(
+        WriteConfigFile(
+            config_path,
             "window_title = \"CfgTestInvalidLocalHost\"\n"
             "window_width = 1280\n"
             "window_height = 720\n"
@@ -159,6 +179,25 @@ int main() {
         !novaria::core::ConfigLoader::Load(config_path, unknown_key_config, error),
         "Unknown key should fail config load.");
     passed &= Expect(!error.empty(), "Unknown key should include rejection reason.");
+
+    passed &= Expect(
+        WriteConfigFile(
+            config_path,
+            "mod_root = \"mods_override\"\n"
+            "save_root = \"saves_override\"\n"),
+        "Path override config file write should succeed.");
+
+    novaria::core::GameConfig path_override_config{};
+    passed &= Expect(
+        novaria::core::ConfigLoader::Load(config_path, path_override_config, error),
+        "Path override config load should succeed.");
+    passed &= Expect(error.empty(), "Path override config load should not return error.");
+    passed &= Expect(
+        path_override_config.mod_root == "mods_override",
+        "mod_root should parse correctly.");
+    passed &= Expect(
+        path_override_config.save_root == "saves_override",
+        "save_root should parse correctly.");
 
     std::filesystem::remove_all(test_dir, ec);
 

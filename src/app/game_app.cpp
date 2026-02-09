@@ -2,9 +2,11 @@
 
 #include "app/game_loop.h"
 #include "core/logger.h"
+#include "core/executable_path.h"
 #include "runtime/mod_fingerprint_policy.h"
 #include "runtime/mod_pipeline.h"
 #include "runtime/net_service_factory.h"
+#include "runtime/runtime_paths.h"
 #include "runtime/save_state_loader.h"
 #include "runtime/script_host_factory.h"
 #include "runtime/world_service_factory.h"
@@ -48,12 +50,41 @@ float ComputeDaylightFactor(std::uint64_t tick_index) {
 GameApp::GameApp() = default;
 
 bool GameApp::Initialize(const std::filesystem::path& config_path) {
+    const std::filesystem::path executable_path = core::GetExecutablePath();
+    const std::filesystem::path exe_dir = executable_path.parent_path();
+    const std::filesystem::path default_config_path =
+        exe_dir / (executable_path.stem().string() + ".cfg");
+
     std::string config_error;
-    if (!core::ConfigLoader::Load(config_path, config_, config_error)) {
-        core::Logger::Warn("config", "Config load failed, using defaults: " + config_error);
-    } else {
-        core::Logger::Info("config", "Config loaded: " + config_path.string());
+    if (!core::ConfigLoader::LoadEmbeddedDefaults(config_, config_error)) {
+        core::Logger::Warn("config", "Embedded default config load failed: " + config_error);
     }
+
+    std::filesystem::path resolved_config_path = config_path;
+    if (resolved_config_path.empty()) {
+        resolved_config_path = default_config_path;
+    } else if (resolved_config_path.is_relative()) {
+        resolved_config_path = exe_dir / resolved_config_path;
+    }
+    resolved_config_path = resolved_config_path.lexically_normal();
+
+    if (std::filesystem::exists(resolved_config_path)) {
+        if (!core::ConfigLoader::Load(resolved_config_path, config_, config_error)) {
+            core::Logger::Warn("config", "Config override load failed, ignoring: " + config_error);
+        } else {
+            core::Logger::Info("config", "Config loaded: " + resolved_config_path.string());
+        }
+    } else {
+        core::Logger::Info(
+            "config",
+            "Config override not found, using defaults: " + resolved_config_path.string());
+    }
+
+    const runtime::RuntimePaths runtime_paths = runtime::ResolveRuntimePaths(exe_dir, config_);
+    save_root_ = runtime_paths.save_root;
+    mod_root_ = runtime_paths.mod_root;
+    core::Logger::Info("save", "Resolved save_root: " + save_root_.string());
+    core::Logger::Info("mod", "Resolved mod_root: " + mod_root_.string());
 
     if (!sdl_context_.Initialize(config_)) {
         core::Logger::Error("app", "SDL3 initialization failed.");

@@ -4,7 +4,7 @@
 #include <string_view>
 
 int main(int argc, char* argv[]) {
-    std::filesystem::path config_path = "config/game.cfg";
+    std::filesystem::path config_path;
     if (argc > 1) {
         config_path = argv[1];
     }

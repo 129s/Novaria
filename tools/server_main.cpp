@@ -1,8 +1,10 @@
 #include "core/config.h"
+#include "core/executable_path.h"
 #include "core/logger.h"
 #include "runtime/mod_pipeline.h"
 #include "runtime/net_service_factory.h"
 #include "runtime/script_host_factory.h"
+#include "runtime/runtime_paths.h"
 #include "runtime/world_service_factory.h"
 #include "sim/command_schema.h"
 #include "sim/simulation_kernel.h"
@@ -22,8 +24,9 @@
 namespace {
 
 struct ServerOptions final {
-    std::filesystem::path config_path = "config/game.cfg";
-    std::filesystem::path mod_root = "mods";
+    std::filesystem::path config_path;
+    std::filesystem::path mod_root;
+    bool mods_overridden = false;
     std::uint64_t ticks = 0;
     double fixed_delta_seconds = 1.0 / 60.0;
     std::uint64_t log_interval_ticks = 300;
@@ -97,6 +100,7 @@ bool ParseArguments(
                 return false;
             }
             out_options.mod_root = value;
+            out_options.mods_overridden = true;
             continue;
         }
 
@@ -144,13 +148,18 @@ void PrintUsage() {
         << "[--mods <path>] [--fixed-delta <seconds>] [--log-interval <ticks>]\n"
         << "\n"
         << "Examples:\n"
-        << "  novaria_server --config config/game.cfg --mods mods --ticks 7200\n"
-        << "  novaria_server --config config/game.cfg --fixed-delta 0.0166667\n";
+        << "  novaria_server --config novaria_server.cfg --mods mods --ticks 7200\n"
+        << "  novaria_server --config novaria_server.cfg --fixed-delta 0.0166667\n";
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
+    const std::filesystem::path executable_path = novaria::core::GetExecutablePath();
+    const std::filesystem::path exe_dir = executable_path.parent_path();
+    const std::filesystem::path default_config_path =
+        exe_dir / (executable_path.stem().string() + ".cfg");
+
     ServerOptions options{};
     std::string error;
     if (!ParseArguments(argc, argv, options, error)) {
@@ -163,15 +172,41 @@ int main(int argc, char** argv) {
     std::signal(SIGTERM, OnSignal);
 
     novaria::core::GameConfig config{};
-    if (!novaria::core::ConfigLoader::Load(options.config_path, config, error)) {
-        novaria::core::Logger::Warn(
-            "server",
-            "Config load failed, using defaults: " + error);
+    if (!novaria::core::ConfigLoader::LoadEmbeddedDefaults(config, error)) {
+        novaria::core::Logger::Warn("server", "Embedded default config load failed: " + error);
+    }
+
+    std::filesystem::path resolved_config_path = options.config_path;
+    if (resolved_config_path.empty()) {
+        resolved_config_path = default_config_path;
+    } else if (resolved_config_path.is_relative()) {
+        resolved_config_path = exe_dir / resolved_config_path;
+    }
+    resolved_config_path = resolved_config_path.lexically_normal();
+
+    if (std::filesystem::exists(resolved_config_path)) {
+        if (!novaria::core::ConfigLoader::Load(resolved_config_path, config, error)) {
+            novaria::core::Logger::Warn(
+                "server",
+                "Config override load failed, ignoring: " + error);
+        } else {
+            novaria::core::Logger::Info(
+                "server",
+                "Config loaded: " + resolved_config_path.string());
+        }
     } else {
         novaria::core::Logger::Info(
             "server",
-            "Config loaded: " + options.config_path.string());
+            "Config override not found, using defaults: " + resolved_config_path.string());
     }
+
+    std::filesystem::path mod_root = options.mod_root;
+    if (!options.mods_overridden) {
+        mod_root = novaria::runtime::ResolveRuntimePaths(exe_dir, config).mod_root;
+    } else if (!mod_root.empty() && mod_root.is_relative()) {
+        mod_root = exe_dir / mod_root;
+    }
+    mod_root = mod_root.lexically_normal();
 
     std::unique_ptr<novaria::world::IWorldService> world_service =
         novaria::runtime::CreateWorldService();
@@ -194,7 +229,7 @@ int main(int argc, char** argv) {
     std::string mod_manifest_fingerprint;
     std::vector<novaria::script::ScriptModuleSource> script_modules;
     if (!novaria::runtime::LoadModsAndScripts(
-            options.mod_root,
+            mod_root,
             mod_loader,
             loaded_mods,
             mod_manifest_fingerprint,

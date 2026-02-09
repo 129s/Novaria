@@ -15,18 +15,18 @@
 
 产物目录：
 
-- `dist/novaria-<timestamp>/bin`：运行时可执行文件与 `SDL3.dll`
-- `dist/novaria-<timestamp>/config`：默认配置
+- `dist/novaria-<timestamp>/`：运行时可执行文件、`SDL3.dll`、`novaria.cfg` / `novaria_server.cfg`（覆盖模板）
 - `dist/novaria-<timestamp>/mods`：示例模组
 - `dist/novaria-<timestamp>/symbols`：`pdb` 符号文件
 - `dist/novaria-<timestamp>/checksums.sha256`：校验和清单
+- `dist/novaria-<timestamp>/release-manifest.txt`：发布清单
 
 ## 2. 崩溃转储与符号管理
 
 发布要求：
 
-1. `bin` 与 `symbols` 必须使用同一构建批次产出。
-2. 发布包携带 `release-manifest.txt` 与 `checksums.sha256`。
+1. 发布包根目录的可执行文件与 `symbols` 必须使用同一构建批次产出。
+2. 发布包必须携带 `release-manifest.txt` 与 `checksums.sha256`。
 3. 线上崩溃转储归档时，必须记录对应 `release-manifest.txt`。
 
 建议：

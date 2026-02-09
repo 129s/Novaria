@@ -27,16 +27,21 @@ cmake --build build --config Debug
 .\build\Debug\novaria.exe
 ```
 
+说明：
+
+- `config/default.cfg` 会在构建时被嵌入到可执行文件中，作为默认配置。
+- 可执行文件同级的 `novaria.cfg`（或通过参数显式指定的 cfg）用于覆盖默认配置；覆盖文件解析失败时会被忽略（不会出现半覆盖状态）。
+
 指定配置文件：
 
 ```powershell
-.\build\Debug\novaria.exe config/game.cfg
+.\build\Debug\novaria.exe novaria.cfg
 ```
 
 独立服务端（无窗口）：
 
 ```powershell
-.\build\Debug\novaria_server.exe --config config/game.cfg --ticks 7200
+.\build\Debug\novaria_server.exe --config novaria_server.cfg --ticks 7200
 ```
 
 说明：
@@ -55,7 +60,7 @@ cmake -S . -B build -DNOVARIA_ENABLE_LUAJIT=ON
 
 说明：若未找到 vendor LuaJIT，脚本运行时会在初始化阶段 fail-fast，不再回退到 stub。
 
-运行时脚本后端配置（`config/game.cfg`）：
+运行时脚本后端配置（覆盖文件：`novaria.cfg`）：
 
 ```text
 script_backend = "luajit"
@@ -75,7 +80,7 @@ script_capabilities = ["event.receive", "tick.receive"]
 - `script_api_version` 与运行时 API 不一致会在初始化阶段 fail-fast。
 - `script_capabilities` 声明超出运行时支持范围会在初始化阶段 fail-fast。
 
-运行时网络后端配置（`config/game.cfg`）：
+运行时网络后端配置（覆盖文件：`novaria.cfg`）：
 
 ```text
 net_backend = "udp_peer"
@@ -104,7 +109,7 @@ net_udp_remote_port = 0
 
 - 输入契约唯一事实源：`docs/architecture/input-and-debug-controls.md`。
 - 本文档不再重复维护键位语义，避免与实现漂移。
-- 调试输入开关：`debug_input_enabled`（默认 `false`，位于 `config/game.cfg`）。
+- 调试输入开关：`debug_input_enabled`（默认 `false`，位于 `novaria.cfg`）。
 - 审计口径：当 `debug_input_enabled=true` 且按下 `F1-F12` 时，运行时会输出 `input` 日志；默认关闭时调试键无效且不影响正式输入语义。
 
 ## 7. 验证建议

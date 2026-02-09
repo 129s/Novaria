@@ -1,0 +1,8 @@
+#pragma once
+
+namespace novaria::core {
+
+inline constexpr const char* kEmbeddedDefaultConfig = @NOVARIA_DEFAULT_CONFIG_C_LITERAL@;
+
+}  // namespace novaria::core
+

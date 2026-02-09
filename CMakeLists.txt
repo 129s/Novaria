@@ -20,6 +20,13 @@ set(NOVARIA_VENDOR_DIR "${CMAKE_SOURCE_DIR}/third_party")
 set(NOVARIA_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
 set(NOVARIA_PUBLIC_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/include/novaria")
 file(MAKE_DIRECTORY "${NOVARIA_GENERATED_DIR}")
+set_property(
+    DIRECTORY
+    APPEND
+    PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${CMAKE_SOURCE_DIR}/config/default.cfg"
+        "${CMAKE_SOURCE_DIR}/src/script/bootstrap.lua"
+)
 
 file(READ "${CMAKE_SOURCE_DIR}/src/script/bootstrap.lua" NOVARIA_LUA_BOOTSTRAP_SCRIPT_RAW)
 set(NOVARIA_LUA_BOOTSTRAP_SCRIPT_C_LITERAL "${NOVARIA_LUA_BOOTSTRAP_SCRIPT_RAW}")
@@ -30,6 +37,24 @@ set(NOVARIA_LUA_BOOTSTRAP_SCRIPT_C_LITERAL "\"${NOVARIA_LUA_BOOTSTRAP_SCRIPT_C_L
 configure_file(
     "${CMAKE_SOURCE_DIR}/src/script/lua_bootstrap_script_embedded.h.in"
     "${NOVARIA_GENERATED_DIR}/lua_bootstrap_script_embedded.h"
+    @ONLY
+)
+
+file(READ "${CMAKE_SOURCE_DIR}/config/default.cfg" NOVARIA_DEFAULT_CONFIG_RAW)
+set(NOVARIA_DEFAULT_CONFIG_C_LITERAL "${NOVARIA_DEFAULT_CONFIG_RAW}")
+string(REPLACE "\\" "\\\\" NOVARIA_DEFAULT_CONFIG_C_LITERAL "${NOVARIA_DEFAULT_CONFIG_C_LITERAL}")
+string(REPLACE "\"" "\\\"" NOVARIA_DEFAULT_CONFIG_C_LITERAL "${NOVARIA_DEFAULT_CONFIG_C_LITERAL}")
+string(REPLACE "\n" "\\n\"\n\"" NOVARIA_DEFAULT_CONFIG_C_LITERAL "${NOVARIA_DEFAULT_CONFIG_C_LITERAL}")
+set(NOVARIA_DEFAULT_CONFIG_C_LITERAL "\"${NOVARIA_DEFAULT_CONFIG_C_LITERAL}\"")
+configure_file(
+    "${CMAKE_SOURCE_DIR}/src/core/default_config_embedded.h.in"
+    "${NOVARIA_GENERATED_DIR}/default_config_embedded.h"
+    @ONLY
+)
+
+configure_file(
+    "${CMAKE_SOURCE_DIR}/tools/cmake/dev_runtime.cfg.in"
+    "${NOVARIA_GENERATED_DIR}/dev_runtime.cfg"
     @ONLY
 )
 
@@ -143,6 +168,7 @@ endfunction()
 add_library(
     novaria_core
     STATIC
+    src/core/executable_path.cpp
     src/core/logger.cpp
     src/core/cfg_parser.cpp
     src/core/config.cpp
@@ -155,6 +181,7 @@ target_include_directories(
         "${NOVARIA_PUBLIC_INCLUDE_DIR}"
     PRIVATE
         src
+        "${NOVARIA_GENERATED_DIR}"
 )
 
 add_library(
@@ -241,6 +268,7 @@ novaria_link_entt(novaria_sim)
 add_library(
     novaria_runtime
     STATIC
+    src/runtime/runtime_paths.cpp
     src/runtime/mod_script_loader.cpp
     src/runtime/world_service_factory.cpp
     src/runtime/mod_pipeline.cpp
@@ -348,6 +376,22 @@ if(EXISTS "${NOVARIA_LOCAL_SDL3_DLL}")
                 "$<TARGET_FILE_DIR:novaria>/SDL3.dll"
     )
 endif()
+
+add_custom_command(
+    TARGET novaria
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${NOVARIA_GENERATED_DIR}/dev_runtime.cfg"
+            "$<TARGET_FILE_DIR:novaria>/novaria.cfg"
+)
+
+add_custom_command(
+    TARGET novaria_server
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${NOVARIA_GENERATED_DIR}/dev_runtime.cfg"
+            "$<TARGET_FILE_DIR:novaria_server>/novaria_server.cfg"
+)
 
 set(NOVARIA_RUNTIME_TARGETS
     novaria

@@ -2,6 +2,7 @@
 
 #include <cctype>
 #include <fstream>
+#include <sstream>
 
 namespace novaria::core::cfg {
 namespace {
@@ -16,37 +17,15 @@ std::string StripComment(std::string line) {
 
 }  // namespace
 
-std::string Trim(std::string_view text) {
-    auto is_not_space = [](unsigned char ch) { return !std::isspace(ch); };
-
-    std::size_t start = 0;
-    while (start < text.size() && !is_not_space(static_cast<unsigned char>(text[start]))) {
-        ++start;
-    }
-
-    std::size_t end = text.size();
-    while (end > start && !is_not_space(static_cast<unsigned char>(text[end - 1]))) {
-        --end;
-    }
-
-    return std::string(text.substr(start, end - start));
-}
-
-bool ParseFile(
-    const std::filesystem::path& file_path,
+bool ParseStream(
+    std::istream& stream,
     std::vector<KeyValueLine>& out_lines,
     std::string& out_error) {
     out_lines.clear();
 
-    std::ifstream file(file_path);
-    if (!file.is_open()) {
-        out_error = "Cannot open config file: " + file_path.string();
-        return false;
-    }
-
     std::string line;
     int line_number = 0;
-    while (std::getline(file, line)) {
+    while (std::getline(stream, line)) {
         ++line_number;
         line = Trim(StripComment(std::move(line)));
         if (line.empty()) {
@@ -77,6 +56,43 @@ bool ParseFile(
 
     out_error.clear();
     return true;
+}
+
+std::string Trim(std::string_view text) {
+    auto is_not_space = [](unsigned char ch) { return !std::isspace(ch); };
+
+    std::size_t start = 0;
+    while (start < text.size() && !is_not_space(static_cast<unsigned char>(text[start]))) {
+        ++start;
+    }
+
+    std::size_t end = text.size();
+    while (end > start && !is_not_space(static_cast<unsigned char>(text[end - 1]))) {
+        --end;
+    }
+
+    return std::string(text.substr(start, end - start));
+}
+
+bool ParseFile(
+    const std::filesystem::path& file_path,
+    std::vector<KeyValueLine>& out_lines,
+    std::string& out_error) {
+    std::ifstream file(file_path);
+    if (!file.is_open()) {
+        out_error = "Cannot open config file: " + file_path.string();
+        return false;
+    }
+
+    return ParseStream(file, out_lines, out_error);
+}
+
+bool ParseText(
+    std::string_view content,
+    std::vector<KeyValueLine>& out_lines,
+    std::string& out_error) {
+    std::istringstream stream{std::string(content)};
+    return ParseStream(stream, out_lines, out_error);
 }
 
 bool ParseBool(std::string_view value, bool& out_value) {

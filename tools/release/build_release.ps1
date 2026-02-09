@@ -5,6 +5,31 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\\..")).Path
+
+$BuildDirPath = $BuildDir
+if (-not [System.IO.Path]::IsPathRooted($BuildDirPath)) {
+    $BuildDirPath = Join-Path $RepoRoot $BuildDirPath
+}
+
+$OutputRootPath = $OutputRoot
+if (-not [System.IO.Path]::IsPathRooted($OutputRootPath)) {
+    $OutputRootPath = Join-Path $RepoRoot $OutputRootPath
+}
+
+function Invoke-ExternalChecked {
+    param(
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$Action,
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    & $Action
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Name failed with exit code $LASTEXITCODE"
+    }
+}
 
 function Invoke-Step {
     param(
@@ -24,18 +49,28 @@ function Require-File {
 }
 
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$packageRoot = Join-Path $OutputRoot "novaria-$timestamp"
-$binDir = Join-Path $packageRoot "bin"
-$configDir = Join-Path $packageRoot "config"
+$packageRoot = Join-Path $OutputRootPath "novaria-$timestamp"
 $modsDir = Join-Path $packageRoot "mods"
 $symbolsDir = Join-Path $packageRoot "symbols"
 
 Invoke-Step "Configure" {
-    cmake -S . -B $BuildDir -G "Visual Studio 17 2022" -A x64
+    $cacheFile = Join-Path $BuildDirPath "CMakeCache.txt"
+    if (Test-Path $cacheFile) {
+        Invoke-ExternalChecked -Name "cmake configure" -Action {
+            cmake -S $RepoRoot -B $BuildDirPath
+        }
+        return
+    }
+
+    Invoke-ExternalChecked -Name "cmake configure" -Action {
+        cmake -S $RepoRoot -B $BuildDirPath -G "Visual Studio 17 2022" -A x64
+    }
 }
 
 Invoke-Step "Build" {
-    cmake --build $BuildDir --config $Config
+    Invoke-ExternalChecked -Name "cmake build" -Action {
+        cmake --build $BuildDirPath --config $Config
+    }
 }
 
 Invoke-Step "Prepare package directories" {
@@ -44,13 +79,11 @@ Invoke-Step "Prepare package directories" {
     }
 
     New-Item -ItemType Directory -Force $packageRoot | Out-Null
-    New-Item -ItemType Directory -Force $binDir | Out-Null
-    New-Item -ItemType Directory -Force $configDir | Out-Null
     New-Item -ItemType Directory -Force $modsDir | Out-Null
     New-Item -ItemType Directory -Force $symbolsDir | Out-Null
 }
 
-$runtimeBin = Join-Path $BuildDir $Config
+$runtimeBin = Join-Path $BuildDirPath $Config
 $executables = @(
     "novaria.exe",
     "novaria_server.exe",
@@ -62,18 +95,19 @@ Invoke-Step "Copy runtime binaries" {
     foreach ($exeName in $executables) {
         $sourcePath = Join-Path $runtimeBin $exeName
         Require-File $sourcePath
-        Copy-Item $sourcePath -Destination (Join-Path $binDir $exeName) -Force
+        Copy-Item $sourcePath -Destination (Join-Path $packageRoot $exeName) -Force
     }
 
     $sdlDll = Join-Path $runtimeBin "SDL3.dll"
     if (Test-Path $sdlDll) {
-        Copy-Item $sdlDll -Destination (Join-Path $binDir "SDL3.dll") -Force
+        Copy-Item $sdlDll -Destination (Join-Path $packageRoot "SDL3.dll") -Force
     }
 }
 
 Invoke-Step "Copy config and mods" {
-    Copy-Item "config/game.cfg" -Destination (Join-Path $configDir "game.cfg") -Force
-    Copy-Item "mods/core" -Destination (Join-Path $modsDir "core") -Recurse -Force
+    Copy-Item (Join-Path $RepoRoot "config/override_template.cfg") -Destination (Join-Path $packageRoot "novaria.cfg") -Force
+    Copy-Item (Join-Path $RepoRoot "config/override_template.cfg") -Destination (Join-Path $packageRoot "novaria_server.cfg") -Force
+    Copy-Item (Join-Path $RepoRoot "mods/core") -Destination (Join-Path $modsDir "core") -Recurse -Force
 }
 
 Invoke-Step "Collect symbols" {
