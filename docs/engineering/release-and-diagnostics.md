@@ -50,8 +50,16 @@
 | `driver_version` | 显卡驱动版本 |
 | `pass_fail` | 是否满足发布门槛 |
 
-## 4. 发布门槛（当前）
+## 4. 网络诊断语义（强约束）
 
+- `dropped_*`：仅统计“真实丢弃（未进入任何处理路径）”。
+- `unsent_command_*`：命令已进入处理路径，但未发往远端（断线/self 抑制/发送失败）。
+- `unsent_snapshot_*`：快照 payload 已生成，但未发往远端（断线/self 抑制/发送失败）。
+- `self_suppressed`：本机回环抑制，仅表示“未走远端发送路径”，不代表业务失败。
+
+## 5. 发布门槛（当前）
+
+- 不依赖 CI；发布前必须由本地构建与 `ctest` 稳定集出具通过日志。
 - 双机 Soak（30 分钟）通过。
 - 关键自动化测试 `ctest --test-dir build -C Debug --output-on-failure` 通过。
 - 发布包校验和生成成功，且可执行文件可启动。

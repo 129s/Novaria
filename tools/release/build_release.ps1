@@ -72,8 +72,8 @@ Invoke-Step "Copy runtime binaries" {
 }
 
 Invoke-Step "Copy config and mods" {
-    Copy-Item "config/game.toml" -Destination (Join-Path $configDir "game.toml") -Force
-    Copy-Item "mods/_example_core" -Destination (Join-Path $modsDir "_example_core") -Recurse -Force
+    Copy-Item "config/game.cfg" -Destination (Join-Path $configDir "game.cfg") -Force
+    Copy-Item "mods/core" -Destination (Join-Path $modsDir "core") -Recurse -Force
 }
 
 Invoke-Step "Collect symbols" {

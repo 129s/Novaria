@@ -2,7 +2,6 @@
 
 #include <iostream>
 #include <string>
-#include <string_view>
 
 namespace {
 
@@ -22,7 +21,7 @@ bool TestRoundTripEncodeDecode() {
         .tiles = {1, 7, 9, 65535},
     };
 
-    std::string payload;
+    novaria::wire::ByteBuffer payload;
     std::string error;
     passed &= Expect(
         novaria::world::WorldSnapshotCodec::EncodeChunkSnapshot(input, payload, error),
@@ -31,7 +30,10 @@ bool TestRoundTripEncodeDecode() {
 
     novaria::world::ChunkSnapshot output{};
     passed &= Expect(
-        novaria::world::WorldSnapshotCodec::DecodeChunkSnapshot(payload, output, error),
+        novaria::world::WorldSnapshotCodec::DecodeChunkSnapshot(
+            novaria::wire::ByteSpan(payload.data(), payload.size()),
+            output,
+            error),
         "Decode should succeed.");
     passed &= Expect(output.chunk_coord.x == input.chunk_coord.x, "Decoded chunk x should match.");
     passed &= Expect(output.chunk_coord.y == input.chunk_coord.y, "Decoded chunk y should match.");
@@ -46,13 +48,16 @@ bool TestDecodeRejectsInvalidPayload() {
     std::string error;
 
     passed &= Expect(
-        !novaria::world::WorldSnapshotCodec::DecodeChunkSnapshot("0,0,2,1", output, error),
-        "Decode should fail when payload tile count mismatches.");
+        !novaria::world::WorldSnapshotCodec::DecodeChunkSnapshot({}, output, error),
+        "Decode should fail when payload is empty.");
     passed &= Expect(!error.empty(), "Decode failure should provide error message.");
 
     passed &= Expect(
-        !novaria::world::WorldSnapshotCodec::DecodeChunkSnapshot("a,b,c", output, error),
-        "Decode should fail on non-numeric fields.");
+        !novaria::world::WorldSnapshotCodec::DecodeChunkSnapshot(
+            novaria::wire::ByteSpan(reinterpret_cast<const novaria::wire::Byte*>("\x01\x02"), 2),
+            output,
+            error),
+        "Decode should fail on truncated payload.");
 
     return passed;
 }

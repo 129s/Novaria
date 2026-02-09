@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <chrono>
 
 namespace {
 
@@ -16,7 +17,10 @@ bool Expect(bool condition, const char* message) {
 }
 
 std::filesystem::path BuildTestDirectory() {
-    return std::filesystem::temp_directory_path() / "novaria_config_loader_test";
+    const auto unique_seed =
+        std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    return std::filesystem::temp_directory_path() /
+        ("novaria_config_loader_test_" + std::to_string(unique_seed));
 }
 
 bool WriteConfigFile(const std::filesystem::path& file_path, const std::string& content) {
@@ -35,7 +39,7 @@ int main() {
     bool passed = true;
 
     const std::filesystem::path test_dir = BuildTestDirectory();
-    const std::filesystem::path config_path = test_dir / "game.toml";
+    const std::filesystem::path config_path = test_dir / "game.cfg";
     std::error_code ec;
     std::filesystem::remove_all(test_dir, ec);
     std::filesystem::create_directories(test_dir, ec);
@@ -59,11 +63,8 @@ int main() {
         !default_config.strict_save_mod_fingerprint,
         "Strict fingerprint check should default to false.");
     passed &= Expect(
-        default_config.script_backend_mode == novaria::core::ScriptBackendMode::LuaJit,
-        "Script backend should default to luajit.");
-    passed &= Expect(
-        default_config.net_backend_mode == novaria::core::NetBackendMode::UdpLoopback,
-        "Net backend should default to udp_loopback.");
+        !default_config.debug_input_enabled,
+        "Debug input switch should default to false.");
     passed &= Expect(default_config.net_udp_local_port == 0, "Net UDP local port should default to 0.");
     passed &= Expect(
         default_config.net_udp_local_host == "127.0.0.1",
@@ -80,9 +81,8 @@ int main() {
             "window_width = 1280\n"
             "window_height = 720\n"
             "vsync = true\n"
+            "debug_input_enabled = true\n"
             "strict_save_mod_fingerprint = true\n"
-            "script_backend = \"luajit\"\n"
-            "net_backend = \"udp_loopback\"\n"
             "net_udp_local_host = \"0.0.0.0\"\n"
             "net_udp_local_port = 24000\n"
             "net_udp_remote_host = \"127.0.0.1\"\n"
@@ -98,11 +98,8 @@ int main() {
         strict_config.strict_save_mod_fingerprint,
         "Strict fingerprint check should parse as true.");
     passed &= Expect(
-        strict_config.script_backend_mode == novaria::core::ScriptBackendMode::LuaJit,
-        "Script backend should parse as luajit.");
-    passed &= Expect(
-        strict_config.net_backend_mode == novaria::core::NetBackendMode::UdpLoopback,
-        "Net backend should parse as udp_loopback.");
+        strict_config.debug_input_enabled,
+        "Debug input switch should parse as true.");
     passed &= Expect(
         strict_config.net_udp_local_port == 24000 && strict_config.net_udp_remote_port == 24001,
         "Net UDP ports should parse correctly.");
@@ -116,49 +113,11 @@ int main() {
     passed &= Expect(
         WriteConfigFile(
             config_path,
-            "window_title = \"CfgTestInvalidScript\"\n"
-            "window_width = 1280\n"
-            "window_height = 720\n"
-            "vsync = true\n"
-            "strict_save_mod_fingerprint = true\n"
-            "script_backend = \"stub\"\n"
-            "net_backend = \"udp_loopback\"\n"),
-        "Invalid script backend config file write should succeed.");
-
-    novaria::core::GameConfig invalid_script_config{};
-    passed &= Expect(
-        !novaria::core::ConfigLoader::Load(config_path, invalid_script_config, error),
-        "Invalid script backend value should fail config load.");
-    passed &= Expect(!error.empty(), "Invalid script backend should provide error.");
-
-    passed &= Expect(
-        WriteConfigFile(
-            config_path,
-            "window_title = \"CfgTestInvalidNet\"\n"
-            "window_width = 1280\n"
-            "window_height = 720\n"
-            "vsync = true\n"
-            "strict_save_mod_fingerprint = true\n"
-            "script_backend = \"luajit\"\n"
-            "net_backend = \"stub\"\n"),
-        "Invalid net backend config file write should succeed.");
-
-    novaria::core::GameConfig invalid_net_config{};
-    passed &= Expect(
-        !novaria::core::ConfigLoader::Load(config_path, invalid_net_config, error),
-        "Invalid net backend value should fail config load.");
-    passed &= Expect(!error.empty(), "Invalid net backend should provide error.");
-
-    passed &= Expect(
-        WriteConfigFile(
-            config_path,
             "window_title = \"CfgTestInvalidPort\"\n"
             "window_width = 1280\n"
             "window_height = 720\n"
             "vsync = true\n"
             "strict_save_mod_fingerprint = true\n"
-            "script_backend = \"luajit\"\n"
-            "net_backend = \"udp_loopback\"\n"
             "net_udp_local_port = 70000\n"),
         "Invalid net UDP local port config file write should succeed.");
 
@@ -176,8 +135,6 @@ int main() {
             "window_height = 720\n"
             "vsync = true\n"
             "strict_save_mod_fingerprint = true\n"
-            "script_backend = \"luajit\"\n"
-            "net_backend = \"udp_loopback\"\n"
             "net_udp_local_host = \"\"\n"),
         "Invalid net UDP local host config file write should succeed.");
 
@@ -186,6 +143,22 @@ int main() {
         !novaria::core::ConfigLoader::Load(config_path, invalid_local_host_config, error),
         "Empty UDP local host should fail config load.");
     passed &= Expect(!error.empty(), "Empty UDP local host should provide error.");
+
+    passed &= Expect(
+        WriteConfigFile(
+            config_path,
+            "window_title = \"CfgTestUnknownKey\"\n"
+            "window_width = 1280\n"
+            "window_height = 720\n"
+            "vsync = true\n"
+            "unknown_key = 1\n"),
+        "Unknown key config file write should succeed.");
+
+    novaria::core::GameConfig unknown_key_config{};
+    passed &= Expect(
+        !novaria::core::ConfigLoader::Load(config_path, unknown_key_config, error),
+        "Unknown key should fail config load.");
+    passed &= Expect(!error.empty(), "Unknown key should include rejection reason.");
 
     std::filesystem::remove_all(test_dir, ec);
 

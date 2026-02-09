@@ -1,10 +1,77 @@
 #include "sim/ecs_runtime.h"
+#include "world/material_catalog.h"
+#include "world/world_service.h"
 
 #include <cstdint>
 #include <iostream>
 #include <vector>
 
 namespace {
+
+class EmptyWorldService final : public novaria::world::IWorldService {
+public:
+    bool Initialize(std::string& out_error) override {
+        out_error.clear();
+        return true;
+    }
+
+    void Shutdown() override {}
+
+<<<<<<< HEAD
+    void Tick(const novaria::core::TickContext& tick_context) override {
+=======
+    void Tick(const novaria::sim::TickContext& tick_context) override {
+>>>>>>> 77c2e72a388234fbfa90639e804362c787d0e052
+        (void)tick_context;
+    }
+
+    void LoadChunk(const novaria::world::ChunkCoord& chunk_coord) override {
+        (void)chunk_coord;
+    }
+
+    void UnloadChunk(const novaria::world::ChunkCoord& chunk_coord) override {
+        (void)chunk_coord;
+    }
+
+    bool ApplyTileMutation(const novaria::world::TileMutation& mutation, std::string& out_error) override {
+        (void)mutation;
+        out_error.clear();
+        return true;
+    }
+
+    bool BuildChunkSnapshot(
+        const novaria::world::ChunkCoord& chunk_coord,
+        novaria::world::ChunkSnapshot& out_snapshot,
+        std::string& out_error) const override {
+        (void)chunk_coord;
+        out_snapshot = {};
+        out_error = "EmptyWorldService does not support snapshots.";
+        return false;
+    }
+
+    bool ApplyChunkSnapshot(
+        const novaria::world::ChunkSnapshot& snapshot,
+        std::string& out_error) override {
+        (void)snapshot;
+        out_error.clear();
+        return true;
+    }
+
+    bool TryReadTile(int tile_x, int tile_y, std::uint16_t& out_material_id) const override {
+        (void)tile_x;
+        (void)tile_y;
+        out_material_id = novaria::world::material::kAir;
+        return true;
+    }
+
+    std::vector<novaria::world::ChunkCoord> LoadedChunkCoords() const override {
+        return {};
+    }
+
+    std::vector<novaria::world::ChunkCoord> ConsumeDirtyChunks() override {
+        return {};
+    }
+};
 
 bool Expect(bool condition, const char* message) {
     if (!condition) {
@@ -18,6 +85,7 @@ bool TestProjectilePipelineCompletesKillFlow() {
     bool passed = true;
 
     novaria::sim::ecs::Runtime runtime;
+    EmptyWorldService world;
     std::string error;
     passed &= Expect(runtime.Initialize(error), "ECS runtime should initialize.");
 
@@ -38,7 +106,7 @@ bool TestProjectilePipelineCompletesKillFlow() {
         runtime.Tick({
             .tick_index = tick_index,
             .fixed_delta_seconds = 1.0 / 60.0,
-        });
+        }, world);
     }
 
     std::uint16_t total_reward_kills = 0;
@@ -76,6 +144,7 @@ bool TestProjectileLifetimeRecycleWithoutCollision() {
     bool passed = true;
 
     novaria::sim::ecs::Runtime runtime;
+    EmptyWorldService world;
     std::string error;
     passed &= Expect(runtime.Initialize(error), "ECS runtime should initialize.");
 
@@ -95,7 +164,7 @@ bool TestProjectileLifetimeRecycleWithoutCollision() {
         runtime.Tick({
             .tick_index = tick_index,
             .fixed_delta_seconds = 1.0 / 60.0,
-        });
+        }, world);
     }
 
     const novaria::sim::ecs::RuntimeDiagnostics diagnostics =
@@ -115,6 +184,7 @@ bool TestDropSpawnAndPickupProbeProducesGameplayEvent() {
     bool passed = true;
 
     novaria::sim::ecs::Runtime runtime;
+    EmptyWorldService world;
     std::string error;
     passed &= Expect(runtime.Initialize(error), "ECS runtime should initialize.");
 
@@ -127,7 +197,7 @@ bool TestDropSpawnAndPickupProbeProducesGameplayEvent() {
     runtime.Tick({
         .tick_index = 0,
         .fixed_delta_seconds = 1.0 / 60.0,
-    });
+    }, world);
 
     runtime.QueuePickupProbe(
         42,
@@ -138,7 +208,7 @@ bool TestDropSpawnAndPickupProbeProducesGameplayEvent() {
     runtime.Tick({
         .tick_index = 1,
         .fixed_delta_seconds = 1.0 / 60.0,
-    });
+    }, world);
 
     const std::vector<novaria::sim::ecs::GameplayEvent> gameplay_events =
         runtime.ConsumeGameplayEvents();

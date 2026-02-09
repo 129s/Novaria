@@ -7,19 +7,36 @@ bool TryDecodePlayerCommand(
     TypedPlayerCommand& out_typed_command) {
     out_typed_command = {};
 
-    if (source_command.command_type == command::kJump) {
+    if (source_command.command_id == command::kJump) {
+        if (!source_command.payload.empty()) {
+            return false;
+        }
         out_typed_command.type = TypedPlayerCommandType::Jump;
         return true;
     }
 
-    if (source_command.command_type == command::kAttack) {
+    if (source_command.command_id == command::kAttack) {
+        if (!source_command.payload.empty()) {
+            return false;
+        }
         out_typed_command.type = TypedPlayerCommandType::Attack;
         return true;
     }
 
-    if (source_command.command_type == command::kWorldSetTile) {
-        if (!command::TryParseWorldSetTilePayload(
-                source_command.payload,
+    if (source_command.command_id == command::kPlayerMotionInput) {
+        if (!command::TryDecodePlayerMotionInputPayload(
+                wire::ByteSpan(source_command.payload.data(), source_command.payload.size()),
+                out_typed_command.player_motion_input)) {
+            return false;
+        }
+
+        out_typed_command.type = TypedPlayerCommandType::PlayerMotionInput;
+        return true;
+    }
+
+    if (source_command.command_id == command::kWorldSetTile) {
+        if (!command::TryDecodeWorldSetTilePayload(
+                wire::ByteSpan(source_command.payload.data(), source_command.payload.size()),
                 out_typed_command.world_set_tile)) {
             return false;
         }
@@ -28,9 +45,9 @@ bool TryDecodePlayerCommand(
         return true;
     }
 
-    if (source_command.command_type == command::kWorldLoadChunk) {
-        if (!command::TryParseWorldChunkPayload(
-                source_command.payload,
+    if (source_command.command_id == command::kWorldLoadChunk) {
+        if (!command::TryDecodeWorldChunkPayload(
+                wire::ByteSpan(source_command.payload.data(), source_command.payload.size()),
                 out_typed_command.world_chunk)) {
             return false;
         }
@@ -39,9 +56,9 @@ bool TryDecodePlayerCommand(
         return true;
     }
 
-    if (source_command.command_type == command::kWorldUnloadChunk) {
-        if (!command::TryParseWorldChunkPayload(
-                source_command.payload,
+    if (source_command.command_id == command::kWorldUnloadChunk) {
+        if (!command::TryDecodeWorldChunkPayload(
+                wire::ByteSpan(source_command.payload.data(), source_command.payload.size()),
                 out_typed_command.world_chunk)) {
             return false;
         }
@@ -50,9 +67,9 @@ bool TryDecodePlayerCommand(
         return true;
     }
 
-    if (source_command.command_type == command::kGameplayCollectResource) {
-        if (!command::TryParseCollectResourcePayload(
-                source_command.payload,
+    if (source_command.command_id == command::kGameplayCollectResource) {
+        if (!command::TryDecodeCollectResourcePayload(
+                wire::ByteSpan(source_command.payload.data(), source_command.payload.size()),
                 out_typed_command.collect_resource)) {
             return false;
         }
@@ -61,9 +78,9 @@ bool TryDecodePlayerCommand(
         return true;
     }
 
-    if (source_command.command_type == command::kGameplaySpawnDrop) {
-        if (!command::TryParseSpawnDropPayload(
-                source_command.payload,
+    if (source_command.command_id == command::kGameplaySpawnDrop) {
+        if (!command::TryDecodeSpawnDropPayload(
+                wire::ByteSpan(source_command.payload.data(), source_command.payload.size()),
                 out_typed_command.spawn_drop)) {
             return false;
         }
@@ -72,9 +89,9 @@ bool TryDecodePlayerCommand(
         return true;
     }
 
-    if (source_command.command_type == command::kGameplayPickupProbe) {
-        if (!command::TryParsePickupProbePayload(
-                source_command.payload,
+    if (source_command.command_id == command::kGameplayPickupProbe) {
+        if (!command::TryDecodePickupProbePayload(
+                wire::ByteSpan(source_command.payload.data(), source_command.payload.size()),
                 out_typed_command.pickup_probe)) {
             return false;
         }
@@ -83,9 +100,9 @@ bool TryDecodePlayerCommand(
         return true;
     }
 
-    if (source_command.command_type == command::kGameplayInteraction) {
-        if (!command::TryParseInteractionPayload(
-                source_command.payload,
+    if (source_command.command_id == command::kGameplayInteraction) {
+        if (!command::TryDecodeInteractionPayload(
+                wire::ByteSpan(source_command.payload.data(), source_command.payload.size()),
                 out_typed_command.interaction)) {
             return false;
         }
@@ -94,29 +111,47 @@ bool TryDecodePlayerCommand(
         return true;
     }
 
-    if (source_command.command_type == command::kGameplayBuildWorkbench) {
-        out_typed_command.type = TypedPlayerCommandType::GameplayBuildWorkbench;
+    if (source_command.command_id == command::kGameplayActionPrimary) {
+        if (!command::TryDecodeActionPrimaryPayload(
+                wire::ByteSpan(source_command.payload.data(), source_command.payload.size()),
+                out_typed_command.action_primary)) {
+            return false;
+        }
+
+        out_typed_command.type = TypedPlayerCommandType::GameplayActionPrimary;
         return true;
     }
 
-    if (source_command.command_type == command::kGameplayCraftSword) {
-        out_typed_command.type = TypedPlayerCommandType::GameplayCraftSword;
+    if (source_command.command_id == command::kGameplayCraftRecipe) {
+        if (!command::TryDecodeCraftRecipePayload(
+                wire::ByteSpan(source_command.payload.data(), source_command.payload.size()),
+                out_typed_command.craft_recipe)) {
+            return false;
+        }
+
+        out_typed_command.type = TypedPlayerCommandType::GameplayCraftRecipe;
         return true;
     }
 
-    if (source_command.command_type == command::kGameplayAttackEnemy) {
+    if (source_command.command_id == command::kGameplayAttackEnemy) {
+        if (!source_command.payload.empty()) {
+            return false;
+        }
         out_typed_command.type = TypedPlayerCommandType::GameplayAttackEnemy;
         return true;
     }
 
-    if (source_command.command_type == command::kGameplayAttackBoss) {
+    if (source_command.command_id == command::kGameplayAttackBoss) {
+        if (!source_command.payload.empty()) {
+            return false;
+        }
         out_typed_command.type = TypedPlayerCommandType::GameplayAttackBoss;
         return true;
     }
 
-    if (source_command.command_type == command::kCombatFireProjectile) {
-        if (!command::TryParseFireProjectilePayload(
-                source_command.payload,
+    if (source_command.command_id == command::kCombatFireProjectile) {
+        if (!command::TryDecodeFireProjectilePayload(
+                wire::ByteSpan(source_command.payload.data(), source_command.payload.size()),
                 out_typed_command.fire_projectile)) {
             return false;
         }

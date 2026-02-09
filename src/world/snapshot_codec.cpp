@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <limits>
-#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -10,93 +9,56 @@
 namespace novaria::world {
 namespace {
 
-bool ParseSignedInt32(const std::string& token, int& out_value) {
-    try {
-        size_t consumed = 0;
-        const long long parsed = std::stoll(token, &consumed);
-        if (consumed != token.size()) {
-            return false;
-        }
-        if (parsed < std::numeric_limits<int>::min() || parsed > std::numeric_limits<int>::max()) {
-            return false;
-        }
-        out_value = static_cast<int>(parsed);
-        return true;
-    } catch (...) {
+bool TryReadVarInt32(wire::ByteReader& reader, int& out_value) {
+    std::int64_t parsed = 0;
+    if (!reader.ReadVarInt(parsed)) {
         return false;
     }
-}
-
-bool ParseUnsignedSize(const std::string& token, std::size_t& out_value) {
-    try {
-        size_t consumed = 0;
-        const auto parsed = std::stoull(token, &consumed);
-        if (consumed != token.size()) {
-            return false;
-        }
-        out_value = static_cast<std::size_t>(parsed);
-        return true;
-    } catch (...) {
+    if (parsed < std::numeric_limits<int>::min() || parsed > std::numeric_limits<int>::max()) {
         return false;
     }
-}
-
-bool ParseUint16(const std::string& token, std::uint16_t& out_value) {
-    try {
-        size_t consumed = 0;
-        const auto parsed = std::stoull(token, &consumed);
-        if (consumed != token.size() || parsed > std::numeric_limits<std::uint16_t>::max()) {
-            return false;
-        }
-        out_value = static_cast<std::uint16_t>(parsed);
-        return true;
-    } catch (...) {
-        return false;
-    }
-}
-
-std::vector<std::string> SplitByComma(std::string_view text) {
-    std::vector<std::string> tokens;
-    std::string current;
-    current.reserve(text.size());
-
-    for (char ch : text) {
-        if (ch == ',') {
-            tokens.push_back(current);
-            current.clear();
-            continue;
-        }
-        current.push_back(ch);
-    }
-
-    tokens.push_back(current);
-    return tokens;
+    out_value = static_cast<int>(parsed);
+    return true;
 }
 
 }  // namespace
 
 bool WorldSnapshotCodec::EncodeChunkSnapshot(
     const ChunkSnapshot& snapshot,
-    std::string& out_payload,
+    wire::ByteBuffer& out_payload,
     std::string& out_error) {
     if (snapshot.tiles.empty()) {
         out_error = "snapshot tiles cannot be empty";
         return false;
     }
 
-    std::ostringstream stream;
-    stream << snapshot.chunk_coord.x << ',' << snapshot.chunk_coord.y << ',' << snapshot.tiles.size();
-    for (const std::uint16_t material : snapshot.tiles) {
-        stream << ',' << material;
+    const std::size_t tile_count = snapshot.tiles.size();
+    if (tile_count > (std::numeric_limits<std::size_t>::max() / 2)) {
+        out_error = "snapshot tile count overflow";
+        return false;
     }
 
-    out_payload = stream.str();
+    std::vector<wire::Byte> tiles_bytes;
+    tiles_bytes.resize(tile_count * 2);
+    for (std::size_t index = 0; index < tile_count; ++index) {
+        const std::uint16_t material_id = snapshot.tiles[index];
+        tiles_bytes[index * 2] = static_cast<wire::Byte>(material_id & 0xFF);
+        tiles_bytes[index * 2 + 1] = static_cast<wire::Byte>((material_id >> 8) & 0xFF);
+    }
+
+    wire::ByteWriter writer;
+    writer.WriteVarInt(snapshot.chunk_coord.x);
+    writer.WriteVarInt(snapshot.chunk_coord.y);
+    writer.WriteVarUInt(tile_count);
+    writer.WriteBytes(wire::ByteSpan(tiles_bytes.data(), tiles_bytes.size()));
+
+    out_payload = writer.TakeBuffer();
     out_error.clear();
     return true;
 }
 
 bool WorldSnapshotCodec::DecodeChunkSnapshot(
-    std::string_view payload,
+    wire::ByteSpan payload,
     ChunkSnapshot& out_snapshot,
     std::string& out_error) {
     if (payload.empty()) {
@@ -104,26 +66,38 @@ bool WorldSnapshotCodec::DecodeChunkSnapshot(
         return false;
     }
 
-    const auto tokens = SplitByComma(payload);
-    if (tokens.size() < 3) {
-        out_error = "payload has insufficient fields";
-        return false;
-    }
-
+    wire::ByteReader reader(payload);
     int chunk_x = 0;
     int chunk_y = 0;
-    std::size_t tile_count = 0;
-    if (!ParseSignedInt32(tokens[0], chunk_x) || !ParseSignedInt32(tokens[1], chunk_y)) {
-        out_error = "invalid chunk coordinate fields";
+    std::uint64_t tile_count_u64 = 0;
+    if (!TryReadVarInt32(reader, chunk_x) ||
+        !TryReadVarInt32(reader, chunk_y) ||
+        !reader.ReadVarUInt(tile_count_u64)) {
+        out_error = "invalid chunk header fields";
         return false;
     }
-    if (!ParseUnsignedSize(tokens[2], tile_count)) {
-        out_error = "invalid tile count field";
+    if (tile_count_u64 == 0) {
+        out_error = "tile_count cannot be zero";
+        return false;
+    }
+    if (tile_count_u64 > std::numeric_limits<std::size_t>::max()) {
+        out_error = "tile_count overflow";
         return false;
     }
 
-    if (tokens.size() != 3 + tile_count) {
-        out_error = "tile count does not match payload length";
+    wire::ByteSpan tiles_bytes{};
+    if (!reader.ReadBytes(tiles_bytes) || !reader.IsFullyConsumed()) {
+        out_error = "invalid tiles bytes field";
+        return false;
+    }
+
+    const std::size_t tile_count = static_cast<std::size_t>(tile_count_u64);
+    if (tile_count > (std::numeric_limits<std::size_t>::max() / 2)) {
+        out_error = "tile_count overflow";
+        return false;
+    }
+    if (tiles_bytes.size() != tile_count * 2) {
+        out_error = "tiles bytes length does not match tile_count";
         return false;
     }
 
@@ -132,15 +106,11 @@ bool WorldSnapshotCodec::DecodeChunkSnapshot(
         .x = chunk_x,
         .y = chunk_y,
     };
-    snapshot.tiles.reserve(tile_count);
-
+    snapshot.tiles.resize(tile_count);
     for (std::size_t index = 0; index < tile_count; ++index) {
-        std::uint16_t material = 0;
-        if (!ParseUint16(tokens[3 + index], material)) {
-            out_error = "invalid tile material field";
-            return false;
-        }
-        snapshot.tiles.push_back(material);
+        const std::uint16_t low = tiles_bytes[index * 2];
+        const std::uint16_t high = tiles_bytes[index * 2 + 1];
+        snapshot.tiles[index] = static_cast<std::uint16_t>(low | (high << 8));
     }
 
     out_snapshot = std::move(snapshot);
@@ -149,3 +119,4 @@ bool WorldSnapshotCodec::DecodeChunkSnapshot(
 }
 
 }  // namespace novaria::world
+

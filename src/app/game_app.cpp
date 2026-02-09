@@ -2,12 +2,16 @@
 
 #include "app/game_loop.h"
 #include "core/logger.h"
+#include "runtime/mod_fingerprint_policy.h"
+#include "runtime/mod_pipeline.h"
+#include "runtime/net_service_factory.h"
+#include "runtime/save_state_loader.h"
+#include "runtime/script_host_factory.h"
+#include "runtime/world_service_factory.h"
 #include "world/snapshot_codec.h"
 
 #include <algorithm>
 #include <cmath>
-#include <fstream>
-#include <iterator>
 #include <string>
 #include <vector>
 
@@ -27,102 +31,6 @@ const char* NetSessionStateName(net::NetSessionState state) {
     return "unknown";
 }
 
-script::ScriptBackendPreference ToScriptBackendPreference(core::ScriptBackendMode mode) {
-    switch (mode) {
-        case core::ScriptBackendMode::LuaJit:
-            return script::ScriptBackendPreference::LuaJit;
-    }
-
-    return script::ScriptBackendPreference::LuaJit;
-}
-
-net::NetBackendPreference ToNetBackendPreference(core::NetBackendMode mode) {
-    switch (mode) {
-        case core::NetBackendMode::UdpLoopback:
-            return net::NetBackendPreference::UdpLoopback;
-    }
-
-    return net::NetBackendPreference::UdpLoopback;
-}
-
-bool ReadTextFile(
-    const std::filesystem::path& file_path,
-    std::string& out_text,
-    std::string& out_error) {
-    std::ifstream file(file_path, std::ios::binary);
-    if (!file.is_open()) {
-        out_error = "cannot open file: " + file_path.string();
-        return false;
-    }
-
-    out_text.assign(
-        std::istreambuf_iterator<char>(file),
-        std::istreambuf_iterator<char>());
-    out_error.clear();
-    return true;
-}
-
-bool IsSafeRelativePath(const std::filesystem::path& path) {
-    if (path.empty() || path.is_absolute()) {
-        return false;
-    }
-
-    for (const auto& part : path) {
-        if (part == "..") {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-bool BuildModScriptModules(
-    const std::vector<mod::ModManifest>& manifests,
-    std::vector<script::ScriptModuleSource>& out_modules,
-    std::string& out_error) {
-    out_modules.clear();
-    for (const auto& manifest : manifests) {
-        if (manifest.script_entry.empty()) {
-            continue;
-        }
-
-        const std::filesystem::path script_entry_path =
-            std::filesystem::path(manifest.script_entry).lexically_normal();
-        if (!IsSafeRelativePath(script_entry_path)) {
-            out_error =
-                "Invalid script entry path in mod '" + manifest.name +
-                "': " + manifest.script_entry;
-            return false;
-        }
-
-        const std::filesystem::path module_file_path =
-            (manifest.root_path / script_entry_path).lexically_normal();
-        std::string module_source;
-        if (!ReadTextFile(module_file_path, module_source, out_error)) {
-            out_error =
-                "Failed to load script entry for mod '" + manifest.name +
-                "': " + out_error;
-            return false;
-        }
-
-        out_modules.push_back(script::ScriptModuleSource{
-            .module_name = manifest.name,
-            .api_version =
-                manifest.script_api_version.empty()
-                    ? std::string(script::kScriptApiVersion)
-                    : manifest.script_api_version,
-            .capabilities =
-                manifest.script_capabilities.empty()
-                    ? std::vector<std::string>{"event.receive", "tick.receive"}
-                    : manifest.script_capabilities,
-            .source_code = std::move(module_source),
-        });
-    }
-
-    out_error.clear();
-    return true;
-}
-
 float ComputeDaylightFactor(std::uint64_t tick_index) {
     constexpr double kTickDeltaSeconds = 1.0 / 60.0;
     constexpr double kDayNightCycleSeconds = 180.0;
@@ -137,8 +45,7 @@ float ComputeDaylightFactor(std::uint64_t tick_index) {
 
 }  // namespace
 
-GameApp::GameApp()
-    : simulation_kernel_(world_service_, net_service_, script_host_) {}
+GameApp::GameApp() = default;
 
 bool GameApp::Initialize(const std::filesystem::path& config_path) {
     std::string config_error;
@@ -153,40 +60,13 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
         return false;
     }
 
-    script_host_.SetBackendPreference(ToScriptBackendPreference(config_.script_backend_mode));
-    core::Logger::Info(
-        "script",
-        "Configured script backend preference: " +
-            std::string(core::ScriptBackendModeName(config_.script_backend_mode)));
-    net_service_.SetBackendPreference(ToNetBackendPreference(config_.net_backend_mode));
-    net_service_.ConfigureUdpBackend(
-        config_.net_udp_local_host,
-        static_cast<std::uint16_t>(config_.net_udp_local_port),
-        net::UdpEndpoint{
-            .host = config_.net_udp_remote_host,
-            .port = static_cast<std::uint16_t>(config_.net_udp_remote_port),
-        });
     core::Logger::Info(
         "net",
-        "Configured net backend preference: " +
-            std::string(core::NetBackendModeName(config_.net_backend_mode)) +
-            ", udp_local=" + config_.net_udp_local_host +
+        "Configured net backend: udp_peer" +
+            std::string(", udp_local=") + config_.net_udp_local_host +
             ":" + std::to_string(config_.net_udp_local_port) +
             ", udp_remote=" + config_.net_udp_remote_host +
             ":" + std::to_string(config_.net_udp_remote_port));
-
-    std::string runtime_error;
-    if (!simulation_kernel_.Initialize(runtime_error)) {
-        core::Logger::Error("app", "Simulation kernel initialization failed: " + runtime_error);
-        sdl_context_.Shutdown();
-        return false;
-    }
-    const script::ScriptRuntimeDescriptor script_runtime_descriptor = script_host_.RuntimeDescriptor();
-    core::Logger::Info(
-        "script",
-        "Script runtime active: backend=" + script_runtime_descriptor.backend_name +
-            ", api_version=" + script_runtime_descriptor.api_version +
-            ", sandbox=" + (script_runtime_descriptor.sandbox_enabled ? "true" : "false"));
 
     save::WorldSaveState loaded_save_state{};
     bool has_loaded_save_state = false;
@@ -195,155 +75,113 @@ bool GameApp::Initialize(const std::filesystem::path& config_path) {
     if (!save_repository_.Initialize(save_root_, save_error)) {
         core::Logger::Warn("save", "Save repository initialize failed: " + save_error);
     } else {
-        if (save_repository_.LoadWorldState(loaded_save_state, save_error)) {
-            has_loaded_save_state = true;
-            local_player_id_ = loaded_save_state.local_player_id == 0 ? 1 : loaded_save_state.local_player_id;
-            if (loaded_save_state.has_gameplay_snapshot) {
-                simulation_kernel_.RestoreGameplayProgress(sim::GameplayProgressSnapshot{
-                    .wood_collected = loaded_save_state.gameplay_wood_collected,
-                    .stone_collected = loaded_save_state.gameplay_stone_collected,
-                    .workbench_built = loaded_save_state.gameplay_workbench_built,
-                    .sword_crafted = loaded_save_state.gameplay_sword_crafted,
-                    .enemy_kill_count = loaded_save_state.gameplay_enemy_kill_count,
-                    .boss_health = loaded_save_state.gameplay_boss_health,
-                    .boss_defeated = loaded_save_state.gameplay_boss_defeated,
-                    .playable_loop_complete = loaded_save_state.gameplay_loop_complete,
-                });
-            }
-            if (loaded_save_state.has_world_snapshot) {
-                std::size_t applied_chunk_count = 0;
-                for (const std::string& encoded_chunk :
-                     loaded_save_state.world_chunk_payloads) {
-                    std::string apply_error;
-                    if (!simulation_kernel_.ApplyRemoteChunkPayload(
-                            encoded_chunk,
-                            apply_error)) {
-                        core::Logger::Warn(
-                            "save",
-                            "Skip invalid world chunk snapshot payload: " +
-                                apply_error);
-                        continue;
-                    }
-                    ++applied_chunk_count;
-                }
-
-                core::Logger::Info(
-                    "save",
-                    "Loaded world chunk snapshots: applied=" +
-                        std::to_string(applied_chunk_count) +
-                        ", total=" +
-                        std::to_string(loaded_save_state.world_chunk_payloads.size()));
-            }
-            core::Logger::Info(
-                "save",
-                "Loaded world save: version=" + std::to_string(loaded_save_state.format_version) +
-                    ", tick=" + std::to_string(loaded_save_state.tick_index) +
-                    ", player=" + std::to_string(local_player_id_));
-            if (loaded_save_state.has_gameplay_snapshot) {
-                core::Logger::Info(
-                    "save",
-                    "Loaded gameplay snapshot: wood=" +
-                        std::to_string(loaded_save_state.gameplay_wood_collected) +
-                        ", stone=" + std::to_string(loaded_save_state.gameplay_stone_collected) +
-                        ", workbench=" +
-                        (loaded_save_state.gameplay_workbench_built ? "true" : "false") +
-                        ", sword=" +
-                        (loaded_save_state.gameplay_sword_crafted ? "true" : "false") +
-                        ", enemy_kills=" +
-                        std::to_string(loaded_save_state.gameplay_enemy_kill_count) +
-                        ", boss_health=" + std::to_string(loaded_save_state.gameplay_boss_health) +
-                        ", boss_defeated=" +
-                        (loaded_save_state.gameplay_boss_defeated ? "true" : "false") +
-                        ", loop_complete=" +
-                        (loaded_save_state.gameplay_loop_complete ? "true" : "false"));
-            }
-            core::Logger::Info(
-                "save",
-                "Loaded debug net snapshot: transitions=" +
-                    std::to_string(loaded_save_state.debug_net_session_transitions) +
-                    ", timeout_disconnects=" +
-                    std::to_string(loaded_save_state.debug_net_timeout_disconnects) +
-                    ", manual_disconnects=" +
-                    std::to_string(loaded_save_state.debug_net_manual_disconnects) +
-                    ", last_heartbeat_tick=" +
-                    std::to_string(loaded_save_state.debug_net_last_heartbeat_tick) +
-                    ", dropped_commands=" +
-                    std::to_string(loaded_save_state.debug_net_dropped_commands) +
-                    ", dropped_payloads=" +
-                    std::to_string(loaded_save_state.debug_net_dropped_remote_payloads) +
-                    ", last_transition_reason=" +
-                    loaded_save_state.debug_net_last_transition_reason);
-        } else {
+        runtime::SaveLoadResult save_result{};
+        if (runtime::TryLoadSaveState(
+                save_repository_,
+                save_result,
+                save_error)) {
+            has_loaded_save_state = save_result.has_state;
+            loaded_save_state = save_result.state;
+            local_player_id_ = save_result.local_player_id;
+        } else if (!save_error.empty()) {
             core::Logger::Warn("save", "World save load skipped: " + save_error);
         }
     }
 
-    std::string mod_error;
     mod_manifest_fingerprint_.clear();
     loaded_mods_.clear();
-    if (!mod_loader_.Initialize(mod_root_, mod_error)) {
-        core::Logger::Warn("mod", "Mod loader initialize failed: " + mod_error);
-    } else if (!mod_loader_.LoadAll(loaded_mods_, mod_error)) {
-        core::Logger::Warn("mod", "Mod loading failed: " + mod_error);
-    } else {
-        mod_manifest_fingerprint_ = mod::ModLoader::BuildManifestFingerprint(loaded_mods_);
-        std::size_t item_definition_count = 0;
-        std::size_t recipe_definition_count = 0;
-        std::size_t npc_definition_count = 0;
-        for (const auto& manifest : loaded_mods_) {
-            item_definition_count += manifest.items.size();
-            recipe_definition_count += manifest.recipes.size();
-            npc_definition_count += manifest.npcs.size();
-        }
-        core::Logger::Info("mod", "Loaded mods: " + std::to_string(loaded_mods_.size()));
-        core::Logger::Info(
-            "mod",
-            "Loaded mod content definitions: items=" + std::to_string(item_definition_count) +
-                ", recipes=" + std::to_string(recipe_definition_count) +
-                ", npcs=" + std::to_string(npc_definition_count));
-        core::Logger::Info("mod", "Manifest fingerprint: " + mod_manifest_fingerprint_);
-    }
-
     std::vector<script::ScriptModuleSource> script_modules;
-    if (!BuildModScriptModules(loaded_mods_, script_modules, runtime_error)) {
+    std::string runtime_error;
+    if (!runtime::LoadModsAndScripts(
+            mod_root_,
+            mod_loader_,
+            loaded_mods_,
+            mod_manifest_fingerprint_,
+            script_modules,
+            runtime_error)) {
         core::Logger::Error("script", "Build mod script modules failed: " + runtime_error);
         mod_manifest_fingerprint_.clear();
         loaded_mods_.clear();
         mod_loader_.Shutdown();
         save_repository_.Shutdown();
-        simulation_kernel_.Shutdown();
         sdl_context_.Shutdown();
         return false;
     }
-    if (!script_host_.SetScriptModules(std::move(script_modules), runtime_error)) {
+
+    if (has_loaded_save_state) {
+        const runtime::ModFingerprintCheck fingerprint_check =
+            runtime::EvaluateModFingerprint(
+                loaded_save_state.mod_manifest_fingerprint,
+                mod_manifest_fingerprint_,
+                config_.strict_save_mod_fingerprint);
+        if (fingerprint_check.decision == runtime::ModFingerprintDecision::Reject) {
+            core::Logger::Error("save", fingerprint_check.message);
+            mod_manifest_fingerprint_.clear();
+            loaded_mods_.clear();
+            mod_loader_.Shutdown();
+            save_repository_.Shutdown();
+            sdl_context_.Shutdown();
+            return false;
+        }
+        if (fingerprint_check.decision == runtime::ModFingerprintDecision::Warn) {
+            core::Logger::Warn("save", fingerprint_check.message);
+        }
+    }
+
+    world_service_ = runtime::CreateWorldService();
+    net_service_ = runtime::CreateNetService(runtime::NetServiceConfig{
+        .local_host = config_.net_udp_local_host,
+        .local_port = static_cast<std::uint16_t>(config_.net_udp_local_port),
+        .remote_endpoint = net::UdpEndpoint{
+            .host = config_.net_udp_remote_host,
+            .port = static_cast<std::uint16_t>(config_.net_udp_remote_port),
+        },
+    });
+    script_host_ = runtime::CreateScriptHost();
+
+    if (!script_host_->SetScriptModules(std::move(script_modules), runtime_error)) {
         core::Logger::Error("script", "Load mod script modules failed: " + runtime_error);
         mod_manifest_fingerprint_.clear();
         loaded_mods_.clear();
         mod_loader_.Shutdown();
         save_repository_.Shutdown();
-        simulation_kernel_.Shutdown();
+        sdl_context_.Shutdown();
+        net_service_.reset();
+        script_host_.reset();
+        world_service_.reset();
+        return false;
+    }
+
+    simulation_kernel_ = std::make_unique<sim::SimulationKernel>(
+        *world_service_,
+        *net_service_,
+        *script_host_);
+    simulation_kernel_->SetLocalPlayerId(local_player_id_);
+
+    if (!simulation_kernel_->Initialize(runtime_error)) {
+        core::Logger::Error("app", "Simulation kernel initialization failed: " + runtime_error);
+        simulation_kernel_.reset();
+        net_service_.reset();
+        script_host_.reset();
+        world_service_.reset();
+        mod_manifest_fingerprint_.clear();
+        loaded_mods_.clear();
+        mod_loader_.Shutdown();
+        save_repository_.Shutdown();
         sdl_context_.Shutdown();
         return false;
     }
 
-    if (has_loaded_save_state && !loaded_save_state.mod_manifest_fingerprint.empty() &&
-        !mod_manifest_fingerprint_.empty() &&
-        loaded_save_state.mod_manifest_fingerprint != mod_manifest_fingerprint_) {
-        const std::string mismatch_message =
-            "Loaded save mod fingerprint mismatch. save=" +
-            loaded_save_state.mod_manifest_fingerprint +
-            ", runtime=" + mod_manifest_fingerprint_;
-        if (config_.strict_save_mod_fingerprint) {
-            core::Logger::Error("save", mismatch_message);
-            mod_manifest_fingerprint_.clear();
-            loaded_mods_.clear();
-            mod_loader_.Shutdown();
-            save_repository_.Shutdown();
-            simulation_kernel_.Shutdown();
-            sdl_context_.Shutdown();
-            return false;
-        }
-        core::Logger::Warn("save", mismatch_message);
+    const script::ScriptRuntimeDescriptor script_runtime_descriptor =
+        script_host_->RuntimeDescriptor();
+    core::Logger::Info(
+        "script",
+        "Script runtime active: backend=" + script_runtime_descriptor.backend_name +
+            ", api_version=" + script_runtime_descriptor.api_version +
+            ", sandbox=" + (script_runtime_descriptor.sandbox_enabled ? "true" : "false"));
+
+    if (has_loaded_save_state) {
+        runtime::ApplySaveState(loaded_save_state, *simulation_kernel_, *world_service_);
     }
 
     player_controller_.Reset();
@@ -376,17 +214,18 @@ int GameApp::Run() {
                 input_command_mapper_.Map(frame_actions_);
             player_controller_.Update(
                 player_input_intent,
-                world_service_,
-                simulation_kernel_,
+                *world_service_,
+                *simulation_kernel_,
                 local_player_id_);
 
             return !quit_requested_;
         },
         [this](double fixed_delta_seconds) {
-            simulation_kernel_.Update(fixed_delta_seconds);
+            simulation_kernel_->Update(fixed_delta_seconds);
+            player_controller_.SyncFromSimulation(*simulation_kernel_);
 
             constexpr std::uint64_t kNetDiagnosticsPeriodTicks = 300;
-            const std::uint64_t current_tick = simulation_kernel_.CurrentTick();
+            const std::uint64_t current_tick = simulation_kernel_->CurrentTick();
             if (current_tick == 0 ||
                 current_tick % kNetDiagnosticsPeriodTicks != 0 ||
                 current_tick == last_net_diagnostics_tick_) {
@@ -394,7 +233,8 @@ int GameApp::Run() {
             }
 
             last_net_diagnostics_tick_ = current_tick;
-            const net::NetDiagnosticsSnapshot diagnostics = net_service_.DiagnosticsSnapshot();
+            const net::NetDiagnosticsSnapshot diagnostics =
+                net_service_->DiagnosticsSnapshot();
             core::Logger::Info(
                 "net",
                 "Diagnostics: tick=" + std::to_string(current_tick) +
@@ -419,8 +259,19 @@ int GameApp::Run() {
                     std::to_string(diagnostics.dropped_remote_chunk_payload_count) + "/" +
                     std::to_string(diagnostics.dropped_remote_chunk_payload_disconnected_count) + "/" +
                     std::to_string(diagnostics.dropped_remote_chunk_payload_queue_full_count) +
+                    ", unsent_commands(total/disconnected/self/send_fail)=" +
+                    std::to_string(diagnostics.unsent_command_count) + "/" +
+                    std::to_string(diagnostics.unsent_command_disconnected_count) + "/" +
+                    std::to_string(diagnostics.unsent_command_self_suppressed_count) + "/" +
+                    std::to_string(diagnostics.unsent_command_send_failure_count) +
+                    ", unsent_snapshots(total/disconnected/self/send_fail)=" +
+                    std::to_string(diagnostics.unsent_snapshot_payload_count) + "/" +
+                    std::to_string(diagnostics.unsent_snapshot_disconnected_count) + "/" +
+                    std::to_string(diagnostics.unsent_snapshot_self_suppressed_count) + "/" +
+                    std::to_string(diagnostics.unsent_snapshot_send_failure_count) +
                     ", ignored_heartbeats=" + std::to_string(diagnostics.ignored_heartbeat_count));
-            const sim::GameplayProgressSnapshot gameplay_progress = simulation_kernel_.GameplayProgress();
+            const sim::GameplayProgressSnapshot gameplay_progress =
+                simulation_kernel_->GameplayProgress();
             core::Logger::Info(
                 "sim",
                 "Gameplay: wood=" + std::to_string(gameplay_progress.wood_collected) +
@@ -434,11 +285,17 @@ int GameApp::Run() {
                     (gameplay_progress.playable_loop_complete ? "true" : "false"));
         },
         [this](float interpolation_alpha) {
-            const float daylight_factor = ComputeDaylightFactor(simulation_kernel_.CurrentTick());
+            const float daylight_factor =
+                ComputeDaylightFactor(simulation_kernel_->CurrentTick());
+            const int viewport_width =
+                frame_actions_.viewport_width > 0 ? frame_actions_.viewport_width : config_.window_width;
+            const int viewport_height =
+                frame_actions_.viewport_height > 0 ? frame_actions_.viewport_height : config_.window_height;
             const platform::RenderScene scene = render_scene_builder_.Build(
                 player_controller_.State(),
-                config_,
-                world_service_,
+                viewport_width,
+                viewport_height,
+                *world_service_,
                 daylight_factor);
             sdl_context_.RenderFrame(interpolation_alpha, scene);
         });
@@ -453,13 +310,14 @@ void GameApp::Shutdown() {
     }
 
     std::string save_error;
-    const net::NetDiagnosticsSnapshot diagnostics = net_service_.DiagnosticsSnapshot();
-    const sim::GameplayProgressSnapshot gameplay_progress = simulation_kernel_.GameplayProgress();
-    std::vector<std::string> encoded_world_chunks;
-    for (const world::ChunkCoord& chunk_coord : world_service_.LoadedChunkCoords()) {
+    const net::NetDiagnosticsSnapshot diagnostics = net_service_->DiagnosticsSnapshot();
+    const sim::GameplayProgressSnapshot gameplay_progress =
+        simulation_kernel_->GameplayProgress();
+    std::vector<wire::ByteBuffer> encoded_world_chunks;
+    for (const world::ChunkCoord& chunk_coord : world_service_->LoadedChunkCoords()) {
         world::ChunkSnapshot chunk_snapshot{};
         std::string snapshot_error;
-        if (!world_service_.BuildChunkSnapshot(chunk_coord, chunk_snapshot, snapshot_error)) {
+        if (!world_service_->BuildChunkSnapshot(chunk_coord, chunk_snapshot, snapshot_error)) {
             core::Logger::Warn(
                 "save",
                 "Skip world chunk snapshot build at (" +
@@ -469,7 +327,7 @@ void GameApp::Shutdown() {
             continue;
         }
 
-        std::string encoded_chunk;
+        wire::ByteBuffer encoded_chunk;
         if (!world::WorldSnapshotCodec::EncodeChunkSnapshot(
                 chunk_snapshot,
                 encoded_chunk,
@@ -487,7 +345,7 @@ void GameApp::Shutdown() {
     }
     const bool has_world_snapshot = !encoded_world_chunks.empty();
     const save::WorldSaveState save_state{
-        .tick_index = simulation_kernel_.CurrentTick(),
+        .tick_index = simulation_kernel_->CurrentTick(),
         .local_player_id = local_player_id_,
         .mod_manifest_fingerprint = mod_manifest_fingerprint_,
         .gameplay_wood_collected = gameplay_progress.wood_collected,
@@ -517,8 +375,12 @@ void GameApp::Shutdown() {
     loaded_mods_.clear();
     mod_loader_.Shutdown();
     save_repository_.Shutdown();
-    simulation_kernel_.Shutdown();
+    simulation_kernel_->Shutdown();
+    simulation_kernel_.reset();
     sdl_context_.Shutdown();
+    net_service_.reset();
+    script_host_.reset();
+    world_service_.reset();
     initialized_ = false;
     last_net_diagnostics_tick_ = 0;
     player_controller_.Reset();

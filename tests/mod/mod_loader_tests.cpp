@@ -1,6 +1,7 @@
 #include "mod/mod_loader.h"
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -18,7 +19,10 @@ bool Expect(bool condition, const char* message) {
 }
 
 std::filesystem::path BuildTestDirectory() {
-    return std::filesystem::temp_directory_path() / "novaria_mod_loader_test";
+    const auto unique_seed =
+        std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    return std::filesystem::temp_directory_path() /
+        ("novaria_mod_loader_test_" + std::to_string(unique_seed));
 }
 
 void WriteTextFile(const std::filesystem::path& path, const std::string& content) {
@@ -39,7 +43,7 @@ bool TestLoadAllAndFingerprint() {
     std::filesystem::create_directories(test_root / "mod_ok_b" / "content", ec);
 
     WriteTextFile(
-        test_root / "mod_ok_a" / "mod.toml",
+        test_root / "mod_ok_a" / "mod.cfg",
         "name = \"mod_ok_a\"\n"
         "version = \"0.1.0\"\n"
         "description = \"A valid test mod\"\n"
@@ -54,7 +58,7 @@ bool TestLoadAllAndFingerprint() {
         test_root / "mod_ok_a" / "content" / "recipes.csv",
         "recipe_pickaxe,wood_pickaxe,1,wood_pickaxe_plus,1\n");
     WriteTextFile(
-        test_root / "mod_ok_b" / "mod.toml",
+        test_root / "mod_ok_b" / "mod.cfg",
         "name = \"mod_ok_b\"\n"
         "version = \"0.2.0\"\n"
         "description = \"Another valid test mod\"\n"
@@ -144,7 +148,7 @@ bool TestRejectInvalidManifest() {
 
     std::filesystem::create_directories(test_root / "mod_bad", ec);
     WriteTextFile(
-        test_root / "mod_bad" / "mod.toml",
+        test_root / "mod_bad" / "mod.cfg",
         "version = \"1.0.0\"\n");
 
     novaria::mod::ModLoader loader;
@@ -168,7 +172,7 @@ bool TestRejectInvalidContentDefinition() {
 
     std::filesystem::create_directories(test_root / "mod_bad_content" / "content", ec);
     WriteTextFile(
-        test_root / "mod_bad_content" / "mod.toml",
+        test_root / "mod_bad_content" / "mod.cfg",
         "name = \"mod_bad_content\"\n"
         "version = \"1.0.0\"\n");
     WriteTextFile(
@@ -200,7 +204,7 @@ bool TestRejectMissingDependency() {
 
     std::filesystem::create_directories(test_root / "mod_missing_dep", ec);
     WriteTextFile(
-        test_root / "mod_missing_dep" / "mod.toml",
+        test_root / "mod_missing_dep" / "mod.cfg",
         "name = \"mod_missing_dep\"\n"
         "version = \"1.0.0\"\n"
         "dependencies = [\"not_exists\"]\n");
@@ -231,12 +235,12 @@ bool TestRejectCyclicDependency() {
     std::filesystem::create_directories(test_root / "mod_cycle_a", ec);
     std::filesystem::create_directories(test_root / "mod_cycle_b", ec);
     WriteTextFile(
-        test_root / "mod_cycle_a" / "mod.toml",
+        test_root / "mod_cycle_a" / "mod.cfg",
         "name = \"mod_cycle_a\"\n"
         "version = \"1.0.0\"\n"
         "dependencies = [\"mod_cycle_b\"]\n");
     WriteTextFile(
-        test_root / "mod_cycle_b" / "mod.toml",
+        test_root / "mod_cycle_b" / "mod.cfg",
         "name = \"mod_cycle_b\"\n"
         "version = \"1.0.0\"\n"
         "dependencies = [\"mod_cycle_a\"]\n");
@@ -258,6 +262,38 @@ bool TestRejectCyclicDependency() {
     return passed;
 }
 
+bool TestFingerprintEncodingIsInjectiveForDelimiterHeavyFields() {
+    bool passed = true;
+
+    novaria::mod::ModManifest manifest_a{};
+    manifest_a.name = "mod|alpha";
+    manifest_a.version = "1.0.0";
+    manifest_a.description = "desc|p0";
+    manifest_a.script_entry = "content/scripts/a.lua";
+    manifest_a.script_api_version = "0.1.0";
+    manifest_a.script_capabilities = {"event.receive", "tick.receive"};
+    manifest_a.dependencies = {"base,core", "extra"};
+
+    novaria::mod::ModManifest manifest_b{};
+    manifest_b.name = "mod";
+    manifest_b.version = "alpha|1.0.0";
+    manifest_b.description = "desc";
+    manifest_b.script_entry = "p0|content/scripts/a.lua";
+    manifest_b.script_api_version = "0.1.0";
+    manifest_b.script_capabilities = {"event.receive,tick.receive"};
+    manifest_b.dependencies = {"base", "core,extra"};
+
+    const std::string fingerprint_a =
+        novaria::mod::ModLoader::BuildManifestFingerprint({manifest_a});
+    const std::string fingerprint_b =
+        novaria::mod::ModLoader::BuildManifestFingerprint({manifest_b});
+    passed &= Expect(
+        fingerprint_a != fingerprint_b,
+        "Length-prefixed canonical encoding should distinguish delimiter-heavy fields.");
+
+    return passed;
+}
+
 }  // namespace
 
 int main() {
@@ -267,6 +303,7 @@ int main() {
     passed &= TestRejectInvalidContentDefinition();
     passed &= TestRejectMissingDependency();
     passed &= TestRejectCyclicDependency();
+    passed &= TestFingerprintEncodingIsInjectiveForDelimiterHeavyFields();
 
     if (!passed) {
         return 1;

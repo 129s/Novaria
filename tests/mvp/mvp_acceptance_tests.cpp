@@ -1,10 +1,12 @@
 #include "mod/mod_loader.h"
-#include "net/net_service_runtime.h"
+#include "runtime/net_service_factory.h"
+#include "runtime/world_service_factory.h"
 #include "save/save_repository.h"
 #include "script/script_host.h"
+#include "script/sim_rules_rpc.h"
 #include "sim/command_schema.h"
 #include "sim/simulation_kernel.h"
-#include "world/world_service_basic.h"
+#include "world/material_catalog.h"
 
 #include <algorithm>
 #include <chrono>
@@ -12,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -26,7 +29,10 @@ bool Expect(bool condition, const char* message) {
 }
 
 std::filesystem::path BuildTempDirectory(const std::string& name) {
-    return std::filesystem::temp_directory_path() / name;
+    const auto unique_seed =
+        std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    return std::filesystem::temp_directory_path() /
+        (name + "_" + std::to_string(unique_seed));
 }
 
 bool WriteTextFile(const std::filesystem::path& file_path, const std::string& content) {
@@ -41,6 +47,14 @@ bool WriteTextFile(const std::filesystem::path& file_path, const std::string& co
 
 class AcceptanceScriptHost final : public novaria::script::IScriptHost {
 public:
+    bool SetScriptModules(
+        std::vector<novaria::script::ScriptModuleSource> module_sources,
+        std::string& out_error) override {
+        (void)module_sources;
+        out_error.clear();
+        return true;
+    }
+
     bool Initialize(std::string& out_error) override {
         out_error.clear();
         return true;
@@ -48,12 +62,70 @@ public:
 
     void Shutdown() override {}
 
-    void Tick(const novaria::sim::TickContext& tick_context) override {
+    void Tick(const novaria::core::TickContext& tick_context) override {
         (void)tick_context;
     }
 
     void DispatchEvent(const novaria::script::ScriptEvent& event_data) override {
         received_events_.push_back(event_data);
+    }
+
+    bool TryCallModuleFunction(
+        std::string_view module_name,
+        std::string_view function_name,
+        novaria::wire::ByteSpan request_payload,
+        novaria::wire::ByteBuffer& out_response_payload,
+        std::string& out_error) override {
+        (void)module_name;
+        (void)function_name;
+        out_response_payload.clear();
+        const novaria::wire::ByteSpan request_bytes = request_payload;
+
+        if (novaria::script::simrpc::TryDecodeValidateRequest(request_bytes)) {
+            const novaria::wire::ByteBuffer response_bytes =
+                novaria::script::simrpc::EncodeValidateResponse(true);
+            out_response_payload = response_bytes;
+            out_error.clear();
+            return true;
+        }
+
+        novaria::script::simrpc::CraftRecipeRequest craft_request{};
+        if (novaria::script::simrpc::TryDecodeCraftRecipeRequest(request_bytes, craft_request)) {
+            novaria::script::simrpc::CraftRecipeResponse response{};
+
+            if (craft_request.recipe_index == 0 && craft_request.wood_count >= 3) {
+                response.result = novaria::script::simrpc::CraftRecipeResult::Craft;
+                response.wood_delta = -3;
+                response.workbench_delta = 1;
+                response.crafted_kind = novaria::script::simrpc::CraftedKind::Workbench;
+                response.mark_workbench_built = true;
+            } else if (craft_request.recipe_index == 1 &&
+                craft_request.wood_count >= 7 &&
+                craft_request.workbench_reachable) {
+                response.result = novaria::script::simrpc::CraftRecipeResult::Craft;
+                response.wood_delta = -7;
+                response.wood_sword_delta = 1;
+                response.mark_sword_crafted = true;
+            } else if (craft_request.recipe_index == 2 &&
+                craft_request.wood_count >= 1 &&
+                craft_request.coal_count >= 1) {
+                response.result = novaria::script::simrpc::CraftRecipeResult::Craft;
+                response.wood_delta = -1;
+                response.coal_delta = -1;
+                response.torch_delta = 4;
+                response.crafted_kind = novaria::script::simrpc::CraftedKind::Torch;
+            }
+
+            const novaria::wire::ByteBuffer response_bytes =
+                novaria::script::simrpc::EncodeCraftRecipeResponse(response);
+            out_response_payload = response_bytes;
+            out_error.clear();
+            return true;
+        }
+
+        out_response_payload.clear();
+        out_error = "acceptance fake script host received unknown simrpc payload";
+        return false;
     }
 
     novaria::script::ScriptRuntimeDescriptor RuntimeDescriptor() const override {
@@ -73,40 +145,70 @@ void SubmitPlayableLoopCommands(
     std::uint32_t player_id) {
     kernel.SubmitLocalCommand({
         .player_id = player_id,
-        .command_type = std::string(novaria::sim::command::kGameplayCollectResource),
-        .payload = novaria::sim::command::BuildCollectResourcePayload(
-            novaria::sim::command::kResourceWood,
-            20),
+        .command_id = novaria::sim::command::kGameplayCollectResource,
+        .payload = novaria::sim::command::EncodeCollectResourcePayload({
+            .resource_id = novaria::sim::command::kResourceWood,
+            .amount = 20,
+        }),
     });
     kernel.SubmitLocalCommand({
         .player_id = player_id,
-        .command_type = std::string(novaria::sim::command::kGameplayCollectResource),
-        .payload = novaria::sim::command::BuildCollectResourcePayload(
-            novaria::sim::command::kResourceStone,
-            20),
+        .command_id = novaria::sim::command::kGameplayCollectResource,
+        .payload = novaria::sim::command::EncodeCollectResourcePayload({
+            .resource_id = novaria::sim::command::kResourceStone,
+            .amount = 20,
+        }),
+    });
+
+    // Ensure a reachable workbench exists for sword crafting.
+    for (int chunk_y = -1; chunk_y <= 1; ++chunk_y) {
+        for (int chunk_x = -1; chunk_x <= 1; ++chunk_x) {
+            kernel.SubmitLocalCommand({
+                .player_id = player_id,
+                .command_id = novaria::sim::command::kWorldLoadChunk,
+                .payload = novaria::sim::command::EncodeWorldChunkPayload({
+                    .chunk_x = chunk_x,
+                    .chunk_y = chunk_y,
+                }),
+            });
+        }
+    }
+    kernel.SubmitLocalCommand({
+        .player_id = player_id,
+        .command_id = novaria::sim::command::kWorldSetTile,
+        .payload = novaria::sim::command::EncodeWorldSetTilePayload({
+            .tile_x = 1,
+            .tile_y = -2,
+            .material_id = novaria::world::material::kWorkbench,
+        }),
+    });
+
+    kernel.SubmitLocalCommand({
+        .player_id = player_id,
+        .command_id = novaria::sim::command::kGameplayCraftRecipe,
+        .payload = novaria::sim::command::EncodeCraftRecipePayload({
+            .recipe_index = 0,
+        }),
     });
     kernel.SubmitLocalCommand({
         .player_id = player_id,
-        .command_type = std::string(novaria::sim::command::kGameplayBuildWorkbench),
-        .payload = "",
-    });
-    kernel.SubmitLocalCommand({
-        .player_id = player_id,
-        .command_type = std::string(novaria::sim::command::kGameplayCraftSword),
-        .payload = "",
+        .command_id = novaria::sim::command::kGameplayCraftRecipe,
+        .payload = novaria::sim::command::EncodeCraftRecipePayload({
+            .recipe_index = 1,
+        }),
     });
     for (int index = 0; index < 3; ++index) {
         kernel.SubmitLocalCommand({
             .player_id = player_id,
-            .command_type = std::string(novaria::sim::command::kGameplayAttackEnemy),
-            .payload = "",
+            .command_id = novaria::sim::command::kGameplayAttackEnemy,
+            .payload = {},
         });
     }
     for (int index = 0; index < 6; ++index) {
         kernel.SubmitLocalCommand({
             .player_id = player_id,
-            .command_type = std::string(novaria::sim::command::kGameplayAttackBoss),
-            .payload = "",
+            .command_id = novaria::sim::command::kGameplayAttackBoss,
+            .payload = {},
         });
     }
 }
@@ -117,15 +219,19 @@ bool TestPlayableLoopAndSaveReload() {
     std::error_code ec;
     std::filesystem::remove_all(save_root, ec);
 
-    novaria::world::WorldServiceBasic world;
-    novaria::net::NetServiceRuntime net;
-    net.SetBackendPreference(novaria::net::NetBackendPreference::UdpLoopback);
-    net.ConfigureUdpBackend(0, {.host = "127.0.0.1", .port = 0});
+    std::unique_ptr<novaria::world::IWorldService> world = novaria::runtime::CreateWorldService();
+    passed &= Expect(world != nullptr, "World service factory should not return null.");
+    auto net = novaria::runtime::CreateNetService(novaria::runtime::NetServiceConfig{
+        .local_host = "127.0.0.1",
+        .local_port = 0,
+        .remote_endpoint = {.host = "127.0.0.1", .port = 0},
+    });
     AcceptanceScriptHost script;
-    novaria::sim::SimulationKernel kernel(world, net, script);
+    novaria::sim::SimulationKernel kernel(*world, *net, script);
 
     std::string error;
     passed &= Expect(kernel.Initialize(error), "Simulation kernel should initialize.");
+    kernel.SetLocalPlayerId(7);
     SubmitPlayableLoopCommands(kernel, 7);
     kernel.Update(1.0 / 60.0);
 
@@ -134,7 +240,7 @@ bool TestPlayableLoopAndSaveReload() {
 
     novaria::save::FileSaveRepository repository;
     passed &= Expect(repository.Initialize(save_root, error), "Save repository should initialize.");
-    const novaria::net::NetDiagnosticsSnapshot diagnostics = net.DiagnosticsSnapshot();
+    const novaria::net::NetDiagnosticsSnapshot diagnostics = net->DiagnosticsSnapshot();
     const novaria::save::WorldSaveState save_state{
         .tick_index = kernel.CurrentTick(),
         .local_player_id = 7,
@@ -168,6 +274,7 @@ bool TestPlayableLoopAndSaveReload() {
 
     repository.Shutdown();
     kernel.Shutdown();
+    net->Shutdown();
     std::filesystem::remove_all(save_root, ec);
     return passed;
 }
@@ -175,12 +282,15 @@ bool TestPlayableLoopAndSaveReload() {
 bool TestFourPlayerThirtyMinuteSimulationStability() {
     bool passed = true;
 
-    novaria::world::WorldServiceBasic world;
-    novaria::net::NetServiceRuntime net;
-    net.SetBackendPreference(novaria::net::NetBackendPreference::UdpLoopback);
-    net.ConfigureUdpBackend(0, {.host = "127.0.0.1", .port = 0});
+    std::unique_ptr<novaria::world::IWorldService> world = novaria::runtime::CreateWorldService();
+    passed &= Expect(world != nullptr, "World service factory should not return null.");
+    auto net = novaria::runtime::CreateNetService(novaria::runtime::NetServiceConfig{
+        .local_host = "127.0.0.1",
+        .local_port = 0,
+        .remote_endpoint = {.host = "127.0.0.1", .port = 0},
+    });
     AcceptanceScriptHost script;
-    novaria::sim::SimulationKernel kernel(world, net, script);
+    novaria::sim::SimulationKernel kernel(*world, *net, script);
 
     std::string error;
     passed &= Expect(kernel.Initialize(error), "Simulation kernel should initialize.");
@@ -192,19 +302,19 @@ bool TestFourPlayerThirtyMinuteSimulationStability() {
         for (std::uint32_t player_id = 1; player_id <= kPlayerCount; ++player_id) {
             kernel.SubmitLocalCommand({
                 .player_id = player_id,
-                .command_type = std::string(novaria::sim::command::kJump),
-                .payload = "",
+                .command_id = novaria::sim::command::kJump,
+                .payload = {},
             });
         }
 
         if (tick % 30 == 0) {
-            net.NotifyHeartbeatReceived(kernel.CurrentTick());
+            net->NotifyHeartbeatReceived(kernel.CurrentTick());
         }
 
         kernel.Update(1.0 / 60.0);
     }
 
-    const novaria::net::NetDiagnosticsSnapshot diagnostics = net.DiagnosticsSnapshot();
+    const novaria::net::NetDiagnosticsSnapshot diagnostics = net->DiagnosticsSnapshot();
     passed &= Expect(
         diagnostics.session_state == novaria::net::NetSessionState::Connected,
         "Thirty-minute run should keep net session connected.");
@@ -231,7 +341,7 @@ bool TestModContentConsistencyFingerprint() {
 
     passed &= Expect(
         WriteTextFile(
-            mod_root / "core" / "mod.toml",
+            mod_root / "core" / "mod.cfg",
             "name = \"core\"\n"
             "version = \"1.0.0\"\n"
             "dependencies = []\n"),
@@ -243,7 +353,7 @@ bool TestModContentConsistencyFingerprint() {
         "Core mod items write should succeed.");
     passed &= Expect(
         WriteTextFile(
-            mod_root / "expansion" / "mod.toml",
+            mod_root / "expansion" / "mod.cfg",
             "name = \"expansion\"\n"
             "version = \"1.0.0\"\n"
             "dependencies = [\"core\"]\n"),
@@ -283,12 +393,15 @@ bool TestModContentConsistencyFingerprint() {
 bool TestTickP95PerformanceBudget() {
     bool passed = true;
 
-    novaria::world::WorldServiceBasic world;
-    novaria::net::NetServiceRuntime net;
-    net.SetBackendPreference(novaria::net::NetBackendPreference::UdpLoopback);
-    net.ConfigureUdpBackend(0, {.host = "127.0.0.1", .port = 0});
+    std::unique_ptr<novaria::world::IWorldService> world = novaria::runtime::CreateWorldService();
+    passed &= Expect(world != nullptr, "World service factory should not return null.");
+    auto net = novaria::runtime::CreateNetService(novaria::runtime::NetServiceConfig{
+        .local_host = "127.0.0.1",
+        .local_port = 0,
+        .remote_endpoint = {.host = "127.0.0.1", .port = 0},
+    });
     AcceptanceScriptHost script;
-    novaria::sim::SimulationKernel kernel(world, net, script);
+    novaria::sim::SimulationKernel kernel(*world, *net, script);
 
     std::string error;
     passed &= Expect(kernel.Initialize(error), "Simulation kernel should initialize.");
@@ -298,7 +411,7 @@ bool TestTickP95PerformanceBudget() {
     std::vector<double> tick_durations_ms;
     tick_durations_ms.reserve(kMeasuredTicks);
     for (int tick = 0; tick < kMeasuredTicks; ++tick) {
-        net.NotifyHeartbeatReceived(kernel.CurrentTick());
+        net->NotifyHeartbeatReceived(kernel.CurrentTick());
         const auto start_time = std::chrono::steady_clock::now();
         kernel.Update(1.0 / 60.0);
         const auto end_time = std::chrono::steady_clock::now();
@@ -316,6 +429,7 @@ bool TestTickP95PerformanceBudget() {
     passed &= Expect(p95_ms <= 16.6, "Simulation Tick P95 should stay under 16.6ms.");
 
     kernel.Shutdown();
+    net->Shutdown();
     return passed;
 }
 

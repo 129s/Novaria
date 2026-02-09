@@ -1,5 +1,0 @@
-name = "example_core"
-version = "0.1.0"
-description = "Novaria MVP 示例 Mod 清单。"
-dependencies = []
-script_capabilities = ["event.receive", "tick.receive"]

@@ -1,49 +1,17 @@
 #include "core/config.h"
+#include "core/logger.h"
+#include "core/cfg_parser.h"
 
 #include <algorithm>
-#include <cctype>
-#include <fstream>
 #include <string>
+#include <vector>
 
 namespace novaria::core {
 namespace {
 
-std::string Trim(std::string value) {
-    auto not_space = [](unsigned char ch) { return !std::isspace(ch); };
-    value.erase(value.begin(), std::find_if(value.begin(), value.end(), not_space));
-    value.erase(std::find_if(value.rbegin(), value.rend(), not_space).base(), value.end());
-    return value;
-}
-
-bool ParseBool(const std::string& value, bool& out_value) {
-    if (value == "true") {
-        out_value = true;
-        return true;
-    }
-    if (value == "false") {
-        out_value = false;
-        return true;
-    }
-    return false;
-}
-
-bool ParseInt(const std::string& value, int& out_value) {
-    try {
-        size_t consumed = 0;
-        const int parsed = std::stoi(value, &consumed);
-        if (consumed != value.size()) {
-            return false;
-        }
-        out_value = parsed;
-        return true;
-    } catch (...) {
-        return false;
-    }
-}
-
 bool ParsePort(const std::string& value, int& out_port) {
     int parsed_port = 0;
-    if (!ParseInt(value, parsed_port)) {
+    if (!cfg::ParseInt(value, parsed_port)) {
         return false;
     }
 
@@ -56,39 +24,7 @@ bool ParsePort(const std::string& value, int& out_port) {
 }
 
 bool ParseString(const std::string& value, std::string& out_value) {
-    if (value.size() < 2 || value.front() != '"' || value.back() != '"') {
-        return false;
-    }
-    out_value = value.substr(1, value.size() - 2);
-    return true;
-}
-
-bool ParseScriptBackendMode(const std::string& value, ScriptBackendMode& out_mode) {
-    std::string parsed;
-    if (!ParseString(value, parsed)) {
-        return false;
-    }
-
-    if (parsed == "luajit") {
-        out_mode = ScriptBackendMode::LuaJit;
-        return true;
-    }
-
-    return false;
-}
-
-bool ParseNetBackendMode(const std::string& value, NetBackendMode& out_mode) {
-    std::string parsed;
-    if (!ParseString(value, parsed)) {
-        return false;
-    }
-
-    if (parsed == "udp_loopback") {
-        out_mode = NetBackendMode::UdpLoopback;
-        return true;
-    }
-
-    return false;
+    return cfg::ParseQuotedString(value, out_value);
 }
 
 }  // namespace
@@ -97,39 +33,15 @@ bool ConfigLoader::Load(
     const std::filesystem::path& file_path,
     GameConfig& out_config,
     std::string& out_error) {
-    std::ifstream file(file_path);
-    if (!file.is_open()) {
-        out_error = "Cannot open config file: " + file_path.string();
+    std::vector<cfg::KeyValueLine> lines;
+    if (!cfg::ParseFile(file_path, lines, out_error)) {
         return false;
     }
 
-    std::string line;
-    int line_number = 0;
-    while (std::getline(file, line)) {
-        ++line_number;
-
-        const std::string::size_type comment_pos = line.find('#');
-        if (comment_pos != std::string::npos) {
-            line = line.substr(0, comment_pos);
-        }
-
-        line = Trim(line);
-        if (line.empty()) {
-            continue;
-        }
-
-        if (line.front() == '[' && line.back() == ']') {
-            continue;
-        }
-
-        const std::string::size_type equal_pos = line.find('=');
-        if (equal_pos == std::string::npos) {
-            out_error = "Invalid config line (missing '='): line " + std::to_string(line_number);
-            return false;
-        }
-
-        const std::string key = Trim(line.substr(0, equal_pos));
-        const std::string value = Trim(line.substr(equal_pos + 1));
+    for (const cfg::KeyValueLine& line : lines) {
+        const std::string& key = line.key;
+        const std::string& value = line.value;
+        const int line_number = line.line_number;
 
         if (key == "window_title") {
             if (!ParseString(value, out_config.window_title)) {
@@ -140,7 +52,7 @@ bool ConfigLoader::Load(
         }
 
         if (key == "window_width") {
-            if (!ParseInt(value, out_config.window_width)) {
+            if (!cfg::ParseInt(value, out_config.window_width)) {
                 out_error = "window_width expects integer: line " + std::to_string(line_number);
                 return false;
             }
@@ -148,7 +60,7 @@ bool ConfigLoader::Load(
         }
 
         if (key == "window_height") {
-            if (!ParseInt(value, out_config.window_height)) {
+            if (!cfg::ParseInt(value, out_config.window_height)) {
                 out_error = "window_height expects integer: line " + std::to_string(line_number);
                 return false;
             }
@@ -156,37 +68,26 @@ bool ConfigLoader::Load(
         }
 
         if (key == "vsync") {
-            if (!ParseBool(value, out_config.vsync)) {
+            if (!cfg::ParseBool(value, out_config.vsync)) {
                 out_error = "vsync expects boolean: line " + std::to_string(line_number);
                 return false;
             }
             continue;
         }
 
+        if (key == "debug_input_enabled") {
+            if (!cfg::ParseBool(value, out_config.debug_input_enabled)) {
+                out_error = "debug_input_enabled expects boolean: line " +
+                    std::to_string(line_number);
+                return false;
+            }
+            continue;
+        }
+
         if (key == "strict_save_mod_fingerprint") {
-            if (!ParseBool(value, out_config.strict_save_mod_fingerprint)) {
+            if (!cfg::ParseBool(value, out_config.strict_save_mod_fingerprint)) {
                 out_error =
                     "strict_save_mod_fingerprint expects boolean: line " + std::to_string(line_number);
-                return false;
-            }
-            continue;
-        }
-
-        if (key == "script_backend") {
-            if (!ParseScriptBackendMode(value, out_config.script_backend_mode)) {
-                out_error =
-                    "script_backend expects \"luajit\": line " +
-                    std::to_string(line_number);
-                return false;
-            }
-            continue;
-        }
-
-        if (key == "net_backend") {
-            if (!ParseNetBackendMode(value, out_config.net_backend_mode)) {
-                out_error =
-                    "net_backend expects \"udp_loopback\": line " +
-                    std::to_string(line_number);
                 return false;
             }
             continue;
@@ -225,6 +126,10 @@ bool ConfigLoader::Load(
             }
             continue;
         }
+        out_error =
+            "Unknown config key: " + key +
+            " (line " + std::to_string(line_number) + ")";
+        return false;
     }
 
     if (out_config.window_width <= 0 || out_config.window_height <= 0) {
@@ -244,24 +149,6 @@ bool ConfigLoader::Load(
 
     out_error.clear();
     return true;
-}
-
-const char* ScriptBackendModeName(ScriptBackendMode mode) {
-    switch (mode) {
-        case ScriptBackendMode::LuaJit:
-            return "luajit";
-    }
-
-    return "unknown";
-}
-
-const char* NetBackendModeName(NetBackendMode mode) {
-    switch (mode) {
-        case NetBackendMode::UdpLoopback:
-            return "udp_loopback";
-    }
-
-    return "unknown";
 }
 
 }  // namespace novaria::core

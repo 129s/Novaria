@@ -1,20 +1,19 @@
 #include "core/config.h"
 #include "core/logger.h"
-#include "mod/mod_loader.h"
-#include "net/net_service_runtime.h"
-#include "script/script_host_runtime.h"
+#include "runtime/mod_pipeline.h"
+#include "runtime/net_service_factory.h"
+#include "runtime/script_host_factory.h"
+#include "runtime/world_service_factory.h"
 #include "sim/command_schema.h"
 #include "sim/simulation_kernel.h"
-#include "world/world_service_basic.h"
 
 #include <atomic>
 #include <chrono>
 #include <csignal>
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
-#include <iterator>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -23,7 +22,7 @@
 namespace {
 
 struct ServerOptions final {
-    std::filesystem::path config_path = "config/game.toml";
+    std::filesystem::path config_path = "config/game.cfg";
     std::filesystem::path mod_root = "mods";
     std::uint64_t ticks = 0;
     double fixed_delta_seconds = 1.0 / 60.0;
@@ -35,94 +34,6 @@ std::atomic_bool g_keep_running{true};
 void OnSignal(int signal_code) {
     (void)signal_code;
     g_keep_running.store(false);
-}
-
-novaria::script::ScriptBackendPreference ToScriptBackendPreference(
-    novaria::core::ScriptBackendMode mode) {
-    switch (mode) {
-        case novaria::core::ScriptBackendMode::LuaJit:
-            return novaria::script::ScriptBackendPreference::LuaJit;
-    }
-
-    return novaria::script::ScriptBackendPreference::LuaJit;
-}
-
-bool ReadTextFile(
-    const std::filesystem::path& file_path,
-    std::string& out_text,
-    std::string& out_error) {
-    std::ifstream file(file_path, std::ios::binary);
-    if (!file.is_open()) {
-        out_error = "cannot open file: " + file_path.string();
-        return false;
-    }
-
-    out_text.assign(
-        std::istreambuf_iterator<char>(file),
-        std::istreambuf_iterator<char>());
-    out_error.clear();
-    return true;
-}
-
-bool IsSafeRelativePath(const std::filesystem::path& path) {
-    if (path.empty() || path.is_absolute()) {
-        return false;
-    }
-
-    for (const auto& part : path) {
-        if (part == "..") {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-bool BuildModScriptModules(
-    const std::vector<novaria::mod::ModManifest>& manifests,
-    std::vector<novaria::script::ScriptModuleSource>& out_modules,
-    std::string& out_error) {
-    out_modules.clear();
-    for (const auto& manifest : manifests) {
-        if (manifest.script_entry.empty()) {
-            continue;
-        }
-
-        const std::filesystem::path script_entry_path =
-            std::filesystem::path(manifest.script_entry).lexically_normal();
-        if (!IsSafeRelativePath(script_entry_path)) {
-            out_error =
-                "Invalid script entry path in mod '" + manifest.name +
-                "': " + manifest.script_entry;
-            return false;
-        }
-
-        const std::filesystem::path module_file_path =
-            (manifest.root_path / script_entry_path).lexically_normal();
-        std::string module_source;
-        if (!ReadTextFile(module_file_path, module_source, out_error)) {
-            out_error =
-                "Failed to load script entry for mod '" + manifest.name +
-                "': " + out_error;
-            return false;
-        }
-
-        out_modules.push_back(novaria::script::ScriptModuleSource{
-            .module_name = manifest.name,
-            .api_version =
-                manifest.script_api_version.empty()
-                    ? std::string(novaria::script::kScriptApiVersion)
-                    : manifest.script_api_version,
-            .capabilities =
-                manifest.script_capabilities.empty()
-                    ? std::vector<std::string>{"event.receive", "tick.receive"}
-                    : manifest.script_capabilities,
-            .source_code = std::move(module_source),
-        });
-    }
-
-    out_error.clear();
-    return true;
 }
 
 bool ParseUInt64(std::string_view text, std::uint64_t& out_value) {
@@ -233,8 +144,8 @@ void PrintUsage() {
         << "[--mods <path>] [--fixed-delta <seconds>] [--log-interval <ticks>]\n"
         << "\n"
         << "Examples:\n"
-        << "  novaria_server --config config/game.toml --mods mods --ticks 7200\n"
-        << "  novaria_server --config config/game.toml --fixed-delta 0.0166667\n";
+        << "  novaria_server --config config/game.cfg --mods mods --ticks 7200\n"
+        << "  novaria_server --config config/game.cfg --fixed-delta 0.0166667\n";
 }
 
 }  // namespace
@@ -262,54 +173,54 @@ int main(int argc, char** argv) {
             "Config loaded: " + options.config_path.string());
     }
 
-    novaria::world::WorldServiceBasic world_service;
-    novaria::net::NetServiceRuntime net_service;
-    novaria::script::ScriptHostRuntime script_host;
-    novaria::sim::SimulationKernel simulation_kernel(world_service, net_service, script_host);
-    simulation_kernel.SetAuthorityMode(novaria::sim::SimulationAuthorityMode::Authority);
-
-    net_service.SetBackendPreference(novaria::net::NetBackendPreference::UdpLoopback);
-    net_service.ConfigureUdpBackend(
-        config.net_udp_local_host,
-        static_cast<std::uint16_t>(config.net_udp_local_port),
-        novaria::net::UdpEndpoint{
+    std::unique_ptr<novaria::world::IWorldService> world_service =
+        novaria::runtime::CreateWorldService();
+    if (!world_service) {
+        std::cerr << "[ERROR] world service factory returned null\n";
+        return 1;
+    }
+    auto net_service = novaria::runtime::CreateNetService(novaria::runtime::NetServiceConfig{
+        .local_host = config.net_udp_local_host,
+        .local_port = static_cast<std::uint16_t>(config.net_udp_local_port),
+        .remote_endpoint = novaria::net::UdpEndpoint{
             .host = config.net_udp_remote_host,
             .port = static_cast<std::uint16_t>(config.net_udp_remote_port),
-        });
-    script_host.SetBackendPreference(ToScriptBackendPreference(config.script_backend_mode));
+        },
+    });
+    auto script_host = novaria::runtime::CreateScriptHost();
 
     novaria::mod::ModLoader mod_loader;
     std::vector<novaria::mod::ModManifest> loaded_mods;
-    std::string mod_error;
-    if (!mod_loader.Initialize(options.mod_root, mod_error)) {
-        novaria::core::Logger::Warn("mod", "Mod loader initialize failed: " + mod_error);
-    } else if (!mod_loader.LoadAll(loaded_mods, mod_error)) {
-        novaria::core::Logger::Warn("mod", "Mod loading failed: " + mod_error);
-    } else {
-        novaria::core::Logger::Info("mod", "Loaded mods: " + std::to_string(loaded_mods.size()));
-        novaria::core::Logger::Info(
-            "mod",
-            "Manifest fingerprint: " + novaria::mod::ModLoader::BuildManifestFingerprint(loaded_mods));
-    }
-
+    std::string mod_manifest_fingerprint;
     std::vector<novaria::script::ScriptModuleSource> script_modules;
-    if (!BuildModScriptModules(loaded_mods, script_modules, error)) {
-        std::cerr << "[ERROR] build mod script modules failed: " << error << '\n';
+    if (!novaria::runtime::LoadModsAndScripts(
+            options.mod_root,
+            mod_loader,
+            loaded_mods,
+            mod_manifest_fingerprint,
+            script_modules,
+            error)) {
+        std::cerr << "[ERROR] load mods and scripts failed: " << error << '\n';
         mod_loader.Shutdown();
         return 1;
     }
-    if (!script_host.SetScriptModules(std::move(script_modules), error)) {
+
+    if (!script_host->SetScriptModules(std::move(script_modules), error)) {
         std::cerr << "[ERROR] load mod script modules failed: " << error << '\n';
         mod_loader.Shutdown();
         return 1;
     }
+
+    novaria::sim::SimulationKernel simulation_kernel(*world_service, *net_service, *script_host);
+    simulation_kernel.SetAuthorityMode(novaria::sim::SimulationAuthorityMode::Authority);
 
     if (!simulation_kernel.Initialize(error)) {
         std::cerr << "[ERROR] server initialize failed: " << error << '\n';
         mod_loader.Shutdown();
         return 1;
     }
-    const novaria::script::ScriptRuntimeDescriptor script_runtime_descriptor = script_host.RuntimeDescriptor();
+    const novaria::script::ScriptRuntimeDescriptor script_runtime_descriptor =
+        script_host->RuntimeDescriptor();
     novaria::core::Logger::Info(
         "script",
         "Script runtime active: backend=" + script_runtime_descriptor.backend_name +
@@ -321,10 +232,8 @@ int main(int argc, char** argv) {
         for (int chunk_x = -preload_chunk_radius; chunk_x <= preload_chunk_radius; ++chunk_x) {
             simulation_kernel.SubmitLocalCommand(novaria::net::PlayerCommand{
                 .player_id = 1,
-                .command_type = std::string(novaria::sim::command::kWorldLoadChunk),
-                .payload = novaria::sim::command::BuildWorldChunkPayload(
-                    chunk_x,
-                    chunk_y),
+                .command_id = novaria::sim::command::kWorldLoadChunk,
+                .payload = novaria::sim::command::EncodeWorldChunkPayload({.chunk_x = chunk_x, .chunk_y = chunk_y}),
             });
         }
     }
@@ -349,7 +258,8 @@ int main(int argc, char** argv) {
         if (options.log_interval_ticks > 0 &&
             current_tick > 0 &&
             current_tick % options.log_interval_ticks == 0) {
-            const novaria::net::NetDiagnosticsSnapshot diagnostics = net_service.DiagnosticsSnapshot();
+            const novaria::net::NetDiagnosticsSnapshot diagnostics =
+                net_service->DiagnosticsSnapshot();
             novaria::core::Logger::Info(
                 "server",
                 "Tick=" + std::to_string(current_tick) +

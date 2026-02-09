@@ -1,4 +1,5 @@
-#include "net/net_service_runtime.h"
+#include "runtime/net_service_factory.h"
+#include "world/snapshot_codec.h"
 
 #include <chrono>
 #include <cstdint>
@@ -210,6 +211,20 @@ void PrintUsage() {
         << "[--inject-pause-tick <tick>] [--inject-pause-ms <ms>]\n";
 }
 
+bool TryBuildProbeChunkPayload(
+    std::uint64_t tick_index,
+    bool is_host,
+    novaria::wire::ByteBuffer& out_payload,
+    std::string& out_error) {
+    novaria::world::ChunkSnapshot snapshot{};
+    snapshot.chunk_coord = novaria::world::ChunkCoord{.x = is_host ? 1 : -1, .y = 0};
+    snapshot.tiles = {static_cast<std::uint16_t>(tick_index & 0xFFFFu)};
+    return novaria::world::WorldSnapshotCodec::EncodeChunkSnapshot(
+        snapshot,
+        out_payload,
+        out_error);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -221,29 +236,27 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    novaria::net::NetServiceRuntime net_runtime;
-    net_runtime.SetBackendPreference(novaria::net::NetBackendPreference::UdpLoopback);
-    net_runtime.ConfigureUdpBackend(
-        options.local_host,
-        options.local_port,
-        novaria::net::UdpEndpoint{
+    auto net_runtime = novaria::runtime::CreateNetService(novaria::runtime::NetServiceConfig{
+        .local_host = options.local_host,
+        .local_port = options.local_port,
+        .remote_endpoint = novaria::net::UdpEndpoint{
             .host = options.remote_host,
             .port = options.remote_port,
-        });
+        },
+    });
 
-    if (!net_runtime.Initialize(error)) {
+    if (!net_runtime->Initialize(error)) {
         std::cerr << "[ERROR] net init failed: " << error << '\n';
         return 1;
     }
 
-    const std::string payload_prefix =
-        options.role == "host" ? "soak.host" : "soak.client";
+    const bool is_host = options.role == "host";
     std::uint64_t sent_payload_count = 0;
     std::uint64_t received_payload_count = 0;
     std::uint64_t disconnected_tick_count = 0;
     std::uint64_t reconnect_request_count = 0;
     bool connected_once = false;
-    net_runtime.RequestConnect();
+    net_runtime->RequestConnect();
 
     for (std::uint64_t tick = 0; tick < options.ticks; ++tick) {
         if (options.inject_pause_ms > 0 && tick == options.inject_pause_tick) {
@@ -251,29 +264,37 @@ int main(int argc, char** argv) {
                 std::chrono::milliseconds(options.inject_pause_ms));
         }
 
-        net_runtime.Tick({.tick_index = tick, .fixed_delta_seconds = 1.0 / 60.0});
+        net_runtime->Tick({.tick_index = tick, .fixed_delta_seconds = 1.0 / 60.0});
 
-        const novaria::net::NetSessionState session_state = net_runtime.SessionState();
+        const novaria::net::NetSessionState session_state = net_runtime->SessionState();
         if (session_state == novaria::net::NetSessionState::Connected) {
             connected_once = true;
             if (tick % options.payload_interval_ticks == 0) {
-                net_runtime.PublishWorldSnapshot(
-                    tick,
-                    {payload_prefix + ".tick=" + std::to_string(tick)});
+                novaria::wire::ByteBuffer payload;
+                if (!TryBuildProbeChunkPayload(tick, is_host, payload, error)) {
+                    std::cerr << "[ERROR] build payload failed: " << error << '\n';
+                    net_runtime->Shutdown();
+                    return 1;
+                }
+
+                std::vector<novaria::wire::ByteBuffer> payloads;
+                payloads.push_back(std::move(payload));
+                net_runtime->PublishWorldSnapshot(tick, payloads);
                 ++sent_payload_count;
             }
         } else if (session_state == novaria::net::NetSessionState::Disconnected) {
             ++disconnected_tick_count;
-            net_runtime.RequestConnect();
+            net_runtime->RequestConnect();
             ++reconnect_request_count;
         }
 
-        const std::vector<std::string> payloads = net_runtime.ConsumeRemoteChunkPayloads();
+        const std::vector<novaria::wire::ByteBuffer> payloads =
+            net_runtime->ConsumeRemoteChunkPayloads();
         received_payload_count += payloads.size();
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
 
-    const novaria::net::NetDiagnosticsSnapshot diagnostics = net_runtime.DiagnosticsSnapshot();
+    const novaria::net::NetDiagnosticsSnapshot diagnostics = net_runtime->DiagnosticsSnapshot();
     std::cout
         << "[INFO] summary: role=" << options.role
         << ", sent_payload_count=" << sent_payload_count
@@ -285,7 +306,7 @@ int main(int argc, char** argv) {
         << ", ignored_senders=" << diagnostics.ignored_unexpected_sender_count
         << '\n';
 
-    net_runtime.Shutdown();
+    net_runtime->Shutdown();
 
     const bool pass =
         connected_once &&

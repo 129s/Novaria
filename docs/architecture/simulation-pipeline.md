@@ -2,11 +2,11 @@
 
 ## 目标
 
-定义 `sim/world/net/script/ecs` 的**固定 Tick**调度顺序与跨模块时序约束，保证行为可预测、可测试、可复盘。
+定义 `sim/world/net/script` 与 `sim` 内部 `ecs_runtime` 的**固定 Tick**调度顺序与跨模块时序约束，保证行为可预测、可测试、可复盘。
 
 ## 名词
 
-- **Tick**：固定步长推进单位，由 `sim::TickContext{tick_index, fixed_delta_seconds}` 表达。
+- **Tick**：固定步长推进单位，由 `core::TickContext{tick_index, fixed_delta_seconds}` 表达。
 - **Authority**：权威仿真模式，接收命令并推进世界，负责发布世界快照。
 - **Replica**：副本仿真模式，不执行远端命令，只消费远端世界快照并应用到 world。
 
@@ -39,6 +39,7 @@
 ### 5) 会话状态事件（可观测）
 
 - 从 `net.DiagnosticsSnapshot` 读取 `session_state/last_transition_reason`，在状态变化时生成并限流分发会话事件（例如 `net.session_state_changed`）。
+- Authority 在状态转为 Connected 时整理初始同步 chunk 列表（供后续快照发布）。
 
 ### 6) `world.Tick`
 
@@ -48,9 +49,10 @@
 
 - 推进实体行为（投射物/碰撞/伤害/掉落/拾取等）。
 
-### 8) 事件分发 → `script`（输入）
+### 8) gameplay 规则处理与事件产出
 
-- 将可观测的玩法事件（例如拾取/交互）整理为事件并 `script.DispatchEvent`。
+- `gameplay_ruleset` 消费 `ecs_runtime` 事件（战斗/拾取/玩法进度），更新玩法进度并生成可观测事件。
+- 玩法事件通过 `script.DispatchEvent` 投递到脚本队列。
 
 ### 9) `script.Tick`
 
@@ -79,4 +81,3 @@
   - Authority 只在连接态发布世界快照。
 - **可复盘性**：
   - Tick 内的跨模块副作用必须通过可追溯事件/诊断暴露（至少：会话变更、关键玩法里程碑、丢弃/限流计数）。
-

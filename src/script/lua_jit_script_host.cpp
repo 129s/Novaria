@@ -1,9 +1,16 @@
 #include "script/lua_jit_script_host.h"
 
 #include "core/logger.h"
+#include "lua_bootstrap_script_embedded.h"
 
 #include <algorithm>
+#include <array>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
+#include <unordered_set>
+#include <utility>
 
 #if defined(NOVARIA_WITH_LUAJIT)
 #include <cstring>
@@ -20,35 +27,84 @@ extern "C" {
 namespace novaria::script {
 namespace {
 
-constexpr const char* kBootstrapScript = R"lua(
-novaria = novaria or {}
-novaria.last_tick = 0
-novaria.last_delta = 0
-novaria.last_event_name = ""
-novaria.last_event_payload = ""
-
-function novaria_on_tick(tick_index, delta_seconds)
-  novaria.last_tick = tick_index
-  novaria.last_delta = delta_seconds
-end
-
-function novaria_on_event(event_name, payload)
-  novaria.last_event_name = event_name
-  novaria.last_event_payload = payload
-end
-)lua";
-
 #if defined(NOVARIA_WITH_LUAJIT)
+const std::unordered_set<std::string> kSupportedScriptCapabilities = {
+    "event.receive",
+    "tick.receive",
+};
+
+bool ReadTextFile(
+    const std::filesystem::path& file_path,
+    std::string& out_text) {
+    std::ifstream file(file_path, std::ios::binary);
+    if (!file.is_open()) {
+        return false;
+    }
+
+    out_text.assign(
+        std::istreambuf_iterator<char>(file),
+        std::istreambuf_iterator<char>());
+    return true;
+}
+
+struct WhitelistedGlobal final {
+    const char* name = nullptr;
+    bool required = false;
+};
+
+<<<<<<< HEAD
+std::string ReadEnvironmentString(const char* name) {
+#if defined(_MSC_VER)
+    char* value = nullptr;
+    std::size_t length = 0;
+    if (_dupenv_s(&value, &length, name) != 0 || value == nullptr) {
+        return {};
+    }
+
+    std::string result(value);
+    std::free(value);
+    return result;
+#else
+    const char* value = std::getenv(name);
+    return value == nullptr ? std::string{} : std::string(value);
+#endif
+}
+
+std::string LoadBootstrapScriptSource() {
+    std::string bootstrap_override_path;
+    bootstrap_override_path = ReadEnvironmentString("NOVARIA_LUA_BOOTSTRAP_FILE");
+=======
+std::string LoadBootstrapScriptSource() {
+    std::string bootstrap_override_path;
+    if (const char* env_path = std::getenv("NOVARIA_LUA_BOOTSTRAP_FILE");
+        env_path != nullptr && env_path[0] != '\0') {
+        bootstrap_override_path = env_path;
+    }
+>>>>>>> 77c2e72a388234fbfa90639e804362c787d0e052
+
+    if (!bootstrap_override_path.empty()) {
+        std::string override_source;
+        if (ReadTextFile(bootstrap_override_path, override_source)) {
+            core::Logger::Info(
+                "script",
+                "Using Lua bootstrap override: " + bootstrap_override_path);
+            return override_source;
+        }
+
+        core::Logger::Warn(
+            "script",
+            "Lua bootstrap override file not readable, fallback to embedded source: " +
+                bootstrap_override_path);
+    }
+
+    return std::string(kEmbeddedBootstrapScript);
+}
+
 std::string ReadLuaError(lua_State* lua_state) {
     const char* error_message = lua_tostring(lua_state, -1);
     std::string output = error_message != nullptr ? error_message : "unknown LuaJIT error";
     lua_pop(lua_state, 1);
     return output;
-}
-
-void ClearGlobal(lua_State* lua_state, const char* global_name) {
-    lua_pushnil(lua_state);
-    lua_setglobal(lua_state, global_name);
 }
 
 void InstructionBudgetHook(lua_State* lua_state, lua_Debug* debug) {
@@ -95,9 +151,142 @@ bool RunProtectedLuaCall(
     out_error.clear();
     return true;
 }
+
+bool RunProtectedLuaCallWithResults(
+    lua_State* lua_state,
+    int instruction_budget_per_call,
+    int argument_count,
+    int result_count,
+    std::string& out_error) {
+#if defined(LUAJIT_MODE_FUNC) && defined(LUAJIT_MODE_OFF)
+    if (lua_isfunction(lua_state, -(argument_count + 1))) {
+        (void)luaJIT_setmode(
+            lua_state,
+            -(argument_count + 1),
+            LUAJIT_MODE_FUNC | LUAJIT_MODE_OFF);
+    }
+#endif
+
+    lua_sethook(lua_state, InstructionBudgetHook, LUA_MASKCOUNT, instruction_budget_per_call);
+    const int run_status = lua_pcall(lua_state, argument_count, result_count, 0);
+    lua_sethook(lua_state, nullptr, 0, 0);
+    if (run_status != LUA_OK) {
+        out_error = ReadLuaError(lua_state);
+        return false;
+    }
+
+    out_error.clear();
+    return true;
+}
+
+bool CopyWhitelistedGlobalsToEnvironment(
+    lua_State* lua_state,
+    std::string& out_error) {
+    constexpr std::array<WhitelistedGlobal, 18> kWhitelistedGlobals = {{
+        {.name = "assert", .required = true},
+        {.name = "error", .required = true},
+        {.name = "ipairs", .required = true},
+        {.name = "next", .required = true},
+        {.name = "pairs", .required = true},
+        {.name = "pcall", .required = true},
+        {.name = "select", .required = true},
+        {.name = "tonumber", .required = true},
+        {.name = "tostring", .required = true},
+        {.name = "type", .required = true},
+        {.name = "xpcall", .required = true},
+        {.name = "math", .required = true},
+        {.name = "string", .required = true},
+        {.name = "table", .required = true},
+        {.name = "coroutine", .required = true},
+        {.name = "novaria", .required = false},
+        {.name = "bit", .required = false},
+        {.name = "utf8", .required = false},
+    }};
+
+    for (const WhitelistedGlobal& global : kWhitelistedGlobals) {
+        lua_getglobal(lua_state, global.name);
+        if (lua_isnil(lua_state, -1)) {
+            lua_pop(lua_state, 1);
+            if (global.required) {
+                out_error =
+                    "Missing required sandbox global: " + std::string(global.name);
+                return false;
+            }
+            continue;
+        }
+
+        lua_setfield(lua_state, -2, global.name);
+    }
+
+    out_error.clear();
+    return true;
+}
 #endif
 
 }  // namespace
+
+bool LuaJitScriptHost::SetScriptModules(
+    std::vector<ScriptModuleSource> module_sources,
+    std::string& out_error) {
+    std::unordered_set<std::string> unique_module_names;
+    unique_module_names.reserve(module_sources.size());
+    for (auto& module_source : module_sources) {
+        if (module_source.module_name.empty()) {
+            out_error = "Script module name cannot be empty.";
+            return false;
+        }
+
+        if (!unique_module_names.emplace(module_source.module_name).second) {
+            out_error = "Duplicate script module name: " + module_source.module_name;
+            return false;
+        }
+
+        if (module_source.source_code.empty()) {
+            out_error = "Script module source cannot be empty: " + module_source.module_name;
+            return false;
+        }
+
+        if (module_source.api_version.empty()) {
+            module_source.api_version = kScriptApiVersion;
+        }
+
+        if (module_source.api_version != kScriptApiVersion) {
+            out_error =
+                "Script module API version mismatch: module=" + module_source.module_name +
+                ", required=" + module_source.api_version +
+                ", runtime=" + std::string(kScriptApiVersion);
+            return false;
+        }
+
+        if (module_source.capabilities.empty()) {
+            module_source.capabilities = {"event.receive", "tick.receive"};
+        }
+
+        std::sort(module_source.capabilities.begin(), module_source.capabilities.end());
+        module_source.capabilities.erase(
+            std::unique(module_source.capabilities.begin(), module_source.capabilities.end()),
+            module_source.capabilities.end());
+
+        for (const std::string& capability : module_source.capabilities) {
+            if (!kSupportedScriptCapabilities.contains(capability)) {
+                out_error =
+                    "Unsupported script capability: module=" + module_source.module_name +
+                    ", capability=" + capability;
+                return false;
+            }
+        }
+    }
+
+    if (initialized_ && lua_state_ != nullptr) {
+        if (!LoadScriptModules(module_sources, out_error)) {
+            return false;
+        }
+    }
+
+    module_sources_ = std::move(module_sources);
+    out_error.clear();
+    return true;
+}
 
 void* LuaJitScriptHost::QuotaAllocator(
     void* user_data,
@@ -214,6 +403,12 @@ bool LuaJitScriptHost::Initialize(std::string& out_error) {
     }
 
     initialized_ = true;
+    if (!module_sources_.empty() && !LoadScriptModules(module_sources_, out_error)) {
+        lua_close(lua_state_);
+        lua_state_ = nullptr;
+        initialized_ = false;
+        return false;
+    }
     out_error.clear();
     core::Logger::Info("script", "LuaJIT script host initialized.");
     return true;
@@ -240,7 +435,7 @@ void LuaJitScriptHost::Shutdown() {
     core::Logger::Info("script", "LuaJIT script host shutdown.");
 }
 
-void LuaJitScriptHost::Tick(const sim::TickContext& tick_context) {
+void LuaJitScriptHost::Tick(const core::TickContext& tick_context) {
     if (!initialized_) {
         return;
     }
@@ -287,6 +482,98 @@ void LuaJitScriptHost::DispatchEvent(const ScriptEvent& event_data) {
     }
 
     pending_events_.push_back(event_data);
+}
+
+bool LuaJitScriptHost::TryCallModuleFunction(
+    std::string_view module_name,
+    std::string_view function_name,
+    wire::ByteSpan request_payload,
+    wire::ByteBuffer& out_response_payload,
+    std::string& out_error) {
+    out_response_payload.clear();
+
+#if !defined(NOVARIA_WITH_LUAJIT)
+    (void)module_name;
+    (void)function_name;
+    (void)request_payload;
+    out_error = "LuaJIT backend is disabled.";
+    return false;
+#else
+    if (!initialized_ || lua_state_ == nullptr) {
+        out_error = "Lua VM is not initialized.";
+        return false;
+    }
+
+    const LoadedModule* target_module = nullptr;
+    for (const LoadedModule& module : loaded_modules_) {
+        if (module.module_name == module_name) {
+            target_module = &module;
+            break;
+        }
+    }
+    if (target_module == nullptr) {
+        out_error = "Script module not loaded: " + std::string(module_name);
+        return false;
+    }
+    if (target_module->environment_ref == LUA_REFNIL ||
+        target_module->environment_ref == LUA_NOREF) {
+        out_error = "Script module environment ref is invalid: " + target_module->module_name;
+        return false;
+    }
+
+    lua_rawgeti(lua_state_, LUA_REGISTRYINDEX, target_module->environment_ref);
+    if (!lua_istable(lua_state_, -1)) {
+        lua_pop(lua_state_, 1);
+        out_error = "Script module environment is not a table: " + target_module->module_name;
+        return false;
+    }
+
+    const std::string function_name_string(function_name);
+    lua_getfield(lua_state_, -1, function_name_string.c_str());
+    if (!lua_isfunction(lua_state_, -1)) {
+        lua_pop(lua_state_, 2);
+        out_error =
+            "Script module '" + target_module->module_name +
+            "' missing rpc function: " + function_name_string;
+        return false;
+    }
+
+    lua_pushlstring(
+        lua_state_,
+        reinterpret_cast<const char*>(request_payload.data()),
+        request_payload.size());
+    std::string call_error;
+    if (!RunProtectedLuaCallWithResults(
+            lua_state_,
+            static_cast<int>(kInstructionBudgetPerCall),
+            1,
+            1,
+            call_error)) {
+        lua_pop(lua_state_, 1);
+        out_error =
+            "Script rpc call failed (" + target_module->module_name + "): " + call_error;
+        return false;
+    }
+
+    if (!lua_isstring(lua_state_, -1)) {
+        lua_pop(lua_state_, 2);
+        out_error = "Script rpc call did not return string (" + target_module->module_name + ").";
+        return false;
+    }
+
+    std::size_t result_len = 0;
+    const char* result = lua_tolstring(lua_state_, -1, &result_len);
+    if (result != nullptr && result_len > 0) {
+        out_response_payload.resize(result_len);
+        std::memcpy(out_response_payload.data(), result, result_len);
+    } else {
+        out_response_payload.clear();
+    }
+    lua_pop(lua_state_, 2);
+
+    out_error.clear();
+    return true;
+#endif
 }
 
 ScriptRuntimeDescriptor LuaJitScriptHost::RuntimeDescriptor() const {
@@ -363,23 +650,32 @@ bool LuaJitScriptHost::ApplyMvpSandbox(std::string& out_error) {
         return false;
     }
 
-    ClearGlobal(lua_state_, "io");
-    ClearGlobal(lua_state_, "os");
-    ClearGlobal(lua_state_, "debug");
-    ClearGlobal(lua_state_, "package");
-    ClearGlobal(lua_state_, "dofile");
-    ClearGlobal(lua_state_, "loadfile");
-    ClearGlobal(lua_state_, "load");
-    ClearGlobal(lua_state_, "require");
-    ClearGlobal(lua_state_, "collectgarbage");
-    ClearGlobal(lua_state_, "jit");
+    lua_newtable(lua_state_);
+    if (!CopyWhitelistedGlobalsToEnvironment(lua_state_, out_error)) {
+        lua_pop(lua_state_, 1);
+        return false;
+    }
 
-    lua_getglobal(lua_state_, "string");
+    lua_pushvalue(lua_state_, -1);
+    lua_setfield(lua_state_, -2, "_G");
+
+    lua_getfield(lua_state_, -1, "novaria");
+    if (lua_isnil(lua_state_, -1)) {
+        lua_pop(lua_state_, 1);
+        lua_newtable(lua_state_);
+        lua_setfield(lua_state_, -2, "novaria");
+    } else {
+        lua_pop(lua_state_, 1);
+    }
+
+    lua_getfield(lua_state_, -1, "string");
     if (lua_istable(lua_state_, -1)) {
         lua_pushnil(lua_state_);
         lua_setfield(lua_state_, -2, "dump");
     }
     lua_pop(lua_state_, 1);
+
+    lua_replace(lua_state_, LUA_GLOBALSINDEX);
 
     out_error.clear();
     return true;
@@ -396,10 +692,11 @@ bool LuaJitScriptHost::LoadBootstrapScript(std::string& out_error) {
         return false;
     }
 
+    const std::string bootstrap_source = LoadBootstrapScriptSource();
     const int load_status = luaL_loadbufferx(
         lua_state_,
-        kBootstrapScript,
-        std::strlen(kBootstrapScript),
+        bootstrap_source.c_str(),
+        bootstrap_source.size(),
         "novaria_bootstrap",
         nullptr);
     if (load_status != LUA_OK) {
@@ -440,13 +737,13 @@ bool LuaJitScriptHost::BindModuleEnvironment(
     }
 
     lua_newtable(lua_state_);
+    if (!CopyWhitelistedGlobalsToEnvironment(lua_state_, out_error)) {
+        lua_pop(lua_state_, 1);
+        return false;
+    }
+
     lua_pushvalue(lua_state_, -1);
     lua_setfield(lua_state_, -2, "_G");
-
-    lua_newtable(lua_state_);
-    lua_pushvalue(lua_state_, LUA_GLOBALSINDEX);
-    lua_setfield(lua_state_, -2, "__index");
-    lua_setmetatable(lua_state_, -2);
 
     lua_pushvalue(lua_state_, -1);
     if (lua_setfenv(lua_state_, -3) == 0) {
@@ -575,7 +872,7 @@ bool LuaJitScriptHost::LoadModuleScript(
 
 bool LuaJitScriptHost::InvokeModuleTickHandler(
     const LoadedModule& module,
-    const sim::TickContext& tick_context,
+    const core::TickContext& tick_context,
     std::string& out_error) {
 #if !defined(NOVARIA_WITH_LUAJIT)
     (void)module;

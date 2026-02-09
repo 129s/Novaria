@@ -1,10 +1,12 @@
 #include "platform/sdl_context.h"
 
 #include "core/logger.h"
-#include "world/world_service_basic.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <cctype>
+#include <vector>
 #include <string>
 
 namespace novaria::platform {
@@ -20,12 +22,9 @@ bool IsQuitEvent(Uint32 event_type) {
         event_type == SDL_EVENT_WINDOW_CLOSE_REQUESTED;
 }
 
-struct RgbaColor final {
-    Uint8 r = 0;
-    Uint8 g = 0;
-    Uint8 b = 0;
-    Uint8 a = 255;
-};
+bool IsDebugScancode(SDL_Scancode scancode) {
+    return scancode >= SDL_SCANCODE_F1 && scancode <= SDL_SCANCODE_F12;
+}
 
 Uint8 ClampToByte(int value) {
     return static_cast<Uint8>(std::clamp(value, 0, 255));
@@ -38,96 +37,30 @@ Uint8 LerpByte(Uint8 from, Uint8 to, float factor) {
                          static_cast<float>(to) * clamped));
 }
 
-RgbaColor MaterialColor(std::uint16_t material_id) {
-    switch (material_id) {
-        case world::WorldServiceBasic::kMaterialDirt:
-            return RgbaColor{
-                .r = 126,
-                .g = 88,
-                .b = 50,
-                .a = 255,
-            };
-        case world::WorldServiceBasic::kMaterialStone:
-            return RgbaColor{
-                .r = 116,
-                .g = 122,
-                .b = 132,
-                .a = 255,
-            };
-        case world::WorldServiceBasic::kMaterialGrass:
-            return RgbaColor{
-                .r = 82,
-                .g = 160,
-                .b = 58,
-                .a = 255,
-            };
-        case world::WorldServiceBasic::kMaterialWater:
-            return RgbaColor{
-                .r = 58,
-                .g = 124,
-                .b = 206,
-                .a = 190,
-            };
-        case world::WorldServiceBasic::kMaterialWood:
-            return RgbaColor{
-                .r = 124,
-                .g = 84,
-                .b = 44,
-                .a = 255,
-            };
-        case world::WorldServiceBasic::kMaterialLeaves:
-            return RgbaColor{
-                .r = 64,
-                .g = 128,
-                .b = 52,
-                .a = 235,
-            };
-        case world::WorldServiceBasic::kMaterialCoalOre:
-            return RgbaColor{
-                .r = 58,
-                .g = 60,
-                .b = 66,
-                .a = 255,
-            };
-        case world::WorldServiceBasic::kMaterialTorch:
-            return RgbaColor{
-                .r = 244,
-                .g = 184,
-                .b = 54,
-                .a = 255,
-            };
-        case world::WorldServiceBasic::kMaterialWorkbench:
-            return RgbaColor{
-                .r = 164,
-                .g = 118,
-                .b = 70,
-                .a = 255,
-            };
-        default:
-            return RgbaColor{};
+void DrawFilledRect(
+    SDL_Renderer* renderer,
+    float x,
+    float y,
+    float width,
+    float height,
+    const RgbaColor& color) {
+    if (renderer == nullptr || width <= 0.0F || height <= 0.0F) {
+        return;
     }
-}
 
-RgbaColor ApplyTileVariation(
-    const RgbaColor& base_color,
-    int world_tile_x,
-    int world_tile_y) {
-    const int shade_delta = ((world_tile_x + world_tile_y) & 1) == 0 ? 8 : -8;
-    return RgbaColor{
-        .r = ClampToByte(static_cast<int>(base_color.r) + shade_delta),
-        .g = ClampToByte(static_cast<int>(base_color.g) + shade_delta),
-        .b = ClampToByte(static_cast<int>(base_color.b) + shade_delta),
-        .a = base_color.a,
+    (void)SDL_SetRenderDrawColor(
+        renderer,
+        static_cast<Uint8>(color.r),
+        static_cast<Uint8>(color.g),
+        static_cast<Uint8>(color.b),
+        static_cast<Uint8>(color.a));
+    const SDL_FRect rect{
+        x,
+        y,
+        width,
+        height,
     };
-}
-
-RgbaColor ApplyLightToColor(const RgbaColor& base_color, std::uint8_t light_level) {
-    return RgbaColor{
-        .r = static_cast<Uint8>((static_cast<unsigned int>(base_color.r) * light_level) / 255U),
-        .g = static_cast<Uint8>((static_cast<unsigned int>(base_color.g) * light_level) / 255U),
-        .b = static_cast<Uint8>((static_cast<unsigned int>(base_color.b) * light_level) / 255U),
-        .a = base_color.a,
-    };
+    (void)SDL_RenderFillRect(renderer, &rect);
 }
 
 void DrawFilledRect(
@@ -137,18 +70,142 @@ void DrawFilledRect(
     int width,
     int height,
     const RgbaColor& color) {
-    if (renderer == nullptr || width <= 0 || height <= 0) {
-        return;
-    }
-
-    (void)SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
-    const SDL_FRect rect{
+    DrawFilledRect(
+        renderer,
         static_cast<float>(x),
         static_cast<float>(y),
         static_cast<float>(width),
         static_cast<float>(height),
-    };
-    (void)SDL_RenderFillRect(renderer, &rect);
+        color);
+}
+
+void DrawLine(
+    SDL_Renderer* renderer,
+    float x1,
+    float y1,
+    float x2,
+    float y2,
+    const RgbaColor& color) {
+    if (renderer == nullptr) {
+        return;
+    }
+
+    (void)SDL_SetRenderDrawColor(
+        renderer,
+        static_cast<Uint8>(color.r),
+        static_cast<Uint8>(color.g),
+        static_cast<Uint8>(color.b),
+        static_cast<Uint8>(color.a));
+    (void)SDL_RenderLine(renderer, x1, y1, x2, y2);
+}
+
+int LayerSortKey(RenderLayer layer) {
+    return static_cast<int>(layer);
+}
+
+constexpr int kFontGlyphWidth = 5;
+constexpr int kFontGlyphHeight = 7;
+
+struct FontGlyph final {
+    std::uint8_t rows[kFontGlyphHeight]{};  // low 5 bits are pixels
+};
+
+FontGlyph GlyphFor(char ch) {
+    const unsigned char uch = static_cast<unsigned char>(ch);
+    char normalized = static_cast<char>(std::toupper(uch));
+
+    switch (normalized) {
+    case '0': return FontGlyph{{0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110}};
+    case '1': return FontGlyph{{0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110}};
+    case '2': return FontGlyph{{0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111}};
+    case '3': return FontGlyph{{0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110}};
+    case '4': return FontGlyph{{0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010}};
+    case '5': return FontGlyph{{0b11111, 0b10000, 0b11110, 0b00001, 0b00001, 0b10001, 0b01110}};
+    case '6': return FontGlyph{{0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110}};
+    case '7': return FontGlyph{{0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000}};
+    case '8': return FontGlyph{{0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110}};
+    case '9': return FontGlyph{{0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100}};
+    case 'A': return FontGlyph{{0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001}};
+    case 'B': return FontGlyph{{0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110}};
+    case 'C': return FontGlyph{{0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110}};
+    case 'D': return FontGlyph{{0b11100, 0b10010, 0b10001, 0b10001, 0b10001, 0b10010, 0b11100}};
+    case 'E': return FontGlyph{{0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111}};
+    case 'F': return FontGlyph{{0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000}};
+    case 'G': return FontGlyph{{0b01110, 0b10001, 0b10000, 0b10111, 0b10001, 0b10001, 0b01111}};
+    case 'H': return FontGlyph{{0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001}};
+    case 'I': return FontGlyph{{0b01110, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110}};
+    case 'J': return FontGlyph{{0b00111, 0b00010, 0b00010, 0b00010, 0b00010, 0b10010, 0b01100}};
+    case 'K': return FontGlyph{{0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001}};
+    case 'L': return FontGlyph{{0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111}};
+    case 'M': return FontGlyph{{0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001}};
+    case 'N': return FontGlyph{{0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001}};
+    case 'O': return FontGlyph{{0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110}};
+    case 'P': return FontGlyph{{0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000}};
+    case 'Q': return FontGlyph{{0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101}};
+    case 'R': return FontGlyph{{0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001}};
+    case 'S': return FontGlyph{{0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110}};
+    case 'T': return FontGlyph{{0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100}};
+    case 'U': return FontGlyph{{0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110}};
+    case 'V': return FontGlyph{{0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100}};
+    case 'W': return FontGlyph{{0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b10101, 0b01010}};
+    case 'X': return FontGlyph{{0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001}};
+    case 'Y': return FontGlyph{{0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100}};
+    case 'Z': return FontGlyph{{0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111}};
+    case ' ': return FontGlyph{{0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000}};
+    case ':': return FontGlyph{{0b00000, 0b00100, 0b00100, 0b00000, 0b00100, 0b00100, 0b00000}};
+    case '.': return FontGlyph{{0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00100, 0b00100}};
+    case ',': return FontGlyph{{0b00000, 0b00000, 0b00000, 0b00000, 0b00100, 0b00100, 0b01000}};
+    case '-': return FontGlyph{{0b00000, 0b00000, 0b00000, 0b01110, 0b00000, 0b00000, 0b00000}};
+    case '+': return FontGlyph{{0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000}};
+    case '/': return FontGlyph{{0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b00000, 0b00000}};
+    default:
+        return FontGlyph{{0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b00000, 0b01000}};  // '?'
+    }
+}
+
+void DrawText(
+    SDL_Renderer* renderer,
+    float x,
+    float y,
+    float scale,
+    const std::string& text,
+    const RgbaColor& color) {
+    if (renderer == nullptr || text.empty()) {
+        return;
+    }
+
+    const float pixel = std::max(1.0F, scale);
+    const float glyph_advance = (static_cast<float>(kFontGlyphWidth) + 1.0F) * pixel;
+
+    float cursor_x = x;
+    float cursor_y = y;
+    for (char ch : text) {
+        if (ch == '\n') {
+            cursor_x = x;
+            cursor_y += (static_cast<float>(kFontGlyphHeight) + 2.0F) * pixel;
+            continue;
+        }
+
+        const FontGlyph glyph = GlyphFor(ch);
+        for (int row = 0; row < kFontGlyphHeight; ++row) {
+            const std::uint8_t bits = glyph.rows[row];
+            for (int col = 0; col < kFontGlyphWidth; ++col) {
+                const bool on = (bits & (1U << (kFontGlyphWidth - 1 - col))) != 0U;
+                if (!on) {
+                    continue;
+                }
+                DrawFilledRect(
+                    renderer,
+                    cursor_x + static_cast<float>(col) * pixel,
+                    cursor_y + static_cast<float>(row) * pixel,
+                    pixel,
+                    pixel,
+                    color);
+            }
+        }
+
+        cursor_x += glyph_advance;
+    }
 }
 
 }  // namespace
@@ -158,6 +215,8 @@ SdlContext::~SdlContext() {
 }
 
 bool SdlContext::Initialize(const core::GameConfig& config) {
+    debug_input_enabled_ = config.debug_input_enabled;
+
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
         core::Logger::Error("platform", "SDL_Init failed: " + SdlError());
         return false;
@@ -188,6 +247,9 @@ bool SdlContext::Initialize(const core::GameConfig& config) {
     (void)SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_BLEND);
 
     core::Logger::Info("platform", "SDL3 context initialized.");
+    core::Logger::Info(
+        "input",
+        "Debug input switch: " + std::string(debug_input_enabled_ ? "enabled" : "disabled"));
     return true;
 }
 
@@ -199,6 +261,16 @@ bool SdlContext::PumpEvents(bool& quit_requested, InputActions& out_actions) {
         }
 
         if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
+            if (IsDebugScancode(event.key.scancode)) {
+                if (debug_input_enabled_) {
+                    core::Logger::Info(
+                        "input",
+                        "Debug key pressed (no-op): " +
+                            std::string(SDL_GetScancodeName(event.key.scancode)));
+                }
+                continue;
+            }
+
             if (event.key.scancode == SDL_SCANCODE_SPACE) {
                 out_actions.jump_pressed = true;
             }
@@ -327,13 +399,27 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
     const int view_tiles_y = std::max(scene.view_tiles_y, 1);
     const int half_tiles_x = view_tiles_x / 2;
     const int half_tiles_y = view_tiles_y / 2;
-    const int first_world_tile_x = scene.camera_tile_x - half_tiles_x;
-    const int first_world_tile_y = scene.camera_tile_y - half_tiles_y;
-    const int origin_x = (window_width - view_tiles_x * tile_pixel_size) / 2;
-    const int origin_y = (window_height - view_tiles_y * tile_pixel_size) / 2;
+    const float camera_tile_x = scene.camera_tile_x;
+    const float camera_tile_y = scene.camera_tile_y;
+    const int camera_tile_floor_x = static_cast<int>(std::floor(camera_tile_x));
+    const int camera_tile_floor_y = static_cast<int>(std::floor(camera_tile_y));
+    const int first_world_tile_x = camera_tile_floor_x - half_tiles_x;
+    const int first_world_tile_y = camera_tile_floor_y - half_tiles_y;
+    const float world_origin_x =
+        static_cast<float>(window_width) * 0.5F -
+        camera_tile_x * static_cast<float>(tile_pixel_size);
+    const float world_origin_y =
+        static_cast<float>(window_height) * 0.5F -
+        camera_tile_y * static_cast<float>(tile_pixel_size);
+    const float tile_origin_x =
+        world_origin_x +
+        static_cast<float>(first_world_tile_x * tile_pixel_size);
+    const float tile_origin_y =
+        world_origin_y +
+        static_cast<float>(first_world_tile_y * tile_pixel_size);
 
     for (const RenderTile& tile : scene.tiles) {
-        if (tile.material_id == world::WorldServiceBasic::kMaterialAir) {
+        if (tile.color.a == 0) {
             continue;
         }
 
@@ -344,300 +430,70 @@ void SdlContext::RenderFrame(float interpolation_alpha, const RenderScene& scene
             continue;
         }
 
-        const int screen_x = origin_x + local_tile_x * tile_pixel_size;
-        const int screen_y = origin_y + local_tile_y * tile_pixel_size;
-        const RgbaColor varied_tile_color = ApplyTileVariation(
-            MaterialColor(tile.material_id),
-            tile.world_tile_x,
-            tile.world_tile_y);
-        const RgbaColor tile_color = ApplyLightToColor(varied_tile_color, tile.light_level);
+        const float screen_x =
+            tile_origin_x + static_cast<float>(local_tile_x * tile_pixel_size);
+        const float screen_y =
+            tile_origin_y + static_cast<float>(local_tile_y * tile_pixel_size);
         DrawFilledRect(
             renderer_,
             screen_x,
             screen_y,
-            tile_pixel_size,
-            tile_pixel_size,
-            tile_color);
+            static_cast<float>(tile_pixel_size),
+            static_cast<float>(tile_pixel_size),
+            tile.color);
     }
 
-    if (scene.target_highlight_visible) {
-        const int highlight_local_x = scene.target_highlight_tile_x - first_world_tile_x;
-        const int highlight_local_y = scene.target_highlight_tile_y - first_world_tile_y;
-        if (highlight_local_x >= 0 && highlight_local_x < view_tiles_x &&
-            highlight_local_y >= 0 && highlight_local_y < view_tiles_y) {
-            DrawFilledRect(
-                renderer_,
-                origin_x + highlight_local_x * tile_pixel_size,
-                origin_y + highlight_local_y * tile_pixel_size,
-                tile_pixel_size,
-                tile_pixel_size,
-                RgbaColor{.r = 240, .g = 214, .b = 108, .a = 72});
-        }
+    std::vector<const RenderCommand*> sorted_commands;
+    sorted_commands.reserve(scene.overlay_commands.size());
+    for (const RenderCommand& command : scene.overlay_commands) {
+        sorted_commands.push_back(&command);
     }
-
-    const int player_local_x = scene.player_tile_x - first_world_tile_x;
-    const int player_local_y = scene.player_tile_y - first_world_tile_y;
-    DrawFilledRect(
-        renderer_,
-        origin_x + player_local_x * tile_pixel_size + tile_pixel_size / 6,
-        origin_y + player_local_y * tile_pixel_size + tile_pixel_size / 8,
-        tile_pixel_size * 2 / 3,
-        tile_pixel_size * 3 / 4,
-        RgbaColor{
-            .r = 72,
-            .g = 196,
-            .b = 248,
-            .a = 255,
+    std::stable_sort(
+        sorted_commands.begin(),
+        sorted_commands.end(),
+        [](const RenderCommand* left, const RenderCommand* right) {
+            if (left == nullptr || right == nullptr) {
+                return left != nullptr;
+            }
+            if (left->layer != right->layer) {
+                return LayerSortKey(left->layer) < LayerSortKey(right->layer);
+            }
+            return left->z < right->z;
         });
 
-    const int hud_x = 12;
-    const int hud_y = 12;
-    const int hud_width = 280;
-    const int hud_height = 180;
-    DrawFilledRect(
-        renderer_,
-        hud_x,
-        hud_y,
-        hud_width,
-        hud_height,
-        RgbaColor{
-            .r = 18,
-            .g = 18,
-            .b = 22,
-            .a = 214,
-        });
-
-    const int bar_max_width = 136;
-    const int hp_bar_width = std::min<int>(
-        bar_max_width,
-        scene.hud.hp_max == 0
-            ? 0
-            : static_cast<int>((static_cast<unsigned long long>(scene.hud.hp_current) * bar_max_width) /
-                               scene.hud.hp_max));
-    const int dirt_bar_width =
-        std::min<int>(bar_max_width, static_cast<int>(scene.hud.dirt_count) * 4);
-    const int stone_bar_width =
-        std::min<int>(bar_max_width, static_cast<int>(scene.hud.stone_count) * 4);
-    const int wood_bar_width =
-        std::min<int>(bar_max_width, static_cast<int>(scene.hud.wood_count) * 4);
-    const int coal_bar_width =
-        std::min<int>(bar_max_width, static_cast<int>(scene.hud.coal_count) * 4);
-    const int torch_bar_width =
-        std::min<int>(bar_max_width, static_cast<int>(scene.hud.torch_count) * 4);
-    const int workbench_item_bar_width =
-        std::min<int>(bar_max_width, static_cast<int>(scene.hud.workbench_count) * 32);
-    const int wood_sword_item_bar_width =
-        std::min<int>(bar_max_width, static_cast<int>(scene.hud.wood_sword_count) * 32);
-    DrawFilledRect(
-        renderer_,
-        hud_x + 96,
-        hud_y - 6,
-        hp_bar_width,
-        10,
-        RgbaColor{.r = 204, .g = 62, .b = 74, .a = 255});
-    DrawFilledRect(
-        renderer_,
-        hud_x + 96,
-        hud_y + 14,
-        dirt_bar_width,
-        12,
-        MaterialColor(world::WorldServiceBasic::kMaterialDirt));
-    DrawFilledRect(
-        renderer_,
-        hud_x + 96,
-        hud_y + 34,
-        stone_bar_width,
-        12,
-        MaterialColor(world::WorldServiceBasic::kMaterialStone));
-    DrawFilledRect(
-        renderer_,
-        hud_x + 96,
-        hud_y + 54,
-        wood_bar_width,
-        12,
-        MaterialColor(world::WorldServiceBasic::kMaterialWood));
-    DrawFilledRect(
-        renderer_,
-        hud_x + 96,
-        hud_y + 74,
-        coal_bar_width,
-        12,
-        MaterialColor(world::WorldServiceBasic::kMaterialCoalOre));
-    DrawFilledRect(
-        renderer_,
-        hud_x + 96,
-        hud_y + 94,
-        torch_bar_width,
-        12,
-        MaterialColor(world::WorldServiceBasic::kMaterialTorch));
-    DrawFilledRect(
-        renderer_,
-        hud_x + 96,
-        hud_y + 114,
-        workbench_item_bar_width,
-        12,
-        MaterialColor(world::WorldServiceBasic::kMaterialWorkbench));
-    DrawFilledRect(
-        renderer_,
-        hud_x + 96,
-        hud_y + 134,
-        wood_sword_item_bar_width,
-        12,
-        RgbaColor{.r = 186, .g = 210, .b = 228, .a = 255});
-
-    const int selector_x = hud_x + 18;
-    const int selector_y = hud_y + 16;
-    const bool dirt_selected =
-        scene.hud.selected_material_id == world::WorldServiceBasic::kMaterialDirt;
-    const bool stone_selected =
-        scene.hud.selected_material_id == world::WorldServiceBasic::kMaterialStone;
-    DrawFilledRect(
-        renderer_,
-        selector_x - 2,
-        selector_y - 2,
-        24,
-        24,
-        dirt_selected ? RgbaColor{.r = 240, .g = 214, .b = 108, .a = 255}
-                      : RgbaColor{.r = 36, .g = 36, .b = 38, .a = 255});
-    DrawFilledRect(
-        renderer_,
-        selector_x + 26,
-        selector_y - 2,
-        24,
-        24,
-        stone_selected ? RgbaColor{.r = 240, .g = 214, .b = 108, .a = 255}
-                       : RgbaColor{.r = 36, .g = 36, .b = 38, .a = 255});
-    DrawFilledRect(
-        renderer_,
-        selector_x,
-        selector_y,
-        20,
-        20,
-        MaterialColor(world::WorldServiceBasic::kMaterialDirt));
-    DrawFilledRect(
-        renderer_,
-        selector_x + 28,
-        selector_y,
-        20,
-        20,
-        MaterialColor(world::WorldServiceBasic::kMaterialStone));
-
-    for (int slot = 0; slot < 10; ++slot) {
-        const int slot_x = hud_x + 8 + slot * 14;
-        const int slot_y = hud_y + 128 + static_cast<int>(scene.hud.hotbar_row) * 10;
-        DrawFilledRect(
-            renderer_,
-            slot_x,
-            slot_y,
-            10,
-            6,
-            slot == static_cast<int>(scene.hud.hotbar_slot)
-                ? RgbaColor{.r = 230, .g = 208, .b = 114, .a = 255}
-                : RgbaColor{.r = 78, .g = 78, .b = 84, .a = 255});
-    }
-
-    const int status_x = hud_x + 16;
-    const int status_y = hud_y + 154;
-    DrawFilledRect(
-        renderer_,
-        status_x,
-        status_y,
-        116,
-        12,
-        scene.hud.workbench_built ? RgbaColor{.r = 104, .g = 188, .b = 98, .a = 255}
-                                  : RgbaColor{.r = 70, .g = 42, .b = 28, .a = 255});
-    DrawFilledRect(
-        renderer_,
-        status_x + 128,
-        status_y,
-        116,
-        12,
-        scene.hud.wood_sword_crafted ? RgbaColor{.r = 186, .g = 210, .b = 228, .a = 255}
-                                     : RgbaColor{.r = 54, .g = 58, .b = 64, .a = 255});
-
-    DrawFilledRect(
-        renderer_,
-        status_x,
-        status_y + 18,
-        116,
-        10,
-        scene.hud.smart_mode_enabled ? RgbaColor{.r = 88, .g = 184, .b = 226, .a = 255}
-                                     : RgbaColor{.r = 62, .g = 66, .b = 72, .a = 255});
-    DrawFilledRect(
-        renderer_,
-        status_x + 128,
-        status_y + 18,
-        116,
-        10,
-        scene.hud.context_slot_visible ? RgbaColor{.r = 236, .g = 196, .b = 94, .a = 255}
-                                       : RgbaColor{.r = 62, .g = 66, .b = 72, .a = 255});
-
-    if (scene.hud.pickup_toast_ticks_remaining > 0) {
-        RgbaColor pickup_color{
-            .r = 196,
-            .g = 196,
-            .b = 196,
-            .a = 240,
-        };
-        if (scene.hud.pickup_toast_material_id == world::WorldServiceBasic::kMaterialDirt ||
-            scene.hud.pickup_toast_material_id == world::WorldServiceBasic::kMaterialGrass) {
-            pickup_color = MaterialColor(world::WorldServiceBasic::kMaterialDirt);
-        } else if (scene.hud.pickup_toast_material_id == world::WorldServiceBasic::kMaterialStone) {
-            pickup_color = MaterialColor(world::WorldServiceBasic::kMaterialStone);
-        } else if (
-            scene.hud.pickup_toast_material_id == world::WorldServiceBasic::kMaterialCoalOre) {
-            pickup_color = MaterialColor(world::WorldServiceBasic::kMaterialCoalOre);
-        } else if (
-            scene.hud.pickup_toast_material_id == world::WorldServiceBasic::kMaterialTorch) {
-            pickup_color = MaterialColor(world::WorldServiceBasic::kMaterialTorch);
-        } else if (scene.hud.pickup_toast_material_id == world::WorldServiceBasic::kMaterialWood) {
-            pickup_color = MaterialColor(world::WorldServiceBasic::kMaterialWood);
+    for (const RenderCommand* command : sorted_commands) {
+        if (command == nullptr || command->color.a == 0) {
+            continue;
         }
 
-        const int pickup_bar_width = std::min<int>(
-            220,
-            18 + static_cast<int>(scene.hud.pickup_toast_amount) * 10);
-        DrawFilledRect(
-            renderer_,
-            hud_x + 16,
-            hud_y + hud_height + 8,
-            pickup_bar_width,
-            8,
-            pickup_color);
-    }
-
-    if (scene.hud.inventory_open) {
-        const int inventory_panel_width = std::max(320, window_width / 2);
-        const int inventory_panel_height = std::max(220, window_height / 3);
-        const int inventory_x = (window_width - inventory_panel_width) / 2;
-        const int inventory_y = (window_height - inventory_panel_height) / 2;
-        DrawFilledRect(
-            renderer_,
-            inventory_x,
-            inventory_y,
-            inventory_panel_width,
-            inventory_panel_height,
-            RgbaColor{.r = 22, .g = 22, .b = 28, .a = 228});
-
-        const int craft_zone_margin = 14;
-        DrawFilledRect(
-            renderer_,
-            inventory_x + craft_zone_margin,
-            inventory_y + craft_zone_margin,
-            inventory_panel_width / 3,
-            inventory_panel_height - craft_zone_margin * 2,
-            RgbaColor{.r = 42, .g = 52, .b = 64, .a = 240});
-
-        for (int recipe_index = 0; recipe_index < 3; ++recipe_index) {
+        switch (command->kind) {
+        case RenderCommandKind::FilledRect:
             DrawFilledRect(
                 renderer_,
-                inventory_x + craft_zone_margin + 8,
-                inventory_y + craft_zone_margin + 12 + recipe_index * 24,
-                inventory_panel_width / 3 - 16,
-                14,
-                recipe_index == static_cast<int>(scene.hud.selected_recipe_index)
-                    ? RgbaColor{.r = 218, .g = 188, .b = 96, .a = 240}
-                    : RgbaColor{.r = 72, .g = 82, .b = 94, .a = 220});
+                command->filled_rect.x,
+                command->filled_rect.y,
+                command->filled_rect.width,
+                command->filled_rect.height,
+                command->color);
+            break;
+        case RenderCommandKind::Line:
+            DrawLine(
+                renderer_,
+                command->line.x1,
+                command->line.y1,
+                command->line.x2,
+                command->line.y2,
+                command->color);
+            break;
+        case RenderCommandKind::Text:
+            DrawText(
+                renderer_,
+                command->text.x,
+                command->text.y,
+                command->text.scale,
+                command->text.text,
+                command->color);
+            break;
         }
     }
 

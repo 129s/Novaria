@@ -8,12 +8,11 @@
 
 ## 2. 第三方依赖策略（统一）
 
-- 统一采用 `vendor-first`：默认只从 `third_party/` 读取依赖，不在配置阶段在线拉取。
+- 统一采用 `vendor-only`：只从 `third_party/` 读取依赖，不在配置阶段在线拉取，不提供系统依赖兜底。
 - 三方依赖统一目录约定：
   - `third_party/SDL3-3.2.0/`
   - `third_party/entt-3.13.2/`
   - `third_party/LuaJIT-2.1/`
-- 若必须使用系统包管理器兜底，可显式开启：`-DNOVARIA_ALLOW_SYSTEM_DEPS=ON`。
 
 ## 3. 配置与编译
 
@@ -31,13 +30,13 @@ cmake --build build --config Debug
 指定配置文件：
 
 ```powershell
-.\build\Debug\novaria.exe config/game.toml
+.\build\Debug\novaria.exe config/game.cfg
 ```
 
 独立服务端（无窗口）：
 
 ```powershell
-.\build\Debug\novaria_server.exe --config config/game.toml --ticks 7200
+.\build\Debug\novaria_server.exe --config config/game.cfg --ticks 7200
 ```
 
 说明：
@@ -48,43 +47,23 @@ cmake --build build --config Debug
 
 ## 5. 常用可选参数
 
-使用系统依赖兜底（不推荐，默认关闭）：
-
-```powershell
-cmake -S . -B build -DNOVARIA_ALLOW_SYSTEM_DEPS=ON
-```
-
-使用系统 SDL3（仅在兜底模式下）：
-
-```powershell
-cmake -S . -B build -DSDL3_DIR="你的SDL3Config.cmake所在目录"
-```
-
-启用 LuaJIT 自动探测（默认开启）：
+启用 LuaJIT vendor 探测（默认开启）：
 
 ```powershell
 cmake -S . -B build -DNOVARIA_ENABLE_LUAJIT=ON
 ```
 
-显式指定 LuaJIT 头文件与库（手工安装场景）：
+说明：若未找到 vendor LuaJIT，脚本运行时会在初始化阶段 fail-fast，不再回退到 stub。
 
-```powershell
-cmake -S . -B build `
-  -DNOVARIA_LUAJIT_INCLUDE_DIR="D:/Dev/Novaria/third_party/LuaJIT-2.1/src" `
-  -DNOVARIA_LUAJIT_LIBRARY="D:/Dev/Novaria/third_party/LuaJIT-2.1/src/lua51.lib"
-```
+运行时脚本后端配置（`config/game.cfg`）：
 
-说明：若未找到 LuaJIT，脚本运行时会在初始化阶段 fail-fast，不再回退到 stub。
-
-运行时脚本后端配置（`config/game.toml`）：
-
-```toml
+```text
 script_backend = "luajit"
 ```
 
-模组脚本入口配置（`mods/<mod_name>/mod.toml`，可选）：
+模组脚本入口配置（`mods/<mod_name>/mod.cfg`）：
 
-```toml
+```text
 script_entry = "content/scripts/main.lua"
 script_api_version = "0.1.0"
 script_capabilities = ["event.receive", "tick.receive"]
@@ -92,13 +71,14 @@ script_capabilities = ["event.receive", "tick.receive"]
 
 说明：
 
+- `mods/core/mod.cfg` 为必需（core mod）；缺失会在启动装配阶段 fail-fast。
 - `script_api_version` 与运行时 API 不一致会在初始化阶段 fail-fast。
 - `script_capabilities` 声明超出运行时支持范围会在初始化阶段 fail-fast。
 
-运行时网络后端配置（`config/game.toml`）：
+运行时网络后端配置（`config/game.cfg`）：
 
-```toml
-net_backend = "udp_loopback"
+```text
+net_backend = "udp_peer"
 net_udp_local_host = "127.0.0.1"
 net_udp_local_port = 0
 net_udp_remote_host = "127.0.0.1"
@@ -120,23 +100,12 @@ net_udp_remote_port = 0
 - 服务端：`net_udp_local_host = "0.0.0.0"`，`net_udp_local_port = 25000`，`net_udp_remote_host = "<客户端IP>"`，`net_udp_remote_port = 25001`
 - 客户端：`net_udp_local_host = "0.0.0.0"`，`net_udp_local_port = 25001`，`net_udp_remote_host = "<服务端IP>"`，`net_udp_remote_port = 25000`
 
-## 6. 玩家输入与调试热键（当前）
+## 6. 输入与调试入口（单一事实源）
 
-正式玩家输入（M6）：
-
-- `W/A/S/D`：移动角色。
-- `E`：挖掘角色面向方向的方块（可采集 `dirt/stone`）。
-- `R`：放置当前选中材料到角色面向方向。
-- `1/2`：切换放置材料（`dirt/stone`）。
-
-兼容调试热键（保留）：
-
-- `J`：提交 `jump`。
-- `K`：提交 `combat.fire_projectile`。
-- `F1`：脚本调试事件 `debug.ping`。
-- `F2/F3`：挖空/放置方块。
-- `F4/F5/F6`：断线/心跳/重连。
-- `F7-F12`：玩法闭环调试（采集、建造、制作、战斗、Boss）。
+- 输入契约唯一事实源：`docs/architecture/input-and-debug-controls.md`。
+- 本文档不再重复维护键位语义，避免与实现漂移。
+- 调试输入开关：`debug_input_enabled`（默认 `false`，位于 `config/game.cfg`）。
+- 审计口径：当 `debug_input_enabled=true` 且按下 `F1-F12` 时，运行时会输出 `input` 日志；默认关闭时调试键无效且不影响正式输入语义。
 
 ## 7. 验证建议
 

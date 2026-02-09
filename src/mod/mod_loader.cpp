@@ -1,4 +1,6 @@
 #include "mod/mod_loader.h"
+#include "core/sha256.h"
+#include "core/cfg_parser.h"
 
 #include <algorithm>
 #include <charconv>
@@ -6,9 +8,9 @@
 #include <cstdint>
 #include <functional>
 #include <fstream>
-#include <iomanip>
 #include <limits>
 #include <sstream>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 
@@ -42,6 +44,33 @@ bool ParseUInt32Token(const std::string& token, std::uint32_t& out_value) {
 
     out_value = static_cast<std::uint32_t>(parsed);
     return true;
+}
+
+void AppendLengthPrefixedToken(std::string& out_payload, std::string_view token) {
+    out_payload += std::to_string(token.size());
+    out_payload.push_back(':');
+    out_payload.append(token.data(), token.size());
+    out_payload.push_back('|');
+}
+
+void AppendLengthPrefixedField(
+    std::string& out_payload,
+    std::string_view field_name,
+    std::string_view field_value) {
+    AppendLengthPrefixedToken(out_payload, field_name);
+    AppendLengthPrefixedToken(out_payload, field_value);
+}
+
+void AppendLengthPrefixedStringListField(
+    std::string& out_payload,
+    std::string_view field_name,
+    const std::vector<std::string>& values) {
+    AppendLengthPrefixedToken(out_payload, field_name);
+    out_payload += std::to_string(values.size());
+    out_payload.push_back('#');
+    for (const std::string& value : values) {
+        AppendLengthPrefixedToken(out_payload, value);
+    }
 }
 
 }  // namespace
@@ -87,7 +116,7 @@ bool ModLoader::LoadAll(std::vector<ModManifest>& out_manifests, std::string& ou
             continue;
         }
 
-        const std::filesystem::path manifest_path = entry.path() / "mod.toml";
+        const std::filesystem::path manifest_path = entry.path() / "mod.cfg";
         if (!std::filesystem::exists(manifest_path)) {
             continue;
         }
@@ -163,132 +192,44 @@ std::string ModLoader::BuildManifestFingerprint(const std::vector<ModManifest>& 
         }
         std::sort(normalized_npcs.begin(), normalized_npcs.end());
 
-        std::string canonical_entry =
-            manifest.name + "|" + manifest.version + "|" + manifest.description +
-            "|script_entry=" + manifest.script_entry +
-            "|script_api_version=" + manifest.script_api_version +
-            "|script_capabilities=";
-        for (std::size_t index = 0; index < normalized_capabilities.size(); ++index) {
-            if (index > 0) {
-                canonical_entry += ",";
-            }
-            canonical_entry += normalized_capabilities[index];
-        }
-        canonical_entry +=
-            "|deps=";
-        for (std::size_t dependency_index = 0;
-             dependency_index < normalized_dependencies.size();
-             ++dependency_index) {
-            if (dependency_index > 0) {
-                canonical_entry += ",";
-            }
-            canonical_entry += normalized_dependencies[dependency_index];
-        }
-        canonical_entry += "|items=";
-        for (std::size_t item_index = 0; item_index < normalized_items.size(); ++item_index) {
-            if (item_index > 0) {
-                canonical_entry += ",";
-            }
-            canonical_entry += normalized_items[item_index];
-        }
-        canonical_entry += "|recipes=";
-        for (std::size_t recipe_index = 0; recipe_index < normalized_recipes.size(); ++recipe_index) {
-            if (recipe_index > 0) {
-                canonical_entry += ",";
-            }
-            canonical_entry += normalized_recipes[recipe_index];
-        }
-        canonical_entry += "|npcs=";
-        for (std::size_t npc_index = 0; npc_index < normalized_npcs.size(); ++npc_index) {
-            if (npc_index > 0) {
-                canonical_entry += ",";
-            }
-            canonical_entry += normalized_npcs[npc_index];
-        }
+        std::string canonical_entry;
+        canonical_entry.reserve(256);
+        AppendLengthPrefixedField(canonical_entry, "name", manifest.name);
+        AppendLengthPrefixedField(canonical_entry, "version", manifest.version);
+        AppendLengthPrefixedField(canonical_entry, "description", manifest.description);
+        AppendLengthPrefixedField(canonical_entry, "script_entry", manifest.script_entry);
+        AppendLengthPrefixedField(
+            canonical_entry,
+            "script_api_version",
+            manifest.script_api_version);
+        AppendLengthPrefixedStringListField(
+            canonical_entry,
+            "script_capabilities",
+            normalized_capabilities);
+        AppendLengthPrefixedStringListField(
+            canonical_entry,
+            "dependencies",
+            normalized_dependencies);
+        AppendLengthPrefixedStringListField(canonical_entry, "items", normalized_items);
+        AppendLengthPrefixedStringListField(canonical_entry, "recipes", normalized_recipes);
+        AppendLengthPrefixedStringListField(canonical_entry, "npcs", normalized_npcs);
 
         canonical_entries.push_back(std::move(canonical_entry));
     }
     std::sort(canonical_entries.begin(), canonical_entries.end());
 
-    std::uint64_t hash = 1469598103934665603ULL;
-    constexpr std::uint64_t kFnvPrime = 1099511628211ULL;
+    std::string canonical_payload;
+    canonical_payload.reserve(canonical_entries.size() * 128);
     for (const auto& entry : canonical_entries) {
-        for (const unsigned char ch : entry) {
-            hash ^= ch;
-            hash *= kFnvPrime;
-        }
-        hash ^= static_cast<unsigned char>('\n');
-        hash *= kFnvPrime;
+        canonical_payload += entry;
+        canonical_payload.push_back('\n');
     }
 
-    std::ostringstream stream;
-    stream << std::hex << std::setfill('0') << std::setw(16) << hash;
-    return stream.str();
+    return core::Sha256::HexDigest(canonical_payload);
 }
 
 std::string ModLoader::Trim(const std::string& value) {
-    std::string result = value;
-    auto is_not_space = [](unsigned char ch) { return !std::isspace(ch); };
-    result.erase(result.begin(), std::find_if(result.begin(), result.end(), is_not_space));
-    result.erase(std::find_if(result.rbegin(), result.rend(), is_not_space).base(), result.end());
-    return result;
-}
-
-bool ModLoader::ParseQuotedString(const std::string& value, std::string& out_text) {
-    if (value.size() < 2 || value.front() != '"' || value.back() != '"') {
-        return false;
-    }
-
-    out_text = value.substr(1, value.size() - 2);
-    return true;
-}
-
-bool ModLoader::ParseQuotedStringArray(
-    const std::string& value,
-    std::vector<std::string>& out_items) {
-    out_items.clear();
-    const std::string trimmed_value = Trim(value);
-    if (trimmed_value.size() < 2 || trimmed_value.front() != '[' || trimmed_value.back() != ']') {
-        return false;
-    }
-
-    const std::string inner = Trim(trimmed_value.substr(1, trimmed_value.size() - 2));
-    if (inner.empty()) {
-        return true;
-    }
-
-    std::size_t cursor = 0;
-    while (cursor < inner.size()) {
-        if (inner[cursor] != '"') {
-            return false;
-        }
-
-        const std::size_t closing_quote = inner.find('"', cursor + 1);
-        if (closing_quote == std::string::npos) {
-            return false;
-        }
-
-        out_items.push_back(inner.substr(cursor + 1, closing_quote - cursor - 1));
-        cursor = closing_quote + 1;
-        while (cursor < inner.size() && std::isspace(static_cast<unsigned char>(inner[cursor]))) {
-            ++cursor;
-        }
-
-        if (cursor >= inner.size()) {
-            break;
-        }
-
-        if (inner[cursor] != ',') {
-            return false;
-        }
-
-        ++cursor;
-        while (cursor < inner.size() && std::isspace(static_cast<unsigned char>(inner[cursor]))) {
-            ++cursor;
-        }
-    }
-
-    return true;
+    return core::cfg::Trim(value);
 }
 
 bool ModLoader::ParseItemDefinitions(
@@ -476,82 +417,67 @@ bool ModLoader::ParseManifestFile(
     const std::filesystem::path& manifest_path,
     ModManifest& out_manifest,
     std::string& out_error) {
-    std::ifstream file(manifest_path);
-    if (!file.is_open()) {
-        out_error = "cannot open file";
+    std::vector<core::cfg::KeyValueLine> lines;
+    if (!core::cfg::ParseFile(manifest_path, lines, out_error)) {
         return false;
     }
 
-    std::string line;
-    while (std::getline(file, line)) {
-        const auto comment_pos = line.find('#');
-        if (comment_pos != std::string::npos) {
-            line = line.substr(0, comment_pos);
-        }
-        line = Trim(line);
-        if (line.empty()) {
-            continue;
-        }
-
-        const auto eq_pos = line.find('=');
-        if (eq_pos == std::string::npos) {
-            continue;
-        }
-
-        const std::string key = Trim(line.substr(0, eq_pos));
-        const std::string value = Trim(line.substr(eq_pos + 1));
+    for (const core::cfg::KeyValueLine& line : lines) {
+        const std::string& key = line.key;
+        const std::string& value = line.value;
+        const int line_number = line.line_number;
 
         if (key == "name") {
-            if (!ParseQuotedString(value, out_manifest.name)) {
-                out_error = "name must be quoted string";
+            if (!core::cfg::ParseQuotedString(value, out_manifest.name)) {
+                out_error = "name must be quoted string: line " + std::to_string(line_number);
                 return false;
             }
             continue;
         }
 
         if (key == "version") {
-            if (!ParseQuotedString(value, out_manifest.version)) {
-                out_error = "version must be quoted string";
+            if (!core::cfg::ParseQuotedString(value, out_manifest.version)) {
+                out_error = "version must be quoted string: line " + std::to_string(line_number);
                 return false;
             }
             continue;
         }
 
         if (key == "description") {
-            if (!ParseQuotedString(value, out_manifest.description)) {
-                out_error = "description must be quoted string";
+            if (!core::cfg::ParseQuotedString(value, out_manifest.description)) {
+                out_error = "description must be quoted string: line " + std::to_string(line_number);
                 return false;
             }
             continue;
         }
 
         if (key == "dependencies") {
-            if (!ParseQuotedStringArray(value, out_manifest.dependencies)) {
-                out_error = "dependencies must be quoted string array";
+            if (!core::cfg::ParseQuotedStringArray(value, out_manifest.dependencies)) {
+                out_error = "dependencies must be quoted string array: line " + std::to_string(line_number);
                 return false;
             }
             continue;
         }
 
         if (key == "script_entry") {
-            if (!ParseQuotedString(value, out_manifest.script_entry)) {
-                out_error = "script_entry must be quoted string";
+            if (!core::cfg::ParseQuotedString(value, out_manifest.script_entry)) {
+                out_error = "script_entry must be quoted string: line " + std::to_string(line_number);
                 return false;
             }
             continue;
         }
 
         if (key == "script_api_version") {
-            if (!ParseQuotedString(value, out_manifest.script_api_version)) {
-                out_error = "script_api_version must be quoted string";
+            if (!core::cfg::ParseQuotedString(value, out_manifest.script_api_version)) {
+                out_error = "script_api_version must be quoted string: line " + std::to_string(line_number);
                 return false;
             }
             continue;
         }
 
         if (key == "script_capabilities") {
-            if (!ParseQuotedStringArray(value, out_manifest.script_capabilities)) {
-                out_error = "script_capabilities must be quoted string array";
+            if (!core::cfg::ParseQuotedStringArray(value, out_manifest.script_capabilities)) {
+                out_error = "script_capabilities must be quoted string array: line " + std::to_string(line_number);
                 return false;
             }
             continue;

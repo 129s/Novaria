@@ -8,6 +8,8 @@
 
 ## 2. 运行命令
 
+> 约束：本项目不建设 CI；以下命令即为本地质量门禁与复盘事实源。
+
 全量测试：
 
 ```powershell
@@ -17,16 +19,19 @@ ctest --test-dir build -C Debug --output-on-failure
 仅跑 MVP 验收：
 
 ```powershell
+cmake -S . -B build -DNOVARIA_BUILD_PERF_TESTS=ON
+cmake --build build --config Debug
 ctest --test-dir build -C Debug --output-on-failure -R novaria_mvp_acceptance_tests
 ```
 
 ## 3. 测试目标清单
 
 - `novaria_config_tests`
-- `novaria_net_service_udp_loopback_tests`
+- `novaria_net_service_udp_peer_tests`
 - `novaria_net_service_runtime_tests`
 - `novaria_udp_transport_tests`
 - `novaria_world_service_tests`
+- `novaria_player_controller_components_tests`
 - `novaria_script_host_runtime_tests`
 - `novaria_simulation_kernel_tests`
 - `novaria_ecs_runtime_tests`
@@ -34,7 +39,9 @@ ctest --test-dir build -C Debug --output-on-failure -R novaria_mvp_acceptance_te
 - `novaria_mod_loader_tests`
 - `novaria_world_snapshot_codec_tests`
 - `novaria_world_replication_flow_tests`
-- `novaria_mvp_acceptance_tests`
+- `novaria_gameplay_issue_e2e_tests`
+
+> 说明：`novaria_mvp_acceptance_tests` 属于 perf/soak 集合，默认不进 `ctest`；需显式开启 `-DNOVARIA_BUILD_PERF_TESTS=ON`。
 
 ## 4. DoD 映射
 
@@ -59,5 +66,5 @@ ctest --test-dir build -C Debug --output-on-failure -R novaria_mvp_acceptance_te
 
 ## 5. 当前限制
 
-- 联机稳定性验证当前基于 `NetServiceUdpLoopback`，仍不是跨主机实网端到端压力测试。
+- 联机稳定性验证当前基于 `NetServiceUdpPeer`，仍不是跨主机实网端到端压力测试。
 - 脚本层已接入 `ScriptHostRuntime` + `LuaJitScriptHost` 与模组脚本装载链路，当前为 MVP 最小沙箱，尚未完成生产级资源隔离策略。

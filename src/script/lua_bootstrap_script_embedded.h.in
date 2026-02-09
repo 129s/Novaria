@@ -1,0 +1,7 @@
+#pragma once
+
+namespace novaria::script {
+
+inline constexpr const char* kEmbeddedBootstrapScript = @NOVARIA_LUA_BOOTSTRAP_SCRIPT_C_LITERAL@;
+
+}  // namespace novaria::script

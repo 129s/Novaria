@@ -187,7 +187,7 @@ void WorldServiceBasic::Shutdown() {
     core::Logger::Info("world", "WorldServiceBasic shutdown.");
 }
 
-void WorldServiceBasic::Tick(const sim::TickContext& tick_context) {
+void WorldServiceBasic::Tick(const core::TickContext& tick_context) {
     (void)tick_context;
 }
 

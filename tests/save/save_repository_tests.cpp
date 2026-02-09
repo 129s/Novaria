@@ -1,9 +1,14 @@
 #include "save/save_repository.h"
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
+
+#if defined(_WIN32)
+#include <Windows.h>
+#endif
 
 namespace {
 
@@ -16,7 +21,10 @@ bool Expect(bool condition, const char* message) {
 }
 
 std::filesystem::path BuildTestDirectory() {
-    return std::filesystem::temp_directory_path() / "novaria_save_repo_test";
+    const auto unique_seed =
+        std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    return std::filesystem::temp_directory_path() /
+        ("novaria_save_repo_test_" + std::to_string(unique_seed));
 }
 
 }  // namespace
@@ -52,8 +60,8 @@ int main() {
         .gameplay_loop_complete = true,
         .has_gameplay_snapshot = true,
         .world_chunk_payloads = {
-            "0,0,4,1,2,3,4",
-            "1,0,4,4,3,2,1",
+            novaria::wire::ByteBuffer{0x00, 0x01, 0x02, 0x03, 0x04},
+            novaria::wire::ByteBuffer{0xFE, 0xFD, 0x00, 0x80},
         },
         .has_world_snapshot = true,
         .debug_net_session_transitions = 7,
@@ -224,34 +232,12 @@ int main() {
     legacy_file.close();
 
     novaria::save::WorldSaveState legacy_loaded{};
-    passed &= Expect(repository.LoadWorldState(legacy_loaded, error), "Legacy save format should still load.");
-    passed &= Expect(error.empty(), "Legacy save load should not return error.");
-    passed &= Expect(legacy_loaded.format_version == 0, "Legacy save format version should default to 0.");
-    passed &= Expect(legacy_loaded.tick_index == 77, "Legacy loaded tick should match.");
-    passed &= Expect(legacy_loaded.local_player_id == 5, "Legacy loaded player id should match.");
     passed &= Expect(
-        legacy_loaded.mod_manifest_fingerprint.empty(),
-        "Legacy save without fingerprint should default to empty fingerprint.");
+        !repository.LoadWorldState(legacy_loaded, error),
+        "Legacy save format should be rejected.");
     passed &= Expect(
-        !legacy_loaded.has_gameplay_snapshot &&
-            legacy_loaded.gameplay_wood_collected == 0 &&
-            legacy_loaded.gameplay_stone_collected == 0 &&
-            !legacy_loaded.gameplay_workbench_built &&
-            !legacy_loaded.gameplay_sword_crafted &&
-            legacy_loaded.gameplay_enemy_kill_count == 0 &&
-            legacy_loaded.gameplay_boss_health == 0 &&
-            !legacy_loaded.gameplay_boss_defeated &&
-            !legacy_loaded.gameplay_loop_complete,
-        "Legacy save without gameplay section should default gameplay snapshot state.");
-    passed &= Expect(
-        legacy_loaded.debug_net_session_transitions == 0 &&
-            legacy_loaded.debug_net_timeout_disconnects == 0 &&
-            legacy_loaded.debug_net_manual_disconnects == 0 &&
-            legacy_loaded.debug_net_last_heartbeat_tick == 0 &&
-            legacy_loaded.debug_net_dropped_commands == 0 &&
-            legacy_loaded.debug_net_dropped_remote_payloads == 0 &&
-            legacy_loaded.debug_net_last_transition_reason.empty(),
-        "Legacy save without debug net snapshot should default debug counters to zero.");
+        !error.empty(),
+        "Legacy save rejection should provide a reason.");
 
     std::ofstream legacy_debug_file(test_dir / "world.sav", std::ios::trunc);
     legacy_debug_file << "format_version=" << novaria::save::kCurrentWorldSaveFormatVersion << "\n";
@@ -268,18 +254,11 @@ int main() {
 
     novaria::save::WorldSaveState legacy_debug_loaded{};
     passed &= Expect(
-        repository.LoadWorldState(legacy_debug_loaded, error),
-        "Legacy flat debug_net_* save should still load.");
-    passed &= Expect(error.empty(), "Legacy debug save load should not return error.");
+        !repository.LoadWorldState(legacy_debug_loaded, error),
+        "Legacy flat debug_net_* fields should be rejected.");
     passed &= Expect(
-        legacy_debug_loaded.debug_net_session_transitions == 19 &&
-            legacy_debug_loaded.debug_net_timeout_disconnects == 6 &&
-            legacy_debug_loaded.debug_net_manual_disconnects == 7 &&
-            legacy_debug_loaded.debug_net_last_heartbeat_tick == 2048 &&
-            legacy_debug_loaded.debug_net_dropped_commands == 3 &&
-            legacy_debug_loaded.debug_net_dropped_remote_payloads == 9 &&
-            legacy_debug_loaded.debug_net_last_transition_reason == "request_disconnect",
-        "Legacy flat debug_net_* fields should map to debug snapshot state.");
+        !error.empty(),
+        "Legacy debug rejection should provide a reason.");
 
     std::ofstream future_file(test_dir / "world.sav", std::ios::trunc);
     future_file << "format_version=" << (novaria::save::kCurrentWorldSaveFormatVersion + 1) << "\n";
@@ -413,6 +392,44 @@ int main() {
     passed &= Expect(
         !error.empty(),
         "Invalid debug section load failure should include reason.");
+
+#if defined(_WIN32)
+    novaria::save::WorldSaveState locked_save_state = expected;
+    locked_save_state.tick_index = expected.tick_index + 100;
+    const std::filesystem::path world_save_path = test_dir / "world.sav";
+    const std::filesystem::path world_tmp_path = test_dir / "world.sav.tmp";
+    HANDLE locked_file_handle = CreateFileW(
+        world_save_path.wstring().c_str(),
+        GENERIC_READ,
+        0,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr);
+    passed &= Expect(
+        locked_file_handle != INVALID_HANDLE_VALUE,
+        "World save lock handle should open for replace-failure test.");
+    if (locked_file_handle != INVALID_HANDLE_VALUE) {
+        std::string locked_save_error;
+        passed &= Expect(
+            !repository.SaveWorldState(locked_save_state, locked_save_error),
+            "Save should fail when world.sav is exclusively locked.");
+        passed &= Expect(
+            !locked_save_error.empty(),
+            "Replace failure under lock should provide readable error.");
+        passed &= Expect(
+            std::filesystem::exists(world_tmp_path),
+            "Replace failure should keep world.sav.tmp for recovery.");
+        CloseHandle(locked_file_handle);
+
+        passed &= Expect(
+            repository.SaveWorldState(locked_save_state, error),
+            "Save should recover once file lock is released.");
+        passed &= Expect(
+            error.empty(),
+            "Recovered save should not return error.");
+    }
+#endif
 
     repository.Shutdown();
     passed &= Expect(

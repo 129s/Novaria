@@ -1,12 +1,21 @@
 #include "save/save_repository.h"
 
+#include "core/base64.h"
 #include "core/logger.h"
 
 #include <fstream>
 #include <limits>
+#include <system_error>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#endif
 
 namespace novaria::save {
 namespace {
@@ -77,6 +86,37 @@ bool ParseBoolValue(const std::string& text, bool& out_value) {
     return false;
 }
 
+bool ReplaceSaveFileAtomically(
+    const std::filesystem::path& source_path,
+    const std::filesystem::path& target_path,
+    std::string& out_error) {
+#if defined(_WIN32)
+    if (MoveFileExW(
+            source_path.wstring().c_str(),
+            target_path.wstring().c_str(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == 0) {
+        const DWORD last_error = GetLastError();
+        out_error =
+            "Failed to replace world save file: " +
+            std::system_category().message(static_cast<int>(last_error));
+        return false;
+    }
+
+    out_error.clear();
+    return true;
+#else
+    std::error_code ec;
+    std::filesystem::rename(source_path, target_path, ec);
+    if (ec) {
+        out_error = "Failed to replace world save file: " + ec.message();
+        return false;
+    }
+
+    out_error.clear();
+    return true;
+#endif
+}
+
 }  // namespace
 
 bool FileSaveRepository::Initialize(const std::filesystem::path& save_root, std::string& out_error) {
@@ -113,6 +153,11 @@ bool FileSaveRepository::SaveWorldState(const WorldSaveState& state, std::string
         out_error = "Save repository is not initialized.";
         return false;
     }
+    if (state.format_version != kCurrentWorldSaveFormatVersion) {
+        out_error =
+            "Unsupported world save format version for write: " + std::to_string(state.format_version);
+        return false;
+    }
 
     const std::filesystem::path temp_save_path = world_save_path_.string() + ".tmp";
     std::ofstream file(temp_save_path, std::ios::trunc);
@@ -144,8 +189,10 @@ bool FileSaveRepository::SaveWorldState(const WorldSaveState& state, std::string
         file << kWorldSectionVersionKey << "=" << kCurrentWorldSectionVersion << '\n';
         file << kWorldChunkCountKey << "=" << state.world_chunk_payloads.size() << '\n';
         for (std::size_t index = 0; index < state.world_chunk_payloads.size(); ++index) {
+            const auto& chunk_payload = state.world_chunk_payloads[index];
+            const std::string encoded = core::Base64Encode(chunk_payload);
             file << kWorldChunkEntryPrefix << index << "="
-                 << state.world_chunk_payloads[index] << '\n';
+                 << encoded << '\n';
         }
     }
     file << kDebugNetSectionVersionKey << "=" << kCurrentNetDebugSectionVersion << '\n';
@@ -169,17 +216,19 @@ bool FileSaveRepository::SaveWorldState(const WorldSaveState& state, std::string
             ec);
         if (ec) {
             out_error = "Failed to write world save backup: " + ec.message();
-            std::filesystem::remove(temp_save_path, ec);
+            core::Logger::Warn(
+                "save",
+                "World save backup failed; keep temp file for recovery: " +
+                    temp_save_path.string());
             return false;
         }
     }
 
-    std::filesystem::remove(world_save_path_, ec);
-    ec.clear();
-    std::filesystem::rename(temp_save_path, world_save_path_, ec);
-    if (ec) {
-        out_error = "Failed to replace world save file: " + ec.message();
-        std::filesystem::remove(temp_save_path, ec);
+    if (!ReplaceSaveFileAtomically(temp_save_path, world_save_path_, out_error)) {
+        core::Logger::Warn(
+            "save",
+            "World save replace failed; keep temp file for recovery: " +
+                temp_save_path.string());
         return false;
     }
 
@@ -214,7 +263,7 @@ bool FileSaveRepository::LoadWorldState(WorldSaveState& out_state, std::string& 
     bool has_world_section_fields = false;
     bool has_world_chunk_count = false;
     std::size_t parsed_world_chunk_count = 0;
-    std::unordered_map<std::size_t, std::string> indexed_world_chunks;
+    std::unordered_map<std::size_t, wire::ByteBuffer> indexed_world_chunks;
     std::uint32_t parsed_debug_net_section_version = 0;
     bool has_debug_net_section_version = false;
     bool has_debug_net_section_fields = false;
@@ -408,7 +457,13 @@ bool FileSaveRepository::LoadWorldState(WorldSaveState& out_state, std::string& 
             }
 
             const std::size_t chunk_index = static_cast<std::size_t>(parsed_index);
-            const auto [_, inserted] = indexed_world_chunks.emplace(chunk_index, value);
+            std::vector<std::uint8_t> decoded_bytes;
+            if (!core::TryBase64Decode(value, decoded_bytes, out_error)) {
+                out_error = "Invalid base64 world chunk payload: " + out_error;
+                return false;
+            }
+            wire::ByteBuffer chunk_payload(decoded_bytes.begin(), decoded_bytes.end());
+            const auto [_, inserted] = indexed_world_chunks.emplace(chunk_index, std::move(chunk_payload));
             if (!inserted) {
                 out_error =
                     "Duplicated world chunk payload index in world save file: " +
@@ -509,69 +564,10 @@ bool FileSaveRepository::LoadWorldState(WorldSaveState& out_state, std::string& 
             continue;
         }
 
-        if (key == "debug_net_session_transitions") {
-            std::uint64_t parsed = 0;
-            if (!ParseUnsignedInteger(value, parsed)) {
-                out_error = "Invalid debug_net_session_transitions value in world save file.";
-                return false;
-            }
-            parsed_state.debug_net_session_transitions = parsed;
-            continue;
-        }
-
-        if (key == "debug_net_timeout_disconnects") {
-            std::uint64_t parsed = 0;
-            if (!ParseUnsignedInteger(value, parsed)) {
-                out_error = "Invalid debug_net_timeout_disconnects value in world save file.";
-                return false;
-            }
-            parsed_state.debug_net_timeout_disconnects = parsed;
-            continue;
-        }
-
-        if (key == "debug_net_manual_disconnects") {
-            std::uint64_t parsed = 0;
-            if (!ParseUnsignedInteger(value, parsed)) {
-                out_error = "Invalid debug_net_manual_disconnects value in world save file.";
-                return false;
-            }
-            parsed_state.debug_net_manual_disconnects = parsed;
-            continue;
-        }
-
-        if (key == "debug_net_last_heartbeat_tick") {
-            std::uint64_t parsed = 0;
-            if (!ParseUnsignedInteger(value, parsed)) {
-                out_error = "Invalid debug_net_last_heartbeat_tick value in world save file.";
-                return false;
-            }
-            parsed_state.debug_net_last_heartbeat_tick = parsed;
-            continue;
-        }
-
-        if (key == "debug_net_dropped_commands") {
-            std::uint64_t parsed = 0;
-            if (!ParseUnsignedInteger(value, parsed)) {
-                out_error = "Invalid debug_net_dropped_commands value in world save file.";
-                return false;
-            }
-            parsed_state.debug_net_dropped_commands = parsed;
-            continue;
-        }
-
-        if (key == "debug_net_dropped_remote_payloads") {
-            std::uint64_t parsed = 0;
-            if (!ParseUnsignedInteger(value, parsed)) {
-                out_error = "Invalid debug_net_dropped_remote_payloads value in world save file.";
-                return false;
-            }
-            parsed_state.debug_net_dropped_remote_payloads = parsed;
-            continue;
-        }
-
-        if (key == "debug_net_last_transition_reason") {
-            parsed_state.debug_net_last_transition_reason = value;
-            continue;
+        if (key.rfind("debug_net_", 0) == 0) {
+            out_error =
+                "Legacy debug_net_* fields are not supported; use debug_section.net.* instead.";
+            return false;
         }
     }
 
@@ -631,9 +627,10 @@ bool FileSaveRepository::LoadWorldState(WorldSaveState& out_state, std::string& 
         return false;
     }
 
-    if (parsed_state.format_version > kCurrentWorldSaveFormatVersion) {
-        out_error =
-            "Unsupported world save format version: " + std::to_string(parsed_state.format_version);
+    if (parsed_state.format_version != kCurrentWorldSaveFormatVersion) {
+        out_error = "Unsupported world save format version: " +
+            std::to_string(parsed_state.format_version) +
+            " (expected " + std::to_string(kCurrentWorldSaveFormatVersion) + ")";
         return false;
     }
 

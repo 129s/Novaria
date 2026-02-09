@@ -1,5 +1,6 @@
 #pragma once
 
+#include "world/material_catalog.h"
 #include "world/world_service.h"
 
 #include <cstddef>
@@ -12,21 +13,21 @@ namespace novaria::world {
 
 class WorldServiceBasic final : public IWorldService {
 public:
-    static constexpr int kChunkSize = 32;
-    static constexpr std::uint16_t kMaterialAir = 0;
-    static constexpr std::uint16_t kMaterialDirt = 1;
-    static constexpr std::uint16_t kMaterialStone = 2;
-    static constexpr std::uint16_t kMaterialGrass = 3;
-    static constexpr std::uint16_t kMaterialWater = 4;
-    static constexpr std::uint16_t kMaterialWood = 5;
-    static constexpr std::uint16_t kMaterialLeaves = 6;
-    static constexpr std::uint16_t kMaterialCoalOre = 7;
-    static constexpr std::uint16_t kMaterialTorch = 8;
-    static constexpr std::uint16_t kMaterialWorkbench = 9;
+    static constexpr int kChunkSize = kChunkTileSize;
+    static constexpr std::uint16_t kMaterialAir = material::kAir;
+    static constexpr std::uint16_t kMaterialDirt = material::kDirt;
+    static constexpr std::uint16_t kMaterialStone = material::kStone;
+    static constexpr std::uint16_t kMaterialGrass = material::kGrass;
+    static constexpr std::uint16_t kMaterialWater = material::kWater;
+    static constexpr std::uint16_t kMaterialWood = material::kWood;
+    static constexpr std::uint16_t kMaterialLeaves = material::kLeaves;
+    static constexpr std::uint16_t kMaterialCoalOre = material::kCoalOre;
+    static constexpr std::uint16_t kMaterialTorch = material::kTorch;
+    static constexpr std::uint16_t kMaterialWorkbench = material::kWorkbench;
 
     bool Initialize(std::string& out_error) override;
     void Shutdown() override;
-    void Tick(const sim::TickContext& tick_context) override;
+    void Tick(const core::TickContext& tick_context) override;
     void LoadChunk(const ChunkCoord& chunk_coord) override;
     void UnloadChunk(const ChunkCoord& chunk_coord) override;
     bool ApplyTileMutation(const TileMutation& mutation, std::string& out_error) override;
@@ -39,8 +40,8 @@ public:
 
     bool IsChunkLoaded(const ChunkCoord& chunk_coord) const;
     std::size_t LoadedChunkCount() const;
-    std::vector<ChunkCoord> LoadedChunkCoords() const;
-    bool TryReadTile(int tile_x, int tile_y, std::uint16_t& out_material_id) const;
+    std::vector<ChunkCoord> LoadedChunkCoords() const override;
+    bool TryReadTile(int tile_x, int tile_y, std::uint16_t& out_material_id) const override;
 
 private:
     struct ChunkKey final {

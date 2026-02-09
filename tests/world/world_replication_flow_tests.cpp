@@ -1,7 +1,8 @@
+#include "runtime/world_service_factory.h"
 #include "world/snapshot_codec.h"
-#include "world/world_service_basic.h"
 
 #include <iostream>
+#include <memory>
 #include <string>
 
 namespace {
@@ -15,8 +16,8 @@ bool Expect(bool condition, const char* message) {
 }
 
 bool ReplicateDirtyChunks(
-    novaria::world::WorldServiceBasic& source_world,
-    novaria::world::WorldServiceBasic& target_world,
+    novaria::world::IWorldService& source_world,
+    novaria::world::IWorldService& target_world,
     std::string& error) {
     const auto dirty_chunks = source_world.ConsumeDirtyChunks();
     for (const auto& chunk_coord : dirty_chunks) {
@@ -25,13 +26,16 @@ bool ReplicateDirtyChunks(
             return false;
         }
 
-        std::string payload;
+        novaria::wire::ByteBuffer payload;
         if (!novaria::world::WorldSnapshotCodec::EncodeChunkSnapshot(snapshot, payload, error)) {
             return false;
         }
 
         novaria::world::ChunkSnapshot decoded{};
-        if (!novaria::world::WorldSnapshotCodec::DecodeChunkSnapshot(payload, decoded, error)) {
+        if (!novaria::world::WorldSnapshotCodec::DecodeChunkSnapshot(
+                novaria::wire::ByteSpan(payload.data(), payload.size()),
+                decoded,
+                error)) {
             return false;
         }
 
@@ -49,34 +53,38 @@ int main() {
     bool passed = true;
     std::string error;
 
-    novaria::world::WorldServiceBasic source_world;
-    novaria::world::WorldServiceBasic target_world;
+    std::unique_ptr<novaria::world::IWorldService> source_world =
+        novaria::runtime::CreateWorldService();
+    std::unique_ptr<novaria::world::IWorldService> target_world =
+        novaria::runtime::CreateWorldService();
+    passed &= Expect(source_world != nullptr, "Source world service factory should not return null.");
+    passed &= Expect(target_world != nullptr, "Target world service factory should not return null.");
 
-    passed &= Expect(source_world.Initialize(error), "Source world initialize should succeed.");
-    passed &= Expect(target_world.Initialize(error), "Target world initialize should succeed.");
+    passed &= Expect(source_world->Initialize(error), "Source world initialize should succeed.");
+    passed &= Expect(target_world->Initialize(error), "Target world initialize should succeed.");
 
-    source_world.LoadChunk({.x = 0, .y = 0});
+    source_world->LoadChunk({.x = 0, .y = 0});
     passed &= Expect(
-        source_world.ApplyTileMutation({.tile_x = 0, .tile_y = 0, .material_id = 77}, error),
+        source_world->ApplyTileMutation({.tile_x = 0, .tile_y = 0, .material_id = 77}, error),
         "Source mutation at (0,0) should succeed.");
     passed &= Expect(
-        source_world.ApplyTileMutation({.tile_x = -1, .tile_y = -1, .material_id = 88}, error),
+        source_world->ApplyTileMutation({.tile_x = -1, .tile_y = -1, .material_id = 88}, error),
         "Source mutation at (-1,-1) should succeed.");
 
     passed &= Expect(
-        ReplicateDirtyChunks(source_world, target_world, error),
+        ReplicateDirtyChunks(*source_world, *target_world, error),
         "Dirty chunk replication should succeed.");
 
     std::uint16_t material_id = 0;
     passed &= Expect(
-        target_world.TryReadTile(0, 0, material_id) && material_id == 77,
+        target_world->TryReadTile(0, 0, material_id) && material_id == 77,
         "Target tile (0,0) should match source mutation.");
     passed &= Expect(
-        target_world.TryReadTile(-1, -1, material_id) && material_id == 88,
+        target_world->TryReadTile(-1, -1, material_id) && material_id == 88,
         "Target tile (-1,-1) should match source mutation.");
 
-    source_world.Shutdown();
-    target_world.Shutdown();
+    source_world->Shutdown();
+    target_world->Shutdown();
 
     if (!passed) {
         return 1;

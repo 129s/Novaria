@@ -6,16 +6,33 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if(MSVC)
+    # Keep the CRT choice consistent with vendor libs (LuaJIT).
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
+endif()
+
 option(NOVARIA_WARNINGS_AS_ERRORS "Treat compiler warnings as errors." OFF)
 option(NOVARIA_BUILD_TESTS "Build unit tests." ON)
+option(NOVARIA_BUILD_PERF_TESTS "Build perf/soak-gate tests." OFF)
 option(NOVARIA_ENABLE_LUAJIT "Enable LuaJIT backend when library is available." ON)
-option(
-    NOVARIA_ALLOW_SYSTEM_DEPS
-    "Allow fallback to system package manager dependencies when third_party is incomplete."
-    OFF
-)
 
 set(NOVARIA_VENDOR_DIR "${CMAKE_SOURCE_DIR}/third_party")
+set(NOVARIA_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
+set(NOVARIA_PUBLIC_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/include/novaria")
+file(MAKE_DIRECTORY "${NOVARIA_GENERATED_DIR}")
+
+file(READ "${CMAKE_SOURCE_DIR}/src/script/bootstrap.lua" NOVARIA_LUA_BOOTSTRAP_SCRIPT_RAW)
+set(NOVARIA_LUA_BOOTSTRAP_SCRIPT_C_LITERAL "${NOVARIA_LUA_BOOTSTRAP_SCRIPT_RAW}")
+string(REPLACE "\\" "\\\\" NOVARIA_LUA_BOOTSTRAP_SCRIPT_C_LITERAL "${NOVARIA_LUA_BOOTSTRAP_SCRIPT_C_LITERAL}")
+string(REPLACE "\"" "\\\"" NOVARIA_LUA_BOOTSTRAP_SCRIPT_C_LITERAL "${NOVARIA_LUA_BOOTSTRAP_SCRIPT_C_LITERAL}")
+string(REPLACE "\n" "\\n\"\n\"" NOVARIA_LUA_BOOTSTRAP_SCRIPT_C_LITERAL "${NOVARIA_LUA_BOOTSTRAP_SCRIPT_C_LITERAL}")
+set(NOVARIA_LUA_BOOTSTRAP_SCRIPT_C_LITERAL "\"${NOVARIA_LUA_BOOTSTRAP_SCRIPT_C_LITERAL}\"")
+configure_file(
+    "${CMAKE_SOURCE_DIR}/src/script/lua_bootstrap_script_embedded.h.in"
+    "${NOVARIA_GENERATED_DIR}/lua_bootstrap_script_embedded.h"
+    @ONLY
+)
+
 set(NOVARIA_LOCAL_SDL3_DIR "${NOVARIA_VENDOR_DIR}/SDL3-3.2.0/cmake")
 set(NOVARIA_LOCAL_ENTT_INCLUDE_DIR "${NOVARIA_VENDOR_DIR}/entt-3.13.2/src")
 set(NOVARIA_LOCAL_LUAJIT_INCLUDE_DIR "${NOVARIA_VENDOR_DIR}/LuaJIT-2.1/src")
@@ -25,13 +42,14 @@ else()
     set(NOVARIA_LOCAL_LUAJIT_LIBRARY "${NOVARIA_VENDOR_DIR}/LuaJIT-2.1/src/libluajit-5.1.a")
 endif()
 
-set(SDL3_FOUND FALSE)
-if(EXISTS "${NOVARIA_LOCAL_SDL3_DIR}/SDL3Config.cmake")
-    find_package(SDL3 CONFIG QUIET PATHS "${NOVARIA_LOCAL_SDL3_DIR}" NO_DEFAULT_PATH)
+if(NOT EXISTS "${NOVARIA_LOCAL_SDL3_DIR}/SDL3Config.cmake")
+    message(
+        FATAL_ERROR
+        "SDL3 vendor dependency not found.\n"
+        "Install it at third_party/SDL3-3.2.0.\n"
+    )
 endif()
-if(NOT SDL3_FOUND AND NOVARIA_ALLOW_SYSTEM_DEPS)
-    find_package(SDL3 CONFIG QUIET)
-endif()
+find_package(SDL3 CONFIG QUIET PATHS "${NOVARIA_LOCAL_SDL3_DIR}" NO_DEFAULT_PATH)
 
 set(NOVARIA_SDL3_TARGET "")
 foreach(candidate_target SDL3::SDL3 SDL3::SDL3-shared SDL3::SDL3-static)
@@ -46,81 +64,34 @@ if(NOT NOVARIA_SDL3_TARGET)
         FATAL_ERROR
         "SDL3 target not found.\n"
         "1) Install vendor dependency at third_party/SDL3-3.2.0.\n"
-        "2) Or set -DNOVARIA_ALLOW_SYSTEM_DEPS=ON and provide SDL3 via system package manager.\n"
-        "3) Or set SDL3_DIR manually.\n"
     )
 endif()
 
-set(NOVARIA_ENTT_TARGET "")
-set(NOVARIA_ENTT_INCLUDE_DIR "")
 if(EXISTS "${NOVARIA_LOCAL_ENTT_INCLUDE_DIR}/entt/entt.hpp")
     set(NOVARIA_ENTT_INCLUDE_DIR "${NOVARIA_LOCAL_ENTT_INCLUDE_DIR}")
-elseif(NOVARIA_ALLOW_SYSTEM_DEPS)
-    find_package(EnTT CONFIG QUIET)
-    foreach(candidate_target EnTT::EnTT entt::entt)
-        if(TARGET ${candidate_target})
-            set(NOVARIA_ENTT_TARGET ${candidate_target})
-            break()
-        endif()
-    endforeach()
 endif()
 
-if(NOT NOVARIA_ENTT_TARGET AND NOT NOVARIA_ENTT_INCLUDE_DIR)
+if(NOT NOVARIA_ENTT_INCLUDE_DIR)
     message(
         FATAL_ERROR
         "EnTT dependency not found.\n"
-        "1) Install vendor dependency at third_party/entt-3.13.2/src.\n"
-        "2) Or set -DNOVARIA_ALLOW_SYSTEM_DEPS=ON and provide EnTT via system package manager.\n"
-        "3) Or set EnTT_DIR manually.\n"
+        "Install it at third_party/entt-3.13.2/src.\n"
     )
 endif()
 
 set(NOVARIA_LUAJIT_FOUND OFF)
 if(NOVARIA_ENABLE_LUAJIT)
-    set(novaria_luajit_include_candidate "")
-    set(novaria_luajit_library_candidate "")
-
-    if(DEFINED NOVARIA_LUAJIT_INCLUDE_DIR AND EXISTS "${NOVARIA_LUAJIT_INCLUDE_DIR}/lua.h")
-        set(novaria_luajit_include_candidate "${NOVARIA_LUAJIT_INCLUDE_DIR}")
-    elseif(EXISTS "${NOVARIA_LOCAL_LUAJIT_INCLUDE_DIR}/lua.h")
-        set(novaria_luajit_include_candidate "${NOVARIA_LOCAL_LUAJIT_INCLUDE_DIR}")
-    endif()
-
-    if(DEFINED NOVARIA_LUAJIT_LIBRARY AND EXISTS "${NOVARIA_LUAJIT_LIBRARY}")
-        set(novaria_luajit_library_candidate "${NOVARIA_LUAJIT_LIBRARY}")
-    elseif(EXISTS "${NOVARIA_LOCAL_LUAJIT_LIBRARY}")
-        set(novaria_luajit_library_candidate "${NOVARIA_LOCAL_LUAJIT_LIBRARY}")
-    endif()
-
-    if((NOT novaria_luajit_include_candidate OR NOT novaria_luajit_library_candidate) AND
-       NOVARIA_ALLOW_SYSTEM_DEPS)
-        if(NOT novaria_luajit_include_candidate)
-            find_path(
-                novaria_luajit_include_candidate
-                NAMES lua.h luajit.h
-                PATH_SUFFIXES luajit-2.1 lua5.1 lua
-            )
-        endif()
-
-        if(NOT novaria_luajit_library_candidate)
-            find_library(
-                novaria_luajit_library_candidate
-                NAMES luajit-5.1 luajit lua51
-            )
-        endif()
-    endif()
-
-    if(novaria_luajit_include_candidate AND novaria_luajit_library_candidate)
+    if(EXISTS "${NOVARIA_LOCAL_LUAJIT_INCLUDE_DIR}/lua.h" AND EXISTS "${NOVARIA_LOCAL_LUAJIT_LIBRARY}")
         set(
             NOVARIA_LUAJIT_INCLUDE_DIR
-            "${novaria_luajit_include_candidate}"
+            "${NOVARIA_LOCAL_LUAJIT_INCLUDE_DIR}"
             CACHE PATH
             "Path to LuaJIT headers."
             FORCE
         )
         set(
             NOVARIA_LUAJIT_LIBRARY
-            "${novaria_luajit_library_candidate}"
+            "${NOVARIA_LOCAL_LUAJIT_LIBRARY}"
             CACHE FILEPATH
             "Path to LuaJIT library."
             FORCE
@@ -129,9 +100,10 @@ if(NOVARIA_ENABLE_LUAJIT)
         message(STATUS "LuaJIT found: ${NOVARIA_LUAJIT_LIBRARY}")
     else()
         message(
-            STATUS
-            "LuaJIT not found, script runtime will fail-fast at initialization. "
-            "Expected vendor path: ${NOVARIA_LOCAL_LUAJIT_INCLUDE_DIR}"
+            FATAL_ERROR
+            "LuaJIT dependency not found.\n"
+            "Install it at third_party/LuaJIT-2.1/src.\n"
+            "Expected vendor path: ${NOVARIA_LOCAL_LUAJIT_INCLUDE_DIR}\n"
         )
     endif()
 endif()
@@ -140,21 +112,17 @@ function(novaria_link_luajit_if_available target_name)
     if(NOVARIA_LUAJIT_FOUND)
         target_compile_definitions(${target_name} PRIVATE NOVARIA_WITH_LUAJIT=1)
         target_include_directories(${target_name} PRIVATE "${NOVARIA_LUAJIT_INCLUDE_DIR}")
-        target_link_libraries(${target_name} PRIVATE "${NOVARIA_LUAJIT_LIBRARY}")
+        target_link_libraries(${target_name} PUBLIC "${NOVARIA_LUAJIT_LIBRARY}")
     endif()
 endfunction()
 
 function(novaria_link_entt target_name)
-    if(NOVARIA_ENTT_TARGET)
-        target_link_libraries(${target_name} PRIVATE ${NOVARIA_ENTT_TARGET})
-    elseif(NOVARIA_ENTT_INCLUDE_DIR)
-        target_include_directories(${target_name} PRIVATE "${NOVARIA_ENTT_INCLUDE_DIR}")
-    endif()
+    target_include_directories(${target_name} PRIVATE "${NOVARIA_ENTT_INCLUDE_DIR}")
 endfunction()
 
 function(novaria_link_winsock_if_needed target_name)
     if(WIN32)
-        target_link_libraries(${target_name} PRIVATE ws2_32)
+        target_link_libraries(${target_name} PUBLIC ws2_32)
     endif()
 endfunction()
 
@@ -172,80 +140,275 @@ function(novaria_enable_default_warnings target_name)
     endif()
 endfunction()
 
+add_library(
+<<<<<<< HEAD
+    novaria_core
+    STATIC
+    src/core/logger.cpp
+    src/core/cfg_parser.cpp
+    src/core/config.cpp
+    src/core/sha256.cpp
+    src/core/base64.cpp
+)
+target_include_directories(
+    novaria_core
+    PUBLIC
+        "${NOVARIA_PUBLIC_INCLUDE_DIR}"
+    PRIVATE
+        src
+)
+
+add_library(
+    novaria_wire
+    STATIC
+    src/wire/byte_io.cpp
+    src/wire/envelope.cpp
+)
+target_include_directories(novaria_wire PUBLIC "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+
+add_library(
+    novaria_world
+    STATIC
+    src/world/material_catalog.cpp
+    src/world/snapshot_codec.cpp
+)
+target_include_directories(novaria_world PUBLIC "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+target_link_libraries(novaria_world PUBLIC novaria_wire)
+
+add_library(
+    novaria_world_basic
+    STATIC
+    src/world/world_service_basic.cpp
+)
+target_include_directories(novaria_world_basic PUBLIC "${NOVARIA_PUBLIC_INCLUDE_DIR}" PRIVATE src)
+target_link_libraries(novaria_world_basic PUBLIC novaria_world novaria_core)
+
+add_library(
+    novaria_net_udp_peer
+    STATIC
+    src/net/net_service_udp_peer.cpp
+    src/net/udp_transport.cpp
+)
+target_include_directories(novaria_net_udp_peer PUBLIC "${NOVARIA_PUBLIC_INCLUDE_DIR}" PRIVATE src)
+target_link_libraries(novaria_net_udp_peer PUBLIC novaria_wire novaria_core)
+novaria_link_winsock_if_needed(novaria_net_udp_peer)
+
+add_library(
+    novaria_script_lua_jit
+    STATIC
+    src/script/lua_jit_script_host.cpp
+)
+target_include_directories(
+    novaria_script_lua_jit
+    PUBLIC
+        "${NOVARIA_PUBLIC_INCLUDE_DIR}"
+    PRIVATE
+        src
+        "${NOVARIA_GENERATED_DIR}"
+)
+target_link_libraries(novaria_script_lua_jit PUBLIC novaria_world novaria_wire novaria_core)
+novaria_link_luajit_if_available(novaria_script_lua_jit)
+
+add_library(
+    novaria_mod
+    STATIC
+    src/mod/mod_loader.cpp
+)
+target_include_directories(novaria_mod PUBLIC "${NOVARIA_PUBLIC_INCLUDE_DIR}" PRIVATE src)
+target_link_libraries(novaria_mod PUBLIC novaria_core)
+
+add_library(
+    novaria_save
+    STATIC
+    src/save/save_repository.cpp
+)
+target_include_directories(novaria_save PUBLIC "${NOVARIA_PUBLIC_INCLUDE_DIR}" PRIVATE src)
+target_link_libraries(novaria_save PUBLIC novaria_wire novaria_core)
+
+add_library(
+    novaria_sim
+    STATIC
+=======
+    novaria_engine
+    STATIC
+    src/wire/byte_io.cpp
+    src/wire/envelope.cpp
+    src/runtime/mod_script_loader.cpp
+    src/runtime/world_service_factory.cpp
+    src/runtime/mod_pipeline.cpp
+    src/runtime/save_state_loader.cpp
+    src/runtime/mod_fingerprint_policy.cpp
+>>>>>>> 77c2e72a388234fbfa90639e804362c787d0e052
+    src/sim/simulation_kernel.cpp
+    src/sim/player_motion.cpp
+    src/sim/gameplay_ruleset.cpp
+    src/sim/command_schema.cpp
+    src/sim/typed_command.cpp
+    src/sim/ecs_runtime.cpp
+<<<<<<< HEAD
+)
+target_include_directories(novaria_sim PUBLIC "${NOVARIA_PUBLIC_INCLUDE_DIR}" PRIVATE src)
+target_link_libraries(novaria_sim PUBLIC novaria_world novaria_wire novaria_core)
+novaria_link_entt(novaria_sim)
+
+add_library(
+    novaria_runtime
+    STATIC
+    src/runtime/mod_script_loader.cpp
+    src/runtime/world_service_factory.cpp
+    src/runtime/mod_pipeline.cpp
+    src/runtime/save_state_loader.cpp
+    src/runtime/mod_fingerprint_policy.cpp
+    src/runtime/net_service_factory.cpp
+    src/runtime/script_host_factory.cpp
+)
+target_include_directories(novaria_runtime PUBLIC "${NOVARIA_PUBLIC_INCLUDE_DIR}" PRIVATE src)
+target_link_libraries(
+    novaria_runtime
+    PUBLIC
+        novaria_mod
+        novaria_save
+        novaria_sim
+        novaria_world
+        novaria_wire
+        novaria_core
+        novaria_world_basic
+        novaria_net_udp_peer
+        novaria_script_lua_jit
+)
+
+add_library(
+    novaria_platform
+    STATIC
+    src/platform/sdl_context.cpp
+)
+target_include_directories(novaria_platform PUBLIC "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+target_link_libraries(novaria_platform PUBLIC novaria_core ${NOVARIA_SDL3_TARGET})
+=======
+    src/world/material_catalog.cpp
+    src/world/world_service_basic.cpp
+    src/world/snapshot_codec.cpp
+    src/net/net_service_udp_peer.cpp
+    src/net/udp_transport.cpp
+    src/script/lua_jit_script_host.cpp
+    src/mod/mod_loader.cpp
+    src/save/save_repository.cpp
+    src/core/logger.cpp
+    src/core/cfg_parser.cpp
+    src/core/config.cpp
+    src/core/sha256.cpp
+    src/core/base64.cpp
+    src/runtime/net_service_factory.cpp
+    src/runtime/script_host_factory.cpp
+)
+target_include_directories(
+    novaria_engine
+    PUBLIC
+        "${NOVARIA_PUBLIC_INCLUDE_DIR}"
+    PRIVATE
+        src
+        "${NOVARIA_GENERATED_DIR}"
+)
+novaria_link_entt(novaria_engine)
+novaria_link_winsock_if_needed(novaria_engine)
+novaria_link_luajit_if_available(novaria_engine)
+>>>>>>> 77c2e72a388234fbfa90639e804362c787d0e052
+
+add_library(
+    novaria_app
+    STATIC
+<<<<<<< HEAD
+    src/app/game_app.cpp
+    src/app/game_loop.cpp
+    src/app/input_command_mapper.cpp
+    src/app/player_controller_components.cpp
+    src/app/player_controller.cpp
+    src/app/render_scene_builder.cpp
+)
+target_include_directories(novaria_app PUBLIC "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+target_link_libraries(novaria_app PUBLIC novaria_runtime novaria_platform)
+
+add_library(
+    novaria_engine
+    INTERFACE
+)
+target_link_libraries(
+    novaria_engine
+    INTERFACE
+        novaria_runtime
+        novaria_app
+        novaria_platform
+        novaria_sim
+        novaria_world
+        novaria_wire
+        novaria_core
+)
+
+add_executable(
+    novaria
+    src/main.cpp
+)
+
+target_include_directories(novaria PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+target_link_libraries(novaria PRIVATE novaria_app)
+=======
+    src/app/input_command_mapper.cpp
+    src/app/player_controller_components.cpp
+    src/app/player_controller.cpp
+    src/app/render_scene_builder.cpp
+)
+target_include_directories(novaria_app PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+target_link_libraries(novaria_app PRIVATE novaria_engine)
+novaria_link_entt(novaria_app)
+novaria_link_winsock_if_needed(novaria_app)
+
 add_executable(
     novaria
     src/main.cpp
     src/app/game_app.cpp
     src/app/game_loop.cpp
-    src/app/input_command_mapper.cpp
-    src/app/player_controller.cpp
-    src/app/render_scene_builder.cpp
-    src/sim/simulation_kernel.cpp
-    src/sim/typed_command.cpp
-    src/sim/ecs_runtime.cpp
     src/platform/sdl_context.cpp
-    src/world/world_service_basic.cpp
-    src/world/snapshot_codec.cpp
-    src/net/net_service_runtime.cpp
-    src/net/net_service_udp_loopback.cpp
-    src/net/udp_transport.cpp
-    src/script/script_host_runtime.cpp
-    src/script/lua_jit_script_host.cpp
-    src/mod/mod_loader.cpp
-    src/save/save_repository.cpp
-    src/core/logger.cpp
-    src/core/config.cpp
 )
 
-target_include_directories(novaria PRIVATE src)
-target_link_libraries(novaria PRIVATE ${NOVARIA_SDL3_TARGET})
+target_include_directories(novaria PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}" "${NOVARIA_GENERATED_DIR}")
+target_link_libraries(novaria PRIVATE novaria_engine novaria_app ${NOVARIA_SDL3_TARGET})
 novaria_link_entt(novaria)
-novaria_link_winsock_if_needed(novaria)
-novaria_link_luajit_if_available(novaria)
+>>>>>>> 77c2e72a388234fbfa90639e804362c787d0e052
 
 add_executable(
     novaria_net_smoke
     tools/net_smoke.cpp
-    src/net/net_service_runtime.cpp
-    src/net/net_service_udp_loopback.cpp
-    src/net/udp_transport.cpp
-    src/core/logger.cpp
 )
-target_include_directories(novaria_net_smoke PRIVATE src)
+target_include_directories(novaria_net_smoke PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+target_link_libraries(novaria_net_smoke PRIVATE novaria_engine)
 novaria_link_winsock_if_needed(novaria_net_smoke)
 
 add_executable(
     novaria_net_soak
     tools/net_soak.cpp
-    src/net/net_service_runtime.cpp
-    src/net/net_service_udp_loopback.cpp
-    src/net/udp_transport.cpp
-    src/core/logger.cpp
 )
-target_include_directories(novaria_net_soak PRIVATE src)
+target_include_directories(novaria_net_soak PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+target_link_libraries(novaria_net_soak PRIVATE novaria_engine)
 novaria_link_winsock_if_needed(novaria_net_soak)
+
+add_executable(
+    novaria_simrpc_codegen
+    tools/simrpc_codegen.cpp
+)
+target_include_directories(novaria_simrpc_codegen PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
 
 add_executable(
     novaria_server
     tools/server_main.cpp
-    src/sim/simulation_kernel.cpp
-    src/sim/typed_command.cpp
-    src/sim/ecs_runtime.cpp
-    src/world/world_service_basic.cpp
-    src/world/snapshot_codec.cpp
-    src/net/net_service_runtime.cpp
-    src/net/net_service_udp_loopback.cpp
-    src/net/udp_transport.cpp
-    src/script/script_host_runtime.cpp
-    src/script/lua_jit_script_host.cpp
-    src/mod/mod_loader.cpp
-    src/core/logger.cpp
-    src/core/config.cpp
 )
-target_include_directories(novaria_server PRIVATE src)
+<<<<<<< HEAD
+target_include_directories(novaria_server PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+target_link_libraries(novaria_server PRIVATE novaria_engine)
+=======
+target_include_directories(novaria_server PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}" "${NOVARIA_GENERATED_DIR}")
+target_link_libraries(novaria_server PRIVATE novaria_engine)
 novaria_link_entt(novaria_server)
-novaria_link_luajit_if_available(novaria_server)
-novaria_link_winsock_if_needed(novaria_server)
+>>>>>>> 77c2e72a388234fbfa90639e804362c787d0e052
 
 set(NOVARIA_LOCAL_SDL3_DLL "${NOVARIA_VENDOR_DIR}/SDL3-3.2.0/lib/x64/SDL3.dll")
 if(EXISTS "${NOVARIA_LOCAL_SDL3_DLL}")
@@ -268,175 +431,232 @@ foreach(runtime_target IN LISTS NOVARIA_RUNTIME_TARGETS)
     novaria_enable_default_warnings(${runtime_target})
 endforeach()
 
+set(NOVARIA_LIBRARY_TARGETS
+    novaria_core
+    novaria_wire
+    novaria_world
+    novaria_world_basic
+    novaria_net_udp_peer
+    novaria_script_lua_jit
+    novaria_mod
+    novaria_save
+    novaria_sim
+    novaria_runtime
+    novaria_platform
+    novaria_app
+)
+foreach(library_target IN LISTS NOVARIA_LIBRARY_TARGETS)
+    novaria_enable_default_warnings(${library_target})
+endforeach()
+
 if(NOVARIA_BUILD_TESTS)
     enable_testing()
 
     add_executable(
         novaria_config_tests
         tests/core/config_tests.cpp
-        src/core/config.cpp
     )
-    target_include_directories(novaria_config_tests PRIVATE src)
+    target_include_directories(novaria_config_tests PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+    target_link_libraries(novaria_config_tests PRIVATE novaria_engine)
 
     add_executable(
-        novaria_net_service_udp_loopback_tests
-        tests/net/net_service_udp_loopback_tests.cpp
-        src/net/net_service_udp_loopback.cpp
-        src/net/udp_transport.cpp
-        src/core/logger.cpp
+        novaria_net_service_udp_peer_tests
+        tests/net/net_service_udp_peer_tests.cpp
     )
-    target_include_directories(novaria_net_service_udp_loopback_tests PRIVATE src)
-    novaria_link_winsock_if_needed(novaria_net_service_udp_loopback_tests)
+    target_include_directories(
+        novaria_net_service_udp_peer_tests
+        PRIVATE
+            "${NOVARIA_PUBLIC_INCLUDE_DIR}"
+            "${CMAKE_SOURCE_DIR}/src"
+    )
+    target_link_libraries(novaria_net_service_udp_peer_tests PRIVATE novaria_engine)
+    novaria_link_winsock_if_needed(novaria_net_service_udp_peer_tests)
 
     add_executable(
         novaria_net_service_runtime_tests
         tests/net/net_service_runtime_tests.cpp
-        src/net/net_service_runtime.cpp
-        src/net/net_service_udp_loopback.cpp
-        src/net/udp_transport.cpp
-        src/core/logger.cpp
     )
-    target_include_directories(novaria_net_service_runtime_tests PRIVATE src)
+    target_include_directories(
+        novaria_net_service_runtime_tests
+        PRIVATE
+            "${NOVARIA_PUBLIC_INCLUDE_DIR}"
+    )
+    target_link_libraries(novaria_net_service_runtime_tests PRIVATE novaria_engine)
     novaria_link_winsock_if_needed(novaria_net_service_runtime_tests)
 
     add_executable(
         novaria_udp_transport_tests
         tests/net/udp_transport_tests.cpp
-        src/net/udp_transport.cpp
     )
-    target_include_directories(novaria_udp_transport_tests PRIVATE src)
+    target_include_directories(novaria_udp_transport_tests PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+    target_link_libraries(novaria_udp_transport_tests PRIVATE novaria_engine)
     novaria_link_winsock_if_needed(novaria_udp_transport_tests)
 
     add_executable(
         novaria_world_service_tests
         tests/world/world_service_basic_tests.cpp
-        src/world/world_service_basic.cpp
-        src/core/logger.cpp
     )
-    target_include_directories(novaria_world_service_tests PRIVATE src)
+    target_include_directories(novaria_world_service_tests PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+    target_link_libraries(novaria_world_service_tests PRIVATE novaria_engine)
+
+    add_executable(
+        novaria_player_controller_components_tests
+        tests/app/player_controller_components_tests.cpp
+    )
+    target_include_directories(
+        novaria_player_controller_components_tests
+        PRIVATE
+            "${NOVARIA_PUBLIC_INCLUDE_DIR}"
+    )
+    target_link_libraries(novaria_player_controller_components_tests PRIVATE novaria_engine novaria_app)
+    novaria_link_entt(novaria_player_controller_components_tests)
+
+    add_executable(
+        novaria_render_scene_builder_tests
+        tests/app/render_scene_builder_tests.cpp
+    )
+    target_include_directories(novaria_render_scene_builder_tests PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+    target_link_libraries(novaria_render_scene_builder_tests PRIVATE novaria_engine novaria_app)
+    novaria_link_entt(novaria_render_scene_builder_tests)
 
     add_executable(
         novaria_script_host_runtime_tests
         tests/script/script_host_runtime_tests.cpp
-        src/script/script_host_runtime.cpp
-        src/script/lua_jit_script_host.cpp
-        src/core/logger.cpp
     )
-    target_include_directories(novaria_script_host_runtime_tests PRIVATE src)
+    target_include_directories(
+        novaria_script_host_runtime_tests
+        PRIVATE
+            "${NOVARIA_PUBLIC_INCLUDE_DIR}"
+            "${NOVARIA_GENERATED_DIR}"
+    )
+    target_link_libraries(novaria_script_host_runtime_tests PRIVATE novaria_engine)
     novaria_link_luajit_if_available(novaria_script_host_runtime_tests)
 
     add_executable(
         novaria_simulation_kernel_tests
         tests/sim/simulation_kernel_tests.cpp
-        src/sim/simulation_kernel.cpp
-        src/sim/typed_command.cpp
-        src/sim/ecs_runtime.cpp
-        src/world/snapshot_codec.cpp
-        src/net/net_service_runtime.cpp
-        src/net/net_service_udp_loopback.cpp
-        src/net/udp_transport.cpp
-        src/save/save_repository.cpp
-        src/core/logger.cpp
     )
-    target_include_directories(novaria_simulation_kernel_tests PRIVATE src)
+    target_include_directories(novaria_simulation_kernel_tests PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+    target_include_directories(novaria_simulation_kernel_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+    target_link_libraries(novaria_simulation_kernel_tests PRIVATE novaria_engine)
     novaria_link_entt(novaria_simulation_kernel_tests)
     novaria_link_winsock_if_needed(novaria_simulation_kernel_tests)
 
     add_executable(
+        novaria_player_motion_tests
+        tests/sim/player_motion_tests.cpp
+    )
+    target_include_directories(novaria_player_motion_tests PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+    target_link_libraries(novaria_player_motion_tests PRIVATE novaria_engine)
+
+    add_executable(
         novaria_ecs_runtime_tests
         tests/sim/ecs_runtime_tests.cpp
-        src/sim/ecs_runtime.cpp
     )
-    target_include_directories(novaria_ecs_runtime_tests PRIVATE src)
+    target_include_directories(novaria_ecs_runtime_tests PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+    target_link_libraries(novaria_ecs_runtime_tests PRIVATE novaria_engine)
     novaria_link_entt(novaria_ecs_runtime_tests)
 
     add_executable(
         novaria_save_repository_tests
         tests/save/save_repository_tests.cpp
-        src/save/save_repository.cpp
-        src/core/logger.cpp
     )
-    target_include_directories(novaria_save_repository_tests PRIVATE src)
+    target_include_directories(novaria_save_repository_tests PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+    target_link_libraries(novaria_save_repository_tests PRIVATE novaria_engine)
 
     add_executable(
         novaria_mod_loader_tests
         tests/mod/mod_loader_tests.cpp
-        src/mod/mod_loader.cpp
     )
-    target_include_directories(novaria_mod_loader_tests PRIVATE src)
+    target_include_directories(novaria_mod_loader_tests PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+    target_link_libraries(novaria_mod_loader_tests PRIVATE novaria_engine)
+
+    add_executable(
+        novaria_mod_script_loader_tests
+        tests/runtime/mod_script_loader_tests.cpp
+    )
+    target_include_directories(novaria_mod_script_loader_tests PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+    target_link_libraries(novaria_mod_script_loader_tests PRIVATE novaria_engine)
+
+    add_executable(
+        novaria_mod_fingerprint_policy_tests
+        tests/runtime/mod_fingerprint_policy_tests.cpp
+    )
+    target_include_directories(novaria_mod_fingerprint_policy_tests PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+    target_link_libraries(novaria_mod_fingerprint_policy_tests PRIVATE novaria_engine)
 
     add_executable(
         novaria_world_snapshot_codec_tests
         tests/world/world_snapshot_codec_tests.cpp
-        src/world/snapshot_codec.cpp
     )
-    target_include_directories(novaria_world_snapshot_codec_tests PRIVATE src)
+    target_include_directories(
+        novaria_world_snapshot_codec_tests
+        PRIVATE
+            "${NOVARIA_PUBLIC_INCLUDE_DIR}"
+    )
+    target_link_libraries(novaria_world_snapshot_codec_tests PRIVATE novaria_engine)
 
     add_executable(
         novaria_world_replication_flow_tests
         tests/world/world_replication_flow_tests.cpp
-        src/world/world_service_basic.cpp
-        src/world/snapshot_codec.cpp
-        src/core/logger.cpp
     )
-    target_include_directories(novaria_world_replication_flow_tests PRIVATE src)
+    target_include_directories(
+        novaria_world_replication_flow_tests
+        PRIVATE
+            "${NOVARIA_PUBLIC_INCLUDE_DIR}"
+    )
+    target_link_libraries(novaria_world_replication_flow_tests PRIVATE novaria_engine)
 
     add_executable(
         novaria_mvp_acceptance_tests
         tests/mvp/mvp_acceptance_tests.cpp
-        src/sim/simulation_kernel.cpp
-        src/sim/typed_command.cpp
-        src/sim/ecs_runtime.cpp
-        src/world/world_service_basic.cpp
-        src/world/snapshot_codec.cpp
-        src/net/net_service_runtime.cpp
-        src/net/net_service_udp_loopback.cpp
-        src/net/udp_transport.cpp
-        src/save/save_repository.cpp
-        src/mod/mod_loader.cpp
-        src/core/logger.cpp
     )
-    target_include_directories(novaria_mvp_acceptance_tests PRIVATE src)
+    target_include_directories(novaria_mvp_acceptance_tests PRIVATE "${NOVARIA_PUBLIC_INCLUDE_DIR}")
+    target_link_libraries(novaria_mvp_acceptance_tests PRIVATE novaria_engine)
     novaria_link_entt(novaria_mvp_acceptance_tests)
     novaria_link_winsock_if_needed(novaria_mvp_acceptance_tests)
 
     add_executable(
         novaria_gameplay_issue_e2e_tests
         tests/mvp/gameplay_issue_e2e_tests.cpp
-        src/app/player_controller.cpp
-        src/app/render_scene_builder.cpp
-        src/sim/simulation_kernel.cpp
-        src/sim/typed_command.cpp
-        src/sim/ecs_runtime.cpp
-        src/world/world_service_basic.cpp
-        src/world/snapshot_codec.cpp
-        src/net/net_service_runtime.cpp
-        src/net/net_service_udp_loopback.cpp
-        src/net/udp_transport.cpp
-        src/core/logger.cpp
     )
-    target_include_directories(novaria_gameplay_issue_e2e_tests PRIVATE src)
+    target_include_directories(
+        novaria_gameplay_issue_e2e_tests
+        PRIVATE
+            "${NOVARIA_PUBLIC_INCLUDE_DIR}"
+    )
+    target_link_libraries(novaria_gameplay_issue_e2e_tests PRIVATE novaria_engine novaria_app)
     novaria_link_entt(novaria_gameplay_issue_e2e_tests)
     novaria_link_winsock_if_needed(novaria_gameplay_issue_e2e_tests)
 
     set(NOVARIA_TEST_TARGETS
         novaria_config_tests
-        novaria_net_service_udp_loopback_tests
+        novaria_net_service_udp_peer_tests
         novaria_net_service_runtime_tests
         novaria_udp_transport_tests
         novaria_world_service_tests
+        novaria_player_controller_components_tests
+        novaria_render_scene_builder_tests
         novaria_script_host_runtime_tests
         novaria_simulation_kernel_tests
+        novaria_player_motion_tests
         novaria_ecs_runtime_tests
         novaria_save_repository_tests
         novaria_mod_loader_tests
+        novaria_mod_script_loader_tests
+        novaria_mod_fingerprint_policy_tests
         novaria_world_snapshot_codec_tests
         novaria_world_replication_flow_tests
-        novaria_mvp_acceptance_tests
         novaria_gameplay_issue_e2e_tests
     )
+    if(NOVARIA_BUILD_PERF_TESTS)
+        list(APPEND NOVARIA_TEST_TARGETS novaria_mvp_acceptance_tests)
+    endif()
     foreach(test_target IN LISTS NOVARIA_TEST_TARGETS)
         novaria_enable_default_warnings(${test_target})
         add_test(NAME ${test_target} COMMAND ${test_target})
     endforeach()
+    if(NOVARIA_BUILD_PERF_TESTS)
+        set_tests_properties(novaria_mvp_acceptance_tests PROPERTIES LABELS "perf")
+    endif()
 endif()

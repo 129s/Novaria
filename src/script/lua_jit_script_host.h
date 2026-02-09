@@ -16,14 +16,20 @@ public:
     static constexpr std::size_t kInstructionBudgetPerCall = 200000;
     static constexpr std::size_t kMemoryBudgetBytes = 64 * 1024 * 1024;
 
-    bool LoadScriptModules(
-        const std::vector<ScriptModuleSource>& module_sources,
-        std::string& out_error);
+    bool SetScriptModules(
+        std::vector<ScriptModuleSource> module_sources,
+        std::string& out_error) override;
 
     bool Initialize(std::string& out_error) override;
     void Shutdown() override;
-    void Tick(const sim::TickContext& tick_context) override;
+    void Tick(const core::TickContext& tick_context) override;
     void DispatchEvent(const ScriptEvent& event_data) override;
+    bool TryCallModuleFunction(
+        std::string_view module_name,
+        std::string_view function_name,
+        wire::ByteSpan request_payload,
+        wire::ByteBuffer& out_response_payload,
+        std::string& out_error) override;
     ScriptRuntimeDescriptor RuntimeDescriptor() const override;
 
     bool IsVmReady() const;
@@ -48,6 +54,9 @@ private:
 
     static void* QuotaAllocator(void* user_data, void* pointer, size_t old_size, size_t new_size);
     void ClearLoadedModules();
+    bool LoadScriptModules(
+        const std::vector<ScriptModuleSource>& module_sources,
+        std::string& out_error);
     bool ApplyMvpSandbox(std::string& out_error);
     bool LoadBootstrapScript(std::string& out_error);
     bool BindModuleEnvironment(int& out_environment_ref, std::string& out_error);
@@ -60,7 +69,7 @@ private:
         std::string& out_error);
     bool InvokeModuleTickHandler(
         const LoadedModule& module,
-        const sim::TickContext& tick_context,
+        const core::TickContext& tick_context,
         std::string& out_error);
     bool InvokeModuleEventHandler(
         const LoadedModule& module,
@@ -69,7 +78,8 @@ private:
 
     bool initialized_ = false;
     lua_State* lua_state_ = nullptr;
-    MemoryQuotaState memory_quota_state_{};
+    std::vector<ScriptModuleSource> module_sources_;
+    MemoryQuotaState memory_quota_state_{}; 
     std::vector<ScriptEvent> pending_events_;
     std::vector<LoadedModule> loaded_modules_;
     std::size_t total_processed_event_count_ = 0;

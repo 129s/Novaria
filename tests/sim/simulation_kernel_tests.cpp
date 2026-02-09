@@ -2,10 +2,13 @@
 #include "sim/command_schema.h"
 #include "sim/typed_command.h"
 #include "save/save_repository.h"
-#include "net/net_service_udp_loopback.h"
+#include "net/net_service_udp_peer.h"
+#include "script/sim_rules_rpc.h"
 #include "world/snapshot_codec.h"
+#include "world/material_catalog.h"
 
 #include <charconv>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -13,6 +16,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -135,7 +139,10 @@ bool TryParseGameplayProgressPayload(
 }
 
 std::filesystem::path BuildSimulationKernelSaveTestDirectory() {
-    return std::filesystem::temp_directory_path() / "novaria_sim_kernel_save_e2e_test";
+    const auto unique_seed =
+        std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    return std::filesystem::temp_directory_path() /
+        ("novaria_sim_kernel_save_e2e_test_" + std::to_string(unique_seed));
 }
 
 class FakeWorldService final : public novaria::world::IWorldService {
@@ -151,6 +158,17 @@ public:
     std::vector<novaria::world::ChunkCoord> unloaded_chunks;
     std::vector<novaria::world::TileMutation> applied_tile_mutations;
     std::size_t dirty_batch_cursor = 0;
+    struct PairHash final {
+        std::size_t operator()(const std::pair<int, int>& key) const {
+            return std::hash<int>{}(key.first) ^ (std::hash<int>{}(key.second) << 1);
+        }
+    };
+
+    std::unordered_map<std::pair<int, int>, std::uint16_t, PairHash> tiles;
+
+    void SetTile(int tile_x, int tile_y, std::uint16_t material_id) {
+        tiles[{tile_x, tile_y}] = material_id;
+    }
 
     bool Initialize(std::string& out_error) override {
         initialize_called = true;
@@ -166,7 +184,7 @@ public:
         shutdown_called = true;
     }
 
-    void Tick(const novaria::sim::TickContext& tick_context) override {
+    void Tick(const novaria::core::TickContext& tick_context) override {
         (void)tick_context;
         ++tick_count;
     }
@@ -181,6 +199,7 @@ public:
 
     bool ApplyTileMutation(const novaria::world::TileMutation& mutation, std::string& out_error) override {
         applied_tile_mutations.push_back(mutation);
+        tiles[{mutation.tile_x, mutation.tile_y}] = mutation.material_id;
         out_error.clear();
         return true;
     }
@@ -207,6 +226,24 @@ public:
         return true;
     }
 
+    bool TryReadTile(
+        int tile_x,
+        int tile_y,
+        std::uint16_t& out_material_id) const override {
+        const auto it = tiles.find({tile_x, tile_y});
+        if (it == tiles.end()) {
+            out_material_id = 0;
+            return true;
+        }
+
+        out_material_id = it->second;
+        return true;
+    }
+
+    std::vector<novaria::world::ChunkCoord> LoadedChunkCoords() const override {
+        return loaded_chunks;
+    }
+
     std::vector<novaria::world::ChunkCoord> ConsumeDirtyChunks() override {
         if (dirty_batch_cursor >= dirty_batches.size()) {
             return {};
@@ -229,8 +266,8 @@ public:
     std::vector<novaria::net::PlayerCommand> submitted_commands;
     std::vector<novaria::net::PlayerCommand> pending_remote_commands;
     std::vector<std::pair<std::uint64_t, std::size_t>> published_snapshots;
-    std::vector<std::vector<std::string>> published_snapshot_payloads;
-    std::vector<std::string> pending_remote_chunk_payloads;
+    std::vector<std::vector<novaria::wire::ByteBuffer>> published_snapshot_payloads;
+    std::vector<novaria::wire::ByteBuffer> pending_remote_chunk_payloads;
     novaria::net::NetSessionState session_state = novaria::net::NetSessionState::Disconnected;
 
     bool Initialize(std::string& out_error) override {
@@ -276,7 +313,7 @@ public:
         };
     }
 
-    void Tick(const novaria::sim::TickContext& tick_context) override {
+    void Tick(const novaria::core::TickContext& tick_context) override {
         (void)tick_context;
         if (session_state == novaria::net::NetSessionState::Connecting &&
             auto_progress_connection) {
@@ -297,27 +334,35 @@ public:
         return commands;
     }
 
-    std::vector<std::string> ConsumeRemoteChunkPayloads() override {
-        std::vector<std::string> payloads = std::move(pending_remote_chunk_payloads);
+    std::vector<novaria::wire::ByteBuffer> ConsumeRemoteChunkPayloads() override {
+        std::vector<novaria::wire::ByteBuffer> payloads = std::move(pending_remote_chunk_payloads);
         pending_remote_chunk_payloads.clear();
         return payloads;
     }
 
     void PublishWorldSnapshot(
         std::uint64_t tick_index,
-        const std::vector<std::string>& encoded_dirty_chunks) override {
+        const std::vector<novaria::wire::ByteBuffer>& encoded_dirty_chunks) override {
         published_snapshots.emplace_back(tick_index, encoded_dirty_chunks.size());
         published_snapshot_payloads.push_back(encoded_dirty_chunks);
     }
 };
 
 class FakeScriptHost final : public novaria::script::IScriptHost {
-public:
+ public:
     bool initialize_success = true;
     bool initialize_called = false;
     bool shutdown_called = false;
     int tick_count = 0;
     std::vector<novaria::script::ScriptEvent> dispatched_events;
+
+    bool SetScriptModules(
+        std::vector<novaria::script::ScriptModuleSource> module_sources,
+        std::string& out_error) override {
+        (void)module_sources;
+        out_error.clear();
+        return true;
+    }
 
     bool Initialize(std::string& out_error) override {
         initialize_called = true;
@@ -333,13 +378,138 @@ public:
         shutdown_called = true;
     }
 
-    void Tick(const novaria::sim::TickContext& tick_context) override {
+    void Tick(const novaria::core::TickContext& tick_context) override {
         (void)tick_context;
         ++tick_count;
     }
 
     void DispatchEvent(const novaria::script::ScriptEvent& event_data) override {
         dispatched_events.push_back(event_data);
+    }
+
+    bool TryCallModuleFunction(
+        std::string_view module_name,
+        std::string_view function_name,
+        novaria::wire::ByteSpan request_payload,
+        novaria::wire::ByteBuffer& out_response_payload,
+        std::string& out_error) override {
+        (void)module_name;
+        (void)function_name;
+
+        out_response_payload.clear();
+        const novaria::wire::ByteSpan request_bytes = request_payload;
+
+        if (novaria::script::simrpc::TryDecodeValidateRequest(request_bytes)) {
+            const novaria::wire::ByteBuffer response_bytes =
+                novaria::script::simrpc::EncodeValidateResponse(true);
+            out_response_payload = response_bytes;
+            out_error.clear();
+            return true;
+        }
+
+        novaria::script::simrpc::ActionPrimaryRequest action_request{};
+        if (novaria::script::simrpc::TryDecodeActionPrimaryRequest(request_bytes, action_request)) {
+            novaria::script::simrpc::ActionPrimaryResult result =
+                novaria::script::simrpc::ActionPrimaryResult::Reject;
+            novaria::script::simrpc::PlaceKind place_kind =
+                novaria::script::simrpc::PlaceKind::None;
+            std::uint32_t required_ticks = 0;
+
+            if (action_request.hotbar_row == 0 &&
+                action_request.hotbar_slot == 0 &&
+                action_request.has_pickaxe_tool &&
+                action_request.harvestable_by_pickaxe &&
+                action_request.harvest_ticks > 0) {
+                result = novaria::script::simrpc::ActionPrimaryResult::Harvest;
+                required_ticks = action_request.harvest_ticks;
+            } else if (action_request.hotbar_row == 0 &&
+                action_request.hotbar_slot == 1 &&
+                action_request.has_axe_tool &&
+                action_request.harvestable_by_axe &&
+                action_request.harvest_ticks > 0) {
+                result = novaria::script::simrpc::ActionPrimaryResult::Harvest;
+                required_ticks = action_request.harvest_ticks;
+            } else if (action_request.hotbar_row == 0 &&
+                action_request.hotbar_slot == 6 &&
+                action_request.wood_sword_count > 0 &&
+                action_request.harvestable_by_sword &&
+                action_request.harvest_ticks > 0) {
+                result = novaria::script::simrpc::ActionPrimaryResult::Harvest;
+                required_ticks = action_request.harvest_ticks + 10;
+            } else if (action_request.hotbar_row == 0 &&
+                action_request.hotbar_slot == 2 &&
+                action_request.target_is_air &&
+                action_request.dirt_count > 0) {
+                result = novaria::script::simrpc::ActionPrimaryResult::Place;
+                place_kind = novaria::script::simrpc::PlaceKind::Dirt;
+                required_ticks = 8;
+            } else if (action_request.hotbar_row == 0 &&
+                action_request.hotbar_slot == 3 &&
+                action_request.target_is_air &&
+                action_request.stone_count > 0) {
+                result = novaria::script::simrpc::ActionPrimaryResult::Place;
+                place_kind = novaria::script::simrpc::PlaceKind::Stone;
+                required_ticks = 8;
+            } else if (action_request.hotbar_row == 0 &&
+                action_request.hotbar_slot == 4 &&
+                action_request.target_is_air &&
+                action_request.torch_count > 0) {
+                result = novaria::script::simrpc::ActionPrimaryResult::Place;
+                place_kind = novaria::script::simrpc::PlaceKind::Torch;
+                required_ticks = 8;
+            } else if (action_request.hotbar_row == 0 &&
+                action_request.hotbar_slot == 5 &&
+                action_request.target_is_air &&
+                action_request.workbench_count > 0) {
+                result = novaria::script::simrpc::ActionPrimaryResult::Place;
+                place_kind = novaria::script::simrpc::PlaceKind::Workbench;
+                required_ticks = 8;
+            }
+
+            const novaria::wire::ByteBuffer response_bytes =
+                novaria::script::simrpc::EncodeActionPrimaryResponse(result, place_kind, required_ticks);
+            out_response_payload = response_bytes;
+            out_error.clear();
+            return true;
+        }
+
+        novaria::script::simrpc::CraftRecipeRequest craft_request{};
+        if (novaria::script::simrpc::TryDecodeCraftRecipeRequest(request_bytes, craft_request)) {
+            novaria::script::simrpc::CraftRecipeResponse response{};
+
+            if (craft_request.recipe_index == 0 && craft_request.wood_count >= 3) {
+                response.result = novaria::script::simrpc::CraftRecipeResult::Craft;
+                response.wood_delta = -3;
+                response.workbench_delta = 1;
+                response.crafted_kind = novaria::script::simrpc::CraftedKind::Workbench;
+                response.mark_workbench_built = true;
+            } else if (craft_request.recipe_index == 1 &&
+                craft_request.wood_count >= 7 &&
+                craft_request.workbench_reachable) {
+                response.result = novaria::script::simrpc::CraftRecipeResult::Craft;
+                response.wood_delta = -7;
+                response.wood_sword_delta = 1;
+                response.mark_sword_crafted = true;
+            } else if (craft_request.recipe_index == 2 &&
+                craft_request.wood_count >= 1 &&
+                craft_request.coal_count >= 1) {
+                response.result = novaria::script::simrpc::CraftRecipeResult::Craft;
+                response.wood_delta = -1;
+                response.coal_delta = -1;
+                response.torch_delta = 4;
+                response.crafted_kind = novaria::script::simrpc::CraftedKind::Torch;
+            }
+
+            const novaria::wire::ByteBuffer response_bytes =
+                novaria::script::simrpc::EncodeCraftRecipeResponse(response);
+            out_response_payload = response_bytes;
+            out_error.clear();
+            return true;
+        }
+
+        out_response_payload.clear();
+        out_error = "fake script host received unknown simrpc payload";
+        return false;
     }
 
     novaria::script::ScriptRuntimeDescriptor RuntimeDescriptor() const override {
@@ -355,108 +525,129 @@ bool TestCommandSchemaPayloadParsing() {
     bool passed = true;
 
     novaria::sim::command::WorldSetTilePayload set_tile_payload{};
+    const novaria::wire::ByteBuffer set_tile_encoded =
+        novaria::sim::command::EncodeWorldSetTilePayload({.tile_x = -12, .tile_y = 34, .material_id = 7});
     passed &= Expect(
-        novaria::sim::command::TryParseWorldSetTilePayload(
-            novaria::sim::command::BuildWorldSetTilePayload(-12, 34, 7),
+        novaria::sim::command::TryDecodeWorldSetTilePayload(
+            novaria::wire::ByteSpan(set_tile_encoded.data(), set_tile_encoded.size()),
             set_tile_payload),
-        "World set_tile payload parser should accept valid payload.");
+        "World set_tile payload decoder should accept valid payload.");
     passed &= Expect(
         set_tile_payload.tile_x == -12 &&
             set_tile_payload.tile_y == 34 &&
             set_tile_payload.material_id == 7,
-        "Parsed set_tile payload fields should match.");
+        "Decoded set_tile payload fields should match.");
+    novaria::wire::ByteBuffer set_tile_extra = set_tile_encoded;
+    set_tile_extra.push_back(0x01);
     passed &= Expect(
-        !novaria::sim::command::TryParseWorldSetTilePayload("1,2", set_tile_payload),
-        "Set_tile payload parser should reject missing tokens.");
+        !novaria::sim::command::TryDecodeWorldSetTilePayload(
+            novaria::wire::ByteSpan(set_tile_extra.data(), set_tile_extra.size()),
+            set_tile_payload),
+        "Set_tile decoder should reject trailing bytes.");
+
+    novaria::wire::ByteWriter overflow_writer;
+    overflow_writer.WriteVarInt(1);
+    overflow_writer.WriteVarInt(2);
+    overflow_writer.WriteVarUInt(70000);
+    const novaria::wire::ByteBuffer material_overflow = overflow_writer.TakeBuffer();
     passed &= Expect(
-        !novaria::sim::command::TryParseWorldSetTilePayload("1,2,3,4", set_tile_payload),
-        "Set_tile payload parser should reject extra tokens.");
-    passed &= Expect(
-        !novaria::sim::command::TryParseWorldSetTilePayload("1,2,70000", set_tile_payload),
-        "Set_tile payload parser should reject material_id overflow.");
+        !novaria::sim::command::TryDecodeWorldSetTilePayload(
+            novaria::wire::ByteSpan(material_overflow.data(), material_overflow.size()),
+            set_tile_payload),
+        "Set_tile decoder should reject material_id overflow.");
 
     novaria::sim::command::WorldChunkPayload chunk_payload{};
+    const novaria::wire::ByteBuffer chunk_encoded =
+        novaria::sim::command::EncodeWorldChunkPayload({.chunk_x = 5, .chunk_y = -9});
     passed &= Expect(
-        novaria::sim::command::TryParseWorldChunkPayload(
-            novaria::sim::command::BuildWorldChunkPayload(5, -9),
+        novaria::sim::command::TryDecodeWorldChunkPayload(
+            novaria::wire::ByteSpan(chunk_encoded.data(), chunk_encoded.size()),
             chunk_payload),
-        "World chunk payload parser should accept valid payload.");
+        "World chunk decoder should accept valid payload.");
     passed &= Expect(
         chunk_payload.chunk_x == 5 && chunk_payload.chunk_y == -9,
-        "Parsed chunk payload fields should match.");
+        "Decoded chunk payload fields should match.");
     passed &= Expect(
-        !novaria::sim::command::TryParseWorldChunkPayload("8", chunk_payload),
-        "Chunk payload parser should reject missing tokens.");
-    passed &= Expect(
-        !novaria::sim::command::TryParseWorldChunkPayload("8,9,10", chunk_payload),
-        "Chunk payload parser should reject extra tokens.");
-    passed &= Expect(
-        !novaria::sim::command::TryParseWorldChunkPayload("8,NaN", chunk_payload),
-        "Chunk payload parser should reject non-number tokens.");
+        !novaria::sim::command::TryDecodeWorldChunkPayload(
+            novaria::wire::ByteSpan(chunk_encoded.data(), 1),
+            chunk_payload),
+        "Chunk decoder should reject truncated payload.");
 
     novaria::sim::command::CollectResourcePayload collect_payload{};
+    const novaria::wire::ByteBuffer collect_encoded =
+        novaria::sim::command::EncodeCollectResourcePayload({
+            .resource_id = novaria::sim::command::kResourceWood,
+            .amount = 5,
+        });
     passed &= Expect(
-        novaria::sim::command::TryParseCollectResourcePayload(
-            novaria::sim::command::BuildCollectResourcePayload(
-                novaria::sim::command::kResourceWood,
-                5),
+        novaria::sim::command::TryDecodeCollectResourcePayload(
+            novaria::wire::ByteSpan(collect_encoded.data(), collect_encoded.size()),
             collect_payload),
-        "Collect payload parser should accept valid payload.");
+        "Collect decoder should accept valid payload.");
     passed &= Expect(
         collect_payload.resource_id == novaria::sim::command::kResourceWood &&
             collect_payload.amount == 5,
-        "Collect payload parser should parse resource and amount.");
+        "Collect decoder should parse resource and amount.");
+    const novaria::wire::ByteBuffer collect_zero_amount =
+        novaria::sim::command::EncodeCollectResourcePayload({
+            .resource_id = novaria::sim::command::kResourceWood,
+            .amount = 0,
+        });
     passed &= Expect(
-        !novaria::sim::command::TryParseCollectResourcePayload("1,0", collect_payload),
-        "Collect payload parser should reject zero amount.");
-    passed &= Expect(
-        !novaria::sim::command::TryParseCollectResourcePayload("x,3", collect_payload),
-        "Collect payload parser should reject invalid resource id.");
-    passed &= Expect(
-        !novaria::sim::command::TryParseCollectResourcePayload("1,2,3", collect_payload),
-        "Collect payload parser should reject extra tokens.");
+        !novaria::sim::command::TryDecodeCollectResourcePayload(
+            novaria::wire::ByteSpan(collect_zero_amount.data(), collect_zero_amount.size()),
+            collect_payload),
+        "Collect decoder should reject zero amount.");
 
     novaria::sim::command::SpawnDropPayload spawn_drop_payload{};
+    const novaria::wire::ByteBuffer spawn_drop_encoded =
+        novaria::sim::command::EncodeSpawnDropPayload({.tile_x = 4, .tile_y = -6, .material_id = 2, .amount = 3});
     passed &= Expect(
-        novaria::sim::command::TryParseSpawnDropPayload(
-            novaria::sim::command::BuildSpawnDropPayload(4, -6, 2, 3),
+        novaria::sim::command::TryDecodeSpawnDropPayload(
+            novaria::wire::ByteSpan(spawn_drop_encoded.data(), spawn_drop_encoded.size()),
             spawn_drop_payload),
-        "Spawn drop payload parser should accept valid payload.");
+        "Spawn drop decoder should accept valid payload.");
     passed &= Expect(
         spawn_drop_payload.tile_x == 4 &&
             spawn_drop_payload.tile_y == -6 &&
             spawn_drop_payload.material_id == 2 &&
             spawn_drop_payload.amount == 3,
-        "Spawn drop payload parser should parse all fields.");
+        "Spawn drop decoder should parse all fields.");
+    const novaria::wire::ByteBuffer spawn_drop_zero_amount =
+        novaria::sim::command::EncodeSpawnDropPayload({.tile_x = 4, .tile_y = -6, .material_id = 2, .amount = 0});
     passed &= Expect(
-        !novaria::sim::command::TryParseSpawnDropPayload("4,-6,2,0", spawn_drop_payload),
-        "Spawn drop payload parser should reject zero amount.");
+        !novaria::sim::command::TryDecodeSpawnDropPayload(
+            novaria::wire::ByteSpan(spawn_drop_zero_amount.data(), spawn_drop_zero_amount.size()),
+            spawn_drop_payload),
+        "Spawn drop decoder should reject zero amount.");
 
     novaria::sim::command::PickupProbePayload pickup_probe_payload{};
+    const novaria::wire::ByteBuffer pickup_probe_encoded =
+        novaria::sim::command::EncodePickupProbePayload({.tile_x = 9, .tile_y = -3});
     passed &= Expect(
-        novaria::sim::command::TryParsePickupProbePayload(
-            novaria::sim::command::BuildPickupProbePayload(9, -3),
+        novaria::sim::command::TryDecodePickupProbePayload(
+            novaria::wire::ByteSpan(pickup_probe_encoded.data(), pickup_probe_encoded.size()),
             pickup_probe_payload),
-        "Pickup probe payload parser should accept valid payload.");
+        "Pickup probe decoder should accept valid payload.");
     passed &= Expect(
         pickup_probe_payload.tile_x == 9 &&
             pickup_probe_payload.tile_y == -3,
-        "Pickup probe payload parser should parse both coordinates.");
-    passed &= Expect(
-        !novaria::sim::command::TryParsePickupProbePayload("9", pickup_probe_payload),
-        "Pickup probe payload parser should reject missing tokens.");
+        "Pickup probe decoder should parse both coordinates.");
 
     novaria::sim::command::InteractionPayload interaction_payload{};
+    const novaria::wire::ByteBuffer interaction_encoded =
+        novaria::sim::command::EncodeInteractionPayload({
+            .interaction_type = novaria::sim::command::kInteractionTypeOpenCrafting,
+            .target_tile_x = 2,
+            .target_tile_y = -1,
+            .target_material_id = 9,
+            .result_code = novaria::sim::command::kInteractionResultSuccess,
+        });
     passed &= Expect(
-        novaria::sim::command::TryParseInteractionPayload(
-            novaria::sim::command::BuildInteractionPayload(
-                novaria::sim::command::kInteractionTypeOpenCrafting,
-                2,
-                -1,
-                9,
-                novaria::sim::command::kInteractionResultSuccess),
+        novaria::sim::command::TryDecodeInteractionPayload(
+            novaria::wire::ByteSpan(interaction_encoded.data(), interaction_encoded.size()),
             interaction_payload),
-        "Interaction payload parser should accept valid payload.");
+        "Interaction decoder should accept valid payload.");
     passed &= Expect(
         interaction_payload.interaction_type ==
             novaria::sim::command::kInteractionTypeOpenCrafting &&
@@ -465,24 +656,24 @@ bool TestCommandSchemaPayloadParsing() {
             interaction_payload.target_material_id == 9 &&
             interaction_payload.result_code ==
                 novaria::sim::command::kInteractionResultSuccess,
-        "Interaction payload parser should parse all fields.");
-    passed &= Expect(
-        !novaria::sim::command::TryParseInteractionPayload("1,2,-1,9", interaction_payload),
-        "Interaction payload parser should reject missing tokens.");
+        "Interaction decoder should parse all fields.");
 
     novaria::sim::command::FireProjectilePayload fire_projectile_payload{};
+    const novaria::wire::ByteBuffer fire_projectile_encoded =
+        novaria::sim::command::EncodeFireProjectilePayload({
+            .origin_tile_x = 1,
+            .origin_tile_y = -4,
+            .velocity_milli_x = 4500,
+            .velocity_milli_y = 0,
+            .damage = 13,
+            .lifetime_ticks = 180,
+            .faction = 1,
+        });
     passed &= Expect(
-        novaria::sim::command::TryParseFireProjectilePayload(
-            novaria::sim::command::BuildFireProjectilePayload(
-                1,
-                -4,
-                4500,
-                0,
-                13,
-                180,
-                1),
+        novaria::sim::command::TryDecodeFireProjectilePayload(
+            novaria::wire::ByteSpan(fire_projectile_encoded.data(), fire_projectile_encoded.size()),
             fire_projectile_payload),
-        "Fire projectile payload parser should accept valid payload.");
+        "Fire projectile decoder should accept valid payload.");
     passed &= Expect(
         fire_projectile_payload.origin_tile_x == 1 &&
             fire_projectile_payload.origin_tile_y == -4 &&
@@ -491,32 +682,30 @@ bool TestCommandSchemaPayloadParsing() {
             fire_projectile_payload.damage == 13 &&
             fire_projectile_payload.lifetime_ticks == 180 &&
             fire_projectile_payload.faction == 1,
-        "Fire projectile payload parser should parse all fields.");
+        "Fire projectile decoder should parse all fields.");
+    const novaria::wire::ByteBuffer fire_projectile_zero_lifetime =
+        novaria::sim::command::EncodeFireProjectilePayload({
+            .origin_tile_x = 1,
+            .origin_tile_y = -4,
+            .velocity_milli_x = 4500,
+            .velocity_milli_y = 0,
+            .damage = 13,
+            .lifetime_ticks = 0,
+            .faction = 1,
+        });
     passed &= Expect(
-        !novaria::sim::command::TryParseFireProjectilePayload(
-            "1,-4,4500,0,13,0,1",
+        !novaria::sim::command::TryDecodeFireProjectilePayload(
+            novaria::wire::ByteSpan(fire_projectile_zero_lifetime.data(), fire_projectile_zero_lifetime.size()),
             fire_projectile_payload),
-        "Fire projectile payload parser should reject zero lifetime.");
-    passed &= Expect(
-        !novaria::sim::command::TryParseFireProjectilePayload(
-            "1,-4,4500,0,13,180",
-            fire_projectile_payload),
-        "Fire projectile payload parser should reject missing tokens.");
+        "Fire projectile decoder should reject zero lifetime.");
 
     novaria::sim::TypedPlayerCommand typed_command{};
     passed &= Expect(
         novaria::sim::TryDecodePlayerCommand(
             novaria::net::PlayerCommand{
                 .player_id = 1,
-                .command_type = std::string(novaria::sim::command::kCombatFireProjectile),
-                .payload = novaria::sim::command::BuildFireProjectilePayload(
-                    1,
-                    -4,
-                    4500,
-                    0,
-                    13,
-                    180,
-                    1),
+                .command_id = novaria::sim::command::kCombatFireProjectile,
+                .payload = fire_projectile_encoded,
             },
             typed_command) &&
             typed_command.type == novaria::sim::TypedPlayerCommandType::CombatFireProjectile,
@@ -525,8 +714,8 @@ bool TestCommandSchemaPayloadParsing() {
         !novaria::sim::TryDecodePlayerCommand(
             novaria::net::PlayerCommand{
                 .player_id = 1,
-                .command_type = std::string(novaria::sim::command::kCombatFireProjectile),
-                .payload = "bad_payload",
+                .command_id = novaria::sim::command::kCombatFireProjectile,
+                .payload = {0x01, 0x02},
             },
             typed_command),
         "Typed command bridge should reject invalid projectile payload.");
@@ -534,13 +723,8 @@ bool TestCommandSchemaPayloadParsing() {
         novaria::sim::TryDecodePlayerCommand(
             novaria::net::PlayerCommand{
                 .player_id = 1,
-                .command_type = std::string(novaria::sim::command::kGameplayInteraction),
-                .payload = novaria::sim::command::BuildInteractionPayload(
-                    novaria::sim::command::kInteractionTypeOpenCrafting,
-                    2,
-                    -1,
-                    9,
-                    novaria::sim::command::kInteractionResultSuccess),
+                .command_id = novaria::sim::command::kGameplayInteraction,
+                .payload = interaction_encoded,
             },
             typed_command) &&
             typed_command.type == novaria::sim::TypedPlayerCommandType::GameplayInteraction,
@@ -620,7 +804,9 @@ bool TestUpdatePublishesDirtyChunkCount() {
         std::string decode_error;
         passed &= Expect(
             novaria::world::WorldSnapshotCodec::DecodeChunkSnapshot(
-                net.published_snapshot_payloads[0][0],
+                novaria::wire::ByteSpan(
+                    net.published_snapshot_payloads[0][0].data(),
+                    net.published_snapshot_payloads[0][0].size()),
                 decoded_snapshot,
                 decode_error),
             "Encoded chunk payload should be decodable.");
@@ -628,22 +814,22 @@ bool TestUpdatePublishesDirtyChunkCount() {
 
     kernel.SubmitLocalCommand({
         .player_id = 12,
-        .command_type = std::string(novaria::sim::command::kJump),
-        .payload = "",
+        .command_id = novaria::sim::command::kJump,
+        .payload = {},
     });
     kernel.SubmitLocalCommand({
         .player_id = 12,
-        .command_type = std::string(novaria::sim::command::kAttack),
-        .payload = "light",
+        .command_id = novaria::sim::command::kAttack,
+        .payload = {},
     });
     kernel.Update(1.0 / 60.0);
     passed &= Expect(net.submitted_commands.size() == 2, "Submitted commands should be forwarded on update.");
     if (net.submitted_commands.size() == 2) {
         passed &= Expect(
-            net.submitted_commands[0].command_type == novaria::sim::command::kJump,
+            net.submitted_commands[0].command_id == novaria::sim::command::kJump,
             "First command type should match.");
         passed &= Expect(
-            net.submitted_commands[1].command_type == novaria::sim::command::kAttack,
+            net.submitted_commands[1].command_id == novaria::sim::command::kAttack,
             "Second command type should match.");
     }
 
@@ -914,7 +1100,7 @@ bool TestReconnectHeartbeatAndSaveDiagnosticsEndToEnd() {
     std::filesystem::remove_all(test_dir, ec);
 
     FakeWorldService world;
-    novaria::net::NetServiceUdpLoopback net;
+    novaria::net::NetServiceUdpPeer net;
     net.SetBindPort(0);
     net.SetRemoteEndpoint({.host = "127.0.0.1", .port = 0});
     FakeScriptHost script;
@@ -1070,7 +1256,7 @@ bool TestSubmitCommandIgnoredBeforeInitialize() {
     FakeScriptHost script;
     novaria::sim::SimulationKernel kernel(world, net, script);
 
-    kernel.SubmitLocalCommand({.player_id = 3, .command_type = "move", .payload = "left"});
+    kernel.SubmitLocalCommand({.player_id = 3, .command_id = 999, .payload = {0x01}});
     std::string error;
     passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
     kernel.Update(1.0 / 60.0);
@@ -1099,8 +1285,8 @@ bool TestLocalCommandQueueCapAndDroppedCount() {
          ++index) {
         kernel.SubmitLocalCommand({
             .player_id = 99,
-            .command_type = std::string(novaria::sim::command::kJump),
-            .payload = "",
+            .command_id = novaria::sim::command::kJump,
+            .payload = {},
         });
     }
 
@@ -1125,8 +1311,8 @@ bool TestLocalCommandQueueCapAndDroppedCount() {
 
     kernel.SubmitLocalCommand({
         .player_id = 99,
-        .command_type = std::string(novaria::sim::command::kJump),
-        .payload = "",
+        .command_id = novaria::sim::command::kJump,
+        .payload = {},
     });
     kernel.Update(1.0 / 60.0);
     passed &= Expect(
@@ -1147,24 +1333,24 @@ bool TestApplyRemoteChunkPayload() {
 
     std::string error;
     passed &= Expect(
-        !kernel.ApplyRemoteChunkPayload("0,0,1,1", error),
+        !kernel.ApplyRemoteChunkPayload(novaria::wire::ByteSpan(), error),
         "ApplyRemoteChunkPayload should fail before initialize.");
 
     passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
     passed &= Expect(
-        !kernel.ApplyRemoteChunkPayload("invalid_payload", error),
+        !kernel.ApplyRemoteChunkPayload(novaria::wire::ByteSpan(reinterpret_cast<const novaria::wire::Byte*>("\x01"), 1), error),
         "ApplyRemoteChunkPayload should fail for invalid payload.");
 
     novaria::world::ChunkSnapshot snapshot{
         .chunk_coord = {.x = 2, .y = -3},
         .tiles = {1, 2, 3, 4},
     };
-    std::string payload;
+    novaria::wire::ByteBuffer payload;
     passed &= Expect(
         novaria::world::WorldSnapshotCodec::EncodeChunkSnapshot(snapshot, payload, error),
         "EncodeChunkSnapshot should succeed.");
     passed &= Expect(
-        kernel.ApplyRemoteChunkPayload(payload, error),
+        kernel.ApplyRemoteChunkPayload(novaria::wire::ByteSpan(payload.data(), payload.size()), error),
         "ApplyRemoteChunkPayload should accept valid payload.");
     passed &= Expect(world.applied_snapshots.size() == 1, "World should receive one applied snapshot.");
     if (world.applied_snapshots.size() == 1) {
@@ -1197,12 +1383,12 @@ bool TestUpdateConsumesRemoteChunkPayloads() {
         .chunk_coord = {.x = -4, .y = 9},
         .tiles = {11, 12, 13, 14},
     };
-    std::string payload;
+    novaria::wire::ByteBuffer payload;
     passed &= Expect(
         novaria::world::WorldSnapshotCodec::EncodeChunkSnapshot(snapshot, payload, error),
         "EncodeChunkSnapshot should succeed.");
     net.pending_remote_chunk_payloads.push_back(payload);
-    net.pending_remote_chunk_payloads.push_back("invalid_payload");
+    net.pending_remote_chunk_payloads.push_back({0x01, 0x02});
 
     kernel.Update(1.0 / 60.0);
 
@@ -1249,7 +1435,7 @@ bool TestUpdateSkipsNetExchangeWhenSessionNotConnected() {
         .chunk_coord = {.x = 7, .y = -2},
         .tiles = {5, 6, 7, 8},
     };
-    std::string remote_payload;
+    novaria::wire::ByteBuffer remote_payload;
     passed &= Expect(
         novaria::world::WorldSnapshotCodec::EncodeChunkSnapshot(remote_snapshot, remote_payload, error),
         "EncodeChunkSnapshot should succeed.");
@@ -1271,6 +1457,82 @@ bool TestUpdateSkipsNetExchangeWhenSessionNotConnected() {
     return passed;
 }
 
+bool TestAuthorityPublishesLoadedChunksAfterConnectionEstablished() {
+    bool passed = true;
+
+    FakeWorldService world;
+    world.loaded_chunks = {{.x = 9, .y = -3}};
+    world.available_snapshots = {
+        {.chunk_coord = {.x = 9, .y = -3}, .tiles = {1, 2, 3, 4}},
+    };
+    FakeNetService net;
+    net.auto_progress_connection = false;
+    FakeScriptHost script;
+    novaria::sim::SimulationKernel kernel(world, net, script);
+
+    std::string error;
+    passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
+    kernel.Update(1.0 / 60.0);
+    passed &= Expect(
+        net.published_snapshots.empty(),
+        "Connecting session should not publish loaded chunk snapshots.");
+
+    net.session_state = novaria::net::NetSessionState::Connected;
+    net.last_transition_reason = "test_connected";
+    kernel.Update(1.0 / 60.0);
+
+    passed &= Expect(
+        net.published_snapshots.size() == 1,
+        "Connection transition should trigger initial loaded chunk snapshot publish.");
+    if (net.published_snapshots.size() == 1) {
+        passed &= Expect(
+            net.published_snapshots[0].second == 1,
+            "Initial sync publish should include loaded chunk snapshot.");
+    }
+
+    kernel.Shutdown();
+    return passed;
+}
+
+bool TestDirtyChunksRetainedUntilConnectionEstablished() {
+    bool passed = true;
+
+    FakeWorldService world;
+    world.dirty_batches = {
+        {{.x = 3, .y = 4}},
+    };
+    world.available_snapshots = {
+        {.chunk_coord = {.x = 3, .y = 4}, .tiles = {8, 8, 8, 8}},
+    };
+    FakeNetService net;
+    net.auto_progress_connection = false;
+    FakeScriptHost script;
+    novaria::sim::SimulationKernel kernel(world, net, script);
+
+    std::string error;
+    passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
+    kernel.Update(1.0 / 60.0);
+    passed &= Expect(
+        net.published_snapshots.empty(),
+        "Dirty chunks should not publish while net session is not connected.");
+
+    net.session_state = novaria::net::NetSessionState::Connected;
+    net.last_transition_reason = "test_connected";
+    kernel.Update(1.0 / 60.0);
+
+    passed &= Expect(
+        net.published_snapshots.size() == 1,
+        "Previously queued dirty chunk should publish after connection established.");
+    if (net.published_snapshots.size() == 1) {
+        passed &= Expect(
+            net.published_snapshots[0].second == 1,
+            "Retained dirty publish should contain one chunk.");
+    }
+
+    kernel.Shutdown();
+    return passed;
+}
+
 bool TestWorldCommandExecutionFromLocalQueue() {
     bool passed = true;
 
@@ -1284,23 +1546,23 @@ bool TestWorldCommandExecutionFromLocalQueue() {
 
     kernel.SubmitLocalCommand({
         .player_id = 1,
-        .command_type = std::string(novaria::sim::command::kWorldLoadChunk),
-        .payload = novaria::sim::command::BuildWorldChunkPayload(2, -1),
+        .command_id = novaria::sim::command::kWorldLoadChunk,
+        .payload = novaria::sim::command::EncodeWorldChunkPayload({.chunk_x = 2, .chunk_y = -1}),
     });
     kernel.SubmitLocalCommand({
         .player_id = 1,
-        .command_type = std::string(novaria::sim::command::kWorldSetTile),
-        .payload = novaria::sim::command::BuildWorldSetTilePayload(10, 11, 7),
+        .command_id = novaria::sim::command::kWorldSetTile,
+        .payload = novaria::sim::command::EncodeWorldSetTilePayload({.tile_x = 10, .tile_y = 11, .material_id = 7}),
     });
     kernel.SubmitLocalCommand({
         .player_id = 1,
-        .command_type = std::string(novaria::sim::command::kWorldUnloadChunk),
-        .payload = novaria::sim::command::BuildWorldChunkPayload(2, -1),
+        .command_id = novaria::sim::command::kWorldUnloadChunk,
+        .payload = novaria::sim::command::EncodeWorldChunkPayload({.chunk_x = 2, .chunk_y = -1}),
     });
     kernel.SubmitLocalCommand({
         .player_id = 1,
-        .command_type = std::string(novaria::sim::command::kWorldSetTile),
-        .payload = "invalid",
+        .command_id = novaria::sim::command::kWorldSetTile,
+        .payload = {0x01, 0x02},
     });
     kernel.Update(1.0 / 60.0);
 
@@ -1339,18 +1601,18 @@ bool TestReplicaModeRejectsLocalWorldWrites() {
 
     kernel.SubmitLocalCommand({
         .player_id = 1,
-        .command_type = std::string(novaria::sim::command::kWorldLoadChunk),
-        .payload = novaria::sim::command::BuildWorldChunkPayload(4, 5),
+        .command_id = novaria::sim::command::kWorldLoadChunk,
+        .payload = novaria::sim::command::EncodeWorldChunkPayload({.chunk_x = 4, .chunk_y = 5}),
     });
     kernel.SubmitLocalCommand({
         .player_id = 1,
-        .command_type = std::string(novaria::sim::command::kWorldSetTile),
-        .payload = novaria::sim::command::BuildWorldSetTilePayload(10, 11, 7),
+        .command_id = novaria::sim::command::kWorldSetTile,
+        .payload = novaria::sim::command::EncodeWorldSetTilePayload({.tile_x = 10, .tile_y = 11, .material_id = 7}),
     });
     kernel.SubmitLocalCommand({
         .player_id = 1,
-        .command_type = std::string(novaria::sim::command::kWorldUnloadChunk),
-        .payload = novaria::sim::command::BuildWorldChunkPayload(4, 5),
+        .command_id = novaria::sim::command::kWorldUnloadChunk,
+        .payload = novaria::sim::command::EncodeWorldChunkPayload({.chunk_x = 4, .chunk_y = 5}),
     });
     kernel.Update(1.0 / 60.0);
 
@@ -1379,42 +1641,51 @@ bool TestGameplayLoopCommandsReachBossDefeat() {
     std::string error;
     passed &= Expect(kernel.Initialize(error), "Kernel initialize should succeed.");
 
+    // Allow workbench-gated crafting in sim.
+    world.SetTile(1, -2, novaria::world::material::kWorkbench);
+
     kernel.SubmitLocalCommand({
         .player_id = 1,
-        .command_type = std::string(novaria::sim::command::kGameplayCollectResource),
-        .payload = novaria::sim::command::BuildCollectResourcePayload(
-            novaria::sim::command::kResourceWood,
-            20),
+        .command_id = novaria::sim::command::kGameplayCollectResource,
+        .payload = novaria::sim::command::EncodeCollectResourcePayload({
+            .resource_id = novaria::sim::command::kResourceWood,
+            .amount = 20,
+        }),
     });
     kernel.SubmitLocalCommand({
         .player_id = 1,
-        .command_type = std::string(novaria::sim::command::kGameplayCollectResource),
-        .payload = novaria::sim::command::BuildCollectResourcePayload(
-            novaria::sim::command::kResourceStone,
-            20),
+        .command_id = novaria::sim::command::kGameplayCollectResource,
+        .payload = novaria::sim::command::EncodeCollectResourcePayload({
+            .resource_id = novaria::sim::command::kResourceStone,
+            .amount = 20,
+        }),
     });
     kernel.SubmitLocalCommand({
         .player_id = 1,
-        .command_type = std::string(novaria::sim::command::kGameplayBuildWorkbench),
-        .payload = "",
+        .command_id = novaria::sim::command::kGameplayCraftRecipe,
+        .payload = novaria::sim::command::EncodeCraftRecipePayload({
+            .recipe_index = 0,
+        }),
     });
     kernel.SubmitLocalCommand({
         .player_id = 1,
-        .command_type = std::string(novaria::sim::command::kGameplayCraftSword),
-        .payload = "",
+        .command_id = novaria::sim::command::kGameplayCraftRecipe,
+        .payload = novaria::sim::command::EncodeCraftRecipePayload({
+            .recipe_index = 1,
+        }),
     });
     for (int index = 0; index < 3; ++index) {
         kernel.SubmitLocalCommand({
             .player_id = 1,
-            .command_type = std::string(novaria::sim::command::kGameplayAttackEnemy),
-            .payload = "",
+            .command_id = novaria::sim::command::kGameplayAttackEnemy,
+            .payload = {},
         });
     }
     for (int index = 0; index < 6; ++index) {
         kernel.SubmitLocalCommand({
             .player_id = 1,
-            .command_type = std::string(novaria::sim::command::kGameplayAttackBoss),
-            .payload = "",
+            .command_id = novaria::sim::command::kGameplayAttackBoss,
+            .payload = {},
         });
     }
 
@@ -1422,8 +1693,8 @@ bool TestGameplayLoopCommandsReachBossDefeat() {
     const novaria::sim::GameplayProgressSnapshot progress = kernel.GameplayProgress();
 
     passed &= Expect(
-        progress.wood_collected == 3 && progress.stone_collected == 20,
-        "Gameplay resources should deduct build and craft costs.");
+        progress.wood_collected == 20 && progress.stone_collected == 20,
+        "Gameplay resources should track collected totals.");
     passed &= Expect(progress.workbench_built, "Gameplay loop should build workbench.");
     passed &= Expect(progress.sword_crafted, "Gameplay loop should craft sword.");
     passed &= Expect(progress.enemy_kill_count == 3, "Gameplay loop should record three enemy kills.");
@@ -1472,23 +1743,29 @@ bool TestGameplayDropPickupAndInteractionDispatchScriptEvents() {
 
     kernel.SubmitLocalCommand({
         .player_id = 7,
-        .command_type = std::string(novaria::sim::command::kGameplaySpawnDrop),
-        .payload = novaria::sim::command::BuildSpawnDropPayload(2, -3, 2, 1),
+        .command_id = novaria::sim::command::kGameplaySpawnDrop,
+        .payload = novaria::sim::command::EncodeSpawnDropPayload({
+            .tile_x = 2,
+            .tile_y = -3,
+            .material_id = 2,
+            .amount = 1,
+        }),
     });
     kernel.SubmitLocalCommand({
         .player_id = 7,
-        .command_type = std::string(novaria::sim::command::kGameplayPickupProbe),
-        .payload = novaria::sim::command::BuildPickupProbePayload(2, -3),
+        .command_id = novaria::sim::command::kGameplayPickupProbe,
+        .payload = novaria::sim::command::EncodePickupProbePayload({.tile_x = 2, .tile_y = -3}),
     });
     kernel.SubmitLocalCommand({
         .player_id = 7,
-        .command_type = std::string(novaria::sim::command::kGameplayInteraction),
-        .payload = novaria::sim::command::BuildInteractionPayload(
-            novaria::sim::command::kInteractionTypeOpenCrafting,
-            2,
-            -3,
-            9,
-            novaria::sim::command::kInteractionResultSuccess),
+        .command_id = novaria::sim::command::kGameplayInteraction,
+        .payload = novaria::sim::command::EncodeInteractionPayload({
+            .interaction_type = novaria::sim::command::kInteractionTypeOpenCrafting,
+            .target_tile_x = 2,
+            .target_tile_y = -3,
+            .target_material_id = 9,
+            .result_code = novaria::sim::command::kInteractionResultSuccess,
+        }),
     });
     kernel.Update(1.0 / 60.0);
 
@@ -1570,6 +1847,8 @@ int main() {
     passed &= TestGameplayDropPickupAndInteractionDispatchScriptEvents();
     passed &= TestUpdateConsumesRemoteChunkPayloads();
     passed &= TestUpdateSkipsNetExchangeWhenSessionNotConnected();
+    passed &= TestAuthorityPublishesLoadedChunksAfterConnectionEstablished();
+    passed &= TestDirtyChunksRetainedUntilConnectionEstablished();
 
     if (!passed) {
         return 1;

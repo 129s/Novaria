@@ -1,14 +1,19 @@
 #include "app/player_controller.h"
 #include "app/render_scene_builder.h"
 #include "core/config.h"
-#include "net/net_service_runtime.h"
+#include "runtime/net_service_factory.h"
+#include "runtime/world_service_factory.h"
 #include "script/script_host.h"
+#include "script/sim_rules_rpc.h"
 #include "sim/simulation_kernel.h"
-#include "world/world_service_basic.h"
+#include "world/material_catalog.h"
 
+#include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <memory>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -22,6 +27,14 @@ bool Expect(bool condition, const char* message) {
 
 class IssueE2EScriptHost final : public novaria::script::IScriptHost {
 public:
+    bool SetScriptModules(
+        std::vector<novaria::script::ScriptModuleSource> module_sources,
+        std::string& out_error) override {
+        (void)module_sources;
+        out_error.clear();
+        return true;
+    }
+
     bool Initialize(std::string& out_error) override {
         out_error.clear();
         return true;
@@ -29,12 +42,136 @@ public:
 
     void Shutdown() override {}
 
-    void Tick(const novaria::sim::TickContext& tick_context) override {
+    void Tick(const novaria::core::TickContext& tick_context) override {
         (void)tick_context;
     }
 
     void DispatchEvent(const novaria::script::ScriptEvent& event_data) override {
         (void)event_data;
+    }
+
+    bool TryCallModuleFunction(
+        std::string_view module_name,
+        std::string_view function_name,
+        novaria::wire::ByteSpan request_payload,
+        novaria::wire::ByteBuffer& out_response_payload,
+        std::string& out_error) override {
+        (void)module_name;
+        (void)function_name;
+        out_response_payload.clear();
+        const novaria::wire::ByteSpan request_bytes = request_payload;
+
+        if (novaria::script::simrpc::TryDecodeValidateRequest(request_bytes)) {
+            const novaria::wire::ByteBuffer response_bytes =
+                novaria::script::simrpc::EncodeValidateResponse(true);
+            out_response_payload = response_bytes;
+            out_error.clear();
+            return true;
+        }
+
+        novaria::script::simrpc::ActionPrimaryRequest action_request{};
+        if (novaria::script::simrpc::TryDecodeActionPrimaryRequest(request_bytes, action_request)) {
+            novaria::script::simrpc::ActionPrimaryResult result =
+                novaria::script::simrpc::ActionPrimaryResult::Reject;
+            novaria::script::simrpc::PlaceKind place_kind =
+                novaria::script::simrpc::PlaceKind::None;
+            std::uint32_t required_ticks = 0;
+
+            if (action_request.hotbar_row == 0 &&
+                action_request.hotbar_slot == 0 &&
+                action_request.has_pickaxe_tool &&
+                action_request.harvestable_by_pickaxe &&
+                action_request.harvest_ticks > 0) {
+                result = novaria::script::simrpc::ActionPrimaryResult::Harvest;
+                required_ticks = action_request.harvest_ticks;
+            } else if (action_request.hotbar_row == 0 &&
+                action_request.hotbar_slot == 1 &&
+                action_request.has_axe_tool &&
+                action_request.harvestable_by_axe &&
+                action_request.harvest_ticks > 0) {
+                result = novaria::script::simrpc::ActionPrimaryResult::Harvest;
+                required_ticks = action_request.harvest_ticks;
+            } else if (action_request.hotbar_row == 0 &&
+                action_request.hotbar_slot == 6 &&
+                action_request.wood_sword_count > 0 &&
+                action_request.harvestable_by_sword &&
+                action_request.harvest_ticks > 0) {
+                result = novaria::script::simrpc::ActionPrimaryResult::Harvest;
+                required_ticks = action_request.harvest_ticks + 10;
+            } else if (action_request.hotbar_row == 0 &&
+                action_request.hotbar_slot == 2 &&
+                action_request.target_is_air &&
+                action_request.dirt_count > 0) {
+                result = novaria::script::simrpc::ActionPrimaryResult::Place;
+                place_kind = novaria::script::simrpc::PlaceKind::Dirt;
+                required_ticks = 8;
+            } else if (action_request.hotbar_row == 0 &&
+                action_request.hotbar_slot == 3 &&
+                action_request.target_is_air &&
+                action_request.stone_count > 0) {
+                result = novaria::script::simrpc::ActionPrimaryResult::Place;
+                place_kind = novaria::script::simrpc::PlaceKind::Stone;
+                required_ticks = 8;
+            } else if (action_request.hotbar_row == 0 &&
+                action_request.hotbar_slot == 4 &&
+                action_request.target_is_air &&
+                action_request.torch_count > 0) {
+                result = novaria::script::simrpc::ActionPrimaryResult::Place;
+                place_kind = novaria::script::simrpc::PlaceKind::Torch;
+                required_ticks = 8;
+            } else if (action_request.hotbar_row == 0 &&
+                action_request.hotbar_slot == 5 &&
+                action_request.target_is_air &&
+                action_request.workbench_count > 0) {
+                result = novaria::script::simrpc::ActionPrimaryResult::Place;
+                place_kind = novaria::script::simrpc::PlaceKind::Workbench;
+                required_ticks = 8;
+            }
+
+            const novaria::wire::ByteBuffer response_bytes =
+                novaria::script::simrpc::EncodeActionPrimaryResponse(result, place_kind, required_ticks);
+            out_response_payload = response_bytes;
+            out_error.clear();
+            return true;
+        }
+
+        novaria::script::simrpc::CraftRecipeRequest craft_request{};
+        if (novaria::script::simrpc::TryDecodeCraftRecipeRequest(request_bytes, craft_request)) {
+            novaria::script::simrpc::CraftRecipeResponse response{};
+
+            if (craft_request.recipe_index == 0 && craft_request.wood_count >= 3) {
+                response.result = novaria::script::simrpc::CraftRecipeResult::Craft;
+                response.wood_delta = -3;
+                response.workbench_delta = 1;
+                response.crafted_kind = novaria::script::simrpc::CraftedKind::Workbench;
+                response.mark_workbench_built = true;
+            } else if (craft_request.recipe_index == 1 &&
+                craft_request.wood_count >= 7 &&
+                craft_request.workbench_reachable) {
+                response.result = novaria::script::simrpc::CraftRecipeResult::Craft;
+                response.wood_delta = -7;
+                response.wood_sword_delta = 1;
+                response.mark_sword_crafted = true;
+            } else if (craft_request.recipe_index == 2 &&
+                craft_request.wood_count >= 1 &&
+                craft_request.coal_count >= 1) {
+                response.result = novaria::script::simrpc::CraftRecipeResult::Craft;
+                response.wood_delta = -1;
+                response.coal_delta = -1;
+                response.torch_delta = 4;
+                response.crafted_kind = novaria::script::simrpc::CraftedKind::Torch;
+            }
+
+            const novaria::wire::ByteBuffer response_bytes =
+                novaria::script::simrpc::EncodeCraftRecipeResponse(response);
+            out_response_payload = response_bytes;
+            out_error.clear();
+            return true;
+        }
+
+        out_response_payload.clear();
+        out_error = "issue e2e fake script host received unknown simrpc payload";
+        return false;
     }
 
     novaria::script::ScriptRuntimeDescriptor RuntimeDescriptor() const override {
@@ -69,22 +206,31 @@ void ClearEdgeTriggers(novaria::app::PlayerInputIntent& input) {
 void TickOnce(
     novaria::app::PlayerController& controller,
     const novaria::app::PlayerInputIntent& input,
-    novaria::world::WorldServiceBasic& world,
+    novaria::world::IWorldService& world,
     novaria::sim::SimulationKernel& kernel) {
     controller.Update(input, world, kernel, 1);
     kernel.Update(1.0 / 60.0);
+    controller.SyncFromSimulation(kernel);
 }
 
 void TickRepeat(
     novaria::app::PlayerController& controller,
     novaria::app::PlayerInputIntent input,
-    novaria::world::WorldServiceBasic& world,
+    novaria::world::IWorldService& world,
     novaria::sim::SimulationKernel& kernel,
     int ticks) {
     for (int index = 0; index < ticks; ++index) {
         TickOnce(controller, input, world, kernel);
         ClearEdgeTriggers(input);
     }
+}
+
+void StabilizeController(
+    novaria::app::PlayerController& controller,
+    novaria::world::IWorldService& world,
+    novaria::sim::SimulationKernel& kernel,
+    int ticks) {
+    TickRepeat(controller, novaria::app::PlayerInputIntent{}, world, kernel, ticks);
 }
 
 void AimAtTile(
@@ -96,23 +242,24 @@ void AimAtTile(
     input.cursor_valid = true;
     input.viewport_width = 640;
     input.viewport_height = 480;
-    const int view_tiles_x = input.viewport_width / kTilePixelSize;
-    const int view_tiles_y = input.viewport_height / kTilePixelSize;
-    const int first_world_tile_x = state.tile_x - view_tiles_x / 2;
-    const int first_world_tile_y = state.tile_y - view_tiles_y / 2;
-    input.cursor_screen_x = (target_tile_x - first_world_tile_x) * kTilePixelSize;
-    input.cursor_screen_y = (target_tile_y - first_world_tile_y) * kTilePixelSize;
+    const float target_world_x = static_cast<float>(target_tile_x) + 0.5F;
+    const float target_world_y = static_cast<float>(target_tile_y) + 0.5F;
+    const float half_view_px_x = static_cast<float>(input.viewport_width) * 0.5F;
+    const float half_view_px_y = static_cast<float>(input.viewport_height) * 0.5F;
+    input.cursor_screen_x = static_cast<int>(std::round(
+        half_view_px_x + (target_world_x - state.position_x) * kTilePixelSize));
+    input.cursor_screen_y = static_cast<int>(std::round(
+        half_view_px_y + (target_world_y - state.position_y) * kTilePixelSize));
 }
 
 bool BuildKernel(
-    novaria::world::WorldServiceBasic& world,
-    novaria::net::NetServiceRuntime& net,
+    novaria::world::IWorldService& world,
+    novaria::net::INetService& net,
     IssueE2EScriptHost& script,
     novaria::sim::SimulationKernel& kernel) {
+    (void)net;
     (void)script;
     std::string error;
-    net.SetBackendPreference(novaria::net::NetBackendPreference::UdpLoopback);
-    net.ConfigureUdpBackend(0, {.host = "127.0.0.1", .port = 0});
     if (!kernel.Initialize(error)) {
         std::cerr << "[FAIL] kernel initialize failed: " << error << '\n';
         return false;
@@ -127,24 +274,29 @@ bool BuildKernel(
 
 void GrantPickupMaterial(
     novaria::app::PlayerController& controller,
-    novaria::world::WorldServiceBasic& world,
+    novaria::world::IWorldService& world,
     novaria::sim::SimulationKernel& kernel,
     std::uint16_t material_id,
     std::uint32_t amount) {
+    StabilizeController(controller, world, kernel, 30);
     const novaria::app::LocalPlayerState state = controller.State();
     kernel.SubmitLocalCommand({
         .player_id = 1,
-        .command_type = std::string(novaria::sim::command::kGameplaySpawnDrop),
-        .payload = novaria::sim::command::BuildSpawnDropPayload(
-            state.tile_x,
-            state.tile_y,
-            material_id,
-            amount),
+        .command_id = novaria::sim::command::kGameplaySpawnDrop,
+        .payload = novaria::sim::command::EncodeSpawnDropPayload({
+            .tile_x = state.tile_x,
+            .tile_y = state.tile_y,
+            .material_id = material_id,
+            .amount = amount,
+        }),
     });
     kernel.SubmitLocalCommand({
         .player_id = 1,
-        .command_type = std::string(novaria::sim::command::kGameplayPickupProbe),
-        .payload = novaria::sim::command::BuildPickupProbePayload(state.tile_x, state.tile_y),
+        .command_id = novaria::sim::command::kGameplayPickupProbe,
+        .payload = novaria::sim::command::EncodePickupProbePayload({
+            .tile_x = state.tile_x,
+            .tile_y = state.tile_y,
+        }),
     });
     kernel.Update(1.0 / 60.0);
     TickOnce(controller, novaria::app::PlayerInputIntent{}, world, kernel);
@@ -167,16 +319,22 @@ bool TryReadLightLevel(
 
 bool TestToolGateDropPickupAndReach() {
     bool passed = true;
-    novaria::world::WorldServiceBasic world;
-    novaria::net::NetServiceRuntime net;
+    std::unique_ptr<novaria::world::IWorldService> world = novaria::runtime::CreateWorldService();
+    passed &= Expect(world != nullptr, "World service factory should not return null.");
+    auto net = novaria::runtime::CreateNetService(novaria::runtime::NetServiceConfig{
+        .local_host = "127.0.0.1",
+        .local_port = 0,
+        .remote_endpoint = {.host = "127.0.0.1", .port = 0},
+    });
     IssueE2EScriptHost script;
-    novaria::sim::SimulationKernel kernel(world, net, script);
-    if (!BuildKernel(world, net, script, kernel)) {
+    novaria::sim::SimulationKernel kernel(*world, *net, script);
+    if (!BuildKernel(*world, *net, script, kernel)) {
         return false;
     }
 
     novaria::app::PlayerController controller;
     controller.Reset();
+    StabilizeController(controller, *world, kernel, 30);
 
     const novaria::app::LocalPlayerState initial_state = controller.State();
     const int near_tile_x = initial_state.tile_x + 1;
@@ -185,35 +343,37 @@ bool TestToolGateDropPickupAndReach() {
     std::string error;
 
     passed &= Expect(
-        world.ApplyTileMutation(
-            {.tile_x = near_tile_x, .tile_y = target_tile_y, .material_id = novaria::world::WorldServiceBasic::kMaterialWood},
+        world->ApplyTileMutation(
+            {.tile_x = near_tile_x, .tile_y = target_tile_y, .material_id = novaria::world::material::kWood},
             error),
         "Near wood mutation should succeed.");
     passed &= Expect(
-        world.ApplyTileMutation(
-            {.tile_x = far_tile_x, .tile_y = target_tile_y, .material_id = novaria::world::WorldServiceBasic::kMaterialStone},
+        world->ApplyTileMutation(
+            {.tile_x = far_tile_x, .tile_y = target_tile_y, .material_id = novaria::world::material::kStone},
             error),
         "Far stone mutation should succeed.");
 
     novaria::app::PlayerInputIntent mine_wood_with_pickaxe{};
     mine_wood_with_pickaxe.action_primary_held = true;
-    TickRepeat(controller, mine_wood_with_pickaxe, world, kernel, 20);
+    AimAtTile(controller.State(), near_tile_x, target_tile_y, mine_wood_with_pickaxe);
+    TickRepeat(controller, mine_wood_with_pickaxe, *world, kernel, 20);
 
     std::uint16_t near_material = 0;
     passed &= Expect(
-        world.TryReadTile(near_tile_x, target_tile_y, near_material) &&
-            near_material == novaria::world::WorldServiceBasic::kMaterialWood,
+        world->TryReadTile(near_tile_x, target_tile_y, near_material) &&
+            near_material == novaria::world::material::kWood,
         "Pickaxe should not harvest wood target.");
 
     novaria::app::PlayerInputIntent select_axe{};
     select_axe.hotbar_select_slot_2 = true;
-    TickOnce(controller, select_axe, world, kernel);
+    TickOnce(controller, select_axe, *world, kernel);
     novaria::app::PlayerInputIntent chop_wood{};
     chop_wood.action_primary_held = true;
-    TickRepeat(controller, chop_wood, world, kernel, 16);
+    AimAtTile(controller.State(), near_tile_x, target_tile_y, chop_wood);
+    TickRepeat(controller, chop_wood, *world, kernel, 16);
     passed &= Expect(
-        world.TryReadTile(near_tile_x, target_tile_y, near_material) &&
-            near_material == novaria::world::WorldServiceBasic::kMaterialAir,
+        world->TryReadTile(near_tile_x, target_tile_y, near_material) &&
+            near_material == novaria::world::material::kAir,
         "Axe should harvest wood target.");
     passed &= Expect(
         controller.State().inventory_wood_count == 0,
@@ -221,8 +381,8 @@ bool TestToolGateDropPickupAndReach() {
 
     novaria::app::PlayerInputIntent move_right{};
     move_right.move_right = true;
-    TickOnce(controller, move_right, world, kernel);
-    TickOnce(controller, novaria::app::PlayerInputIntent{}, world, kernel);
+    TickRepeat(controller, move_right, *world, kernel, 36);
+    TickOnce(controller, novaria::app::PlayerInputIntent{}, *world, kernel);
     passed &= Expect(
         controller.State().inventory_wood_count >= 1,
         "Move contact should resolve world drop pickup.");
@@ -230,12 +390,12 @@ bool TestToolGateDropPickupAndReach() {
     novaria::app::PlayerInputIntent far_mine{};
     far_mine.action_primary_held = true;
     AimAtTile(controller.State(), far_tile_x, target_tile_y, far_mine);
-    TickRepeat(controller, far_mine, world, kernel, 30);
+    TickRepeat(controller, far_mine, *world, kernel, 30);
 
     std::uint16_t far_material = 0;
     passed &= Expect(
-        world.TryReadTile(far_tile_x, target_tile_y, far_material) &&
-            far_material == novaria::world::WorldServiceBasic::kMaterialStone,
+        world->TryReadTile(far_tile_x, target_tile_y, far_material) &&
+            far_material == novaria::world::material::kStone,
         "Out-of-reach target should remain unmined.");
 
     kernel.Shutdown();
@@ -244,23 +404,29 @@ bool TestToolGateDropPickupAndReach() {
 
 bool TestWorkbenchReachGateForSwordRecipe() {
     bool passed = true;
-    novaria::world::WorldServiceBasic world;
-    novaria::net::NetServiceRuntime net;
+    std::unique_ptr<novaria::world::IWorldService> world = novaria::runtime::CreateWorldService();
+    passed &= Expect(world != nullptr, "World service factory should not return null.");
+    auto net = novaria::runtime::CreateNetService(novaria::runtime::NetServiceConfig{
+        .local_host = "127.0.0.1",
+        .local_port = 0,
+        .remote_endpoint = {.host = "127.0.0.1", .port = 0},
+    });
     IssueE2EScriptHost script;
-    novaria::sim::SimulationKernel kernel(world, net, script);
-    if (!BuildKernel(world, net, script, kernel)) {
+    novaria::sim::SimulationKernel kernel(*world, *net, script);
+    if (!BuildKernel(*world, *net, script, kernel)) {
         return false;
     }
 
     novaria::app::PlayerController controller;
     controller.Reset();
+    StabilizeController(controller, *world, kernel, 30);
     std::string error;
 
     GrantPickupMaterial(
         controller,
-        world,
+        *world,
         kernel,
-        novaria::world::WorldServiceBasic::kMaterialWood,
+        novaria::world::material::kWood,
         8);
 
     passed &= Expect(
@@ -272,32 +438,32 @@ bool TestWorkbenchReachGateForSwordRecipe() {
     const int near_workbench_x = recipe_state.tile_x + 1;
     const int workbench_y = recipe_state.tile_y;
     passed &= Expect(
-        world.ApplyTileMutation(
-            {.tile_x = far_workbench_x, .tile_y = workbench_y, .material_id = novaria::world::WorldServiceBasic::kMaterialWorkbench},
+        world->ApplyTileMutation(
+            {.tile_x = far_workbench_x, .tile_y = workbench_y, .material_id = novaria::world::material::kWorkbench},
             error),
         "Far workbench mutation should succeed.");
 
     novaria::app::PlayerInputIntent open_inventory{};
     open_inventory.ui_inventory_toggle_pressed = true;
-    TickOnce(controller, open_inventory, world, kernel);
+    TickOnce(controller, open_inventory, *world, kernel);
     novaria::app::PlayerInputIntent select_sword_recipe{};
     select_sword_recipe.hotbar_select_slot_2 = true;
-    TickOnce(controller, select_sword_recipe, world, kernel);
+    TickOnce(controller, select_sword_recipe, *world, kernel);
     novaria::app::PlayerInputIntent craft_sword_far{};
     craft_sword_far.interaction_primary_pressed = true;
-    TickOnce(controller, craft_sword_far, world, kernel);
+    TickOnce(controller, craft_sword_far, *world, kernel);
     passed &= Expect(
         controller.State().inventory_wood_sword_count == 0,
         "Sword recipe should fail when workbench is out of reach.");
 
     passed &= Expect(
-        world.ApplyTileMutation(
-            {.tile_x = near_workbench_x, .tile_y = workbench_y, .material_id = novaria::world::WorldServiceBasic::kMaterialWorkbench},
+        world->ApplyTileMutation(
+            {.tile_x = near_workbench_x, .tile_y = workbench_y, .material_id = novaria::world::material::kWorkbench},
             error),
         "Near workbench mutation should succeed.");
     novaria::app::PlayerInputIntent craft_sword_near{};
     craft_sword_near.interaction_primary_pressed = true;
-    TickOnce(controller, craft_sword_near, world, kernel);
+    TickOnce(controller, craft_sword_near, *world, kernel);
     passed &= Expect(
         controller.State().inventory_wood_sword_count >= 1,
         "Sword recipe should pass when workbench is reachable.");
@@ -308,29 +474,35 @@ bool TestWorkbenchReachGateForSwordRecipe() {
 
 bool TestTorchCraftPlaceAndLighting() {
     bool passed = true;
-    novaria::world::WorldServiceBasic world;
-    novaria::net::NetServiceRuntime net;
+    std::unique_ptr<novaria::world::IWorldService> world = novaria::runtime::CreateWorldService();
+    passed &= Expect(world != nullptr, "World service factory should not return null.");
+    auto net = novaria::runtime::CreateNetService(novaria::runtime::NetServiceConfig{
+        .local_host = "127.0.0.1",
+        .local_port = 0,
+        .remote_endpoint = {.host = "127.0.0.1", .port = 0},
+    });
     IssueE2EScriptHost script;
-    novaria::sim::SimulationKernel kernel(world, net, script);
-    if (!BuildKernel(world, net, script, kernel)) {
+    novaria::sim::SimulationKernel kernel(*world, *net, script);
+    if (!BuildKernel(*world, *net, script, kernel)) {
         return false;
     }
 
     novaria::app::PlayerController controller;
     controller.Reset();
+    StabilizeController(controller, *world, kernel, 30);
     std::string error;
 
     GrantPickupMaterial(
         controller,
-        world,
+        *world,
         kernel,
-        novaria::world::WorldServiceBasic::kMaterialWood,
+        novaria::world::material::kWood,
         2);
     GrantPickupMaterial(
         controller,
-        world,
+        *world,
         kernel,
-        novaria::world::WorldServiceBasic::kMaterialCoalOre,
+        novaria::world::material::kCoalOre,
         1);
 
     novaria::app::LocalPlayerState state = controller.State();
@@ -344,37 +516,37 @@ bool TestTorchCraftPlaceAndLighting() {
 
     novaria::app::PlayerInputIntent open_inventory{};
     open_inventory.ui_inventory_toggle_pressed = true;
-    TickOnce(controller, open_inventory, world, kernel);
+    TickOnce(controller, open_inventory, *world, kernel);
     novaria::app::PlayerInputIntent select_torch_recipe{};
     select_torch_recipe.hotbar_select_slot_3 = true;
-    TickOnce(controller, select_torch_recipe, world, kernel);
+    TickOnce(controller, select_torch_recipe, *world, kernel);
     novaria::app::PlayerInputIntent craft_torch{};
     craft_torch.interaction_primary_pressed = true;
-    TickOnce(controller, craft_torch, world, kernel);
+    TickOnce(controller, craft_torch, *world, kernel);
     passed &= Expect(
         controller.State().inventory_torch_count >= 4,
         "Torch recipe should produce torches.");
 
-    TickOnce(controller, open_inventory, world, kernel);
+    TickOnce(controller, open_inventory, *world, kernel);
     novaria::app::PlayerInputIntent select_torch_slot{};
     select_torch_slot.hotbar_select_slot_5 = true;
-    TickOnce(controller, select_torch_slot, world, kernel);
+    TickOnce(controller, select_torch_slot, *world, kernel);
     state = controller.State();
     target_x = state.tile_x + 1;
     target_y = state.tile_y;
     passed &= Expect(
-        world.ApplyTileMutation(
-            {.tile_x = target_x, .tile_y = target_y, .material_id = novaria::world::WorldServiceBasic::kMaterialAir},
+        world->ApplyTileMutation(
+            {.tile_x = target_x, .tile_y = target_y, .material_id = novaria::world::material::kAir},
             error),
         "Torch placement target should be forced to air.");
     novaria::app::PlayerInputIntent place_torch{};
     place_torch.action_primary_held = true;
-    TickRepeat(controller, place_torch, world, kernel, 10);
+    TickRepeat(controller, place_torch, *world, kernel, 10);
 
     std::uint16_t placed_material = 0;
     passed &= Expect(
-        world.TryReadTile(target_x, target_y, placed_material) &&
-            placed_material == novaria::world::WorldServiceBasic::kMaterialTorch,
+        world->TryReadTile(target_x, target_y, placed_material) &&
+            placed_material == novaria::world::material::kTorch,
         "Torch should be placed as world tile.");
     passed &= Expect(
         controller.State().inventory_torch_count <= 3,
@@ -386,8 +558,9 @@ bool TestTorchCraftPlaceAndLighting() {
     config.window_height = 480;
     const novaria::platform::RenderScene scene = render_scene_builder.Build(
         controller.State(),
-        config,
-        world,
+        config.window_width,
+        config.window_height,
+        *world,
         0.0F);
     std::uint8_t torch_light = 0;
     std::uint8_t far_light = 0;
@@ -408,55 +581,61 @@ bool TestTorchCraftPlaceAndLighting() {
 
 bool TestSmartModeAndHotbarRowCycle() {
     bool passed = true;
-    novaria::world::WorldServiceBasic world;
-    novaria::net::NetServiceRuntime net;
+    std::unique_ptr<novaria::world::IWorldService> world = novaria::runtime::CreateWorldService();
+    passed &= Expect(world != nullptr, "World service factory should not return null.");
+    auto net = novaria::runtime::CreateNetService(novaria::runtime::NetServiceConfig{
+        .local_host = "127.0.0.1",
+        .local_port = 0,
+        .remote_endpoint = {.host = "127.0.0.1", .port = 0},
+    });
     IssueE2EScriptHost script;
-    novaria::sim::SimulationKernel kernel(world, net, script);
-    if (!BuildKernel(world, net, script, kernel)) {
+    novaria::sim::SimulationKernel kernel(*world, *net, script);
+    if (!BuildKernel(*world, *net, script, kernel)) {
         return false;
     }
 
     novaria::app::PlayerController controller;
     controller.Reset();
+    StabilizeController(controller, *world, kernel, 10);
     std::string error;
 
     const novaria::app::LocalPlayerState start_state = controller.State();
     const int target_x = start_state.tile_x + 1;
     const int target_y = start_state.tile_y;
     passed &= Expect(
-        world.ApplyTileMutation(
-            {.tile_x = target_x, .tile_y = target_y, .material_id = novaria::world::WorldServiceBasic::kMaterialStone},
+        world->ApplyTileMutation(
+            {.tile_x = target_x, .tile_y = target_y, .material_id = novaria::world::material::kStone},
             error),
         "Stone mutation for smart-mode test should succeed.");
 
     novaria::app::PlayerInputIntent tab_row{};
     tab_row.hotbar_select_next_row = true;
-    TickOnce(controller, tab_row, world, kernel);
+    TickOnce(controller, tab_row, *world, kernel);
     passed &= Expect(
         controller.State().active_hotbar_row == 1,
         "Tab should cycle active hotbar row forward.");
-    TickOnce(controller, tab_row, world, kernel);
+    TickOnce(controller, tab_row, *world, kernel);
     passed &= Expect(
         controller.State().active_hotbar_row == 0,
         "Hotbar row cycle should wrap around.");
 
     novaria::app::PlayerInputIntent select_slot_four{};
     select_slot_four.hotbar_select_slot_4 = true;
-    TickOnce(controller, select_slot_four, world, kernel);
+    TickOnce(controller, select_slot_four, *world, kernel);
     passed &= Expect(
         controller.State().selected_hotbar_slot == 3,
         "Slot shortcut should select expected hotbar slot.");
 
     novaria::app::PlayerInputIntent toggle_smart{};
     toggle_smart.smart_mode_toggle_pressed = true;
-    TickOnce(controller, toggle_smart, world, kernel);
+    TickOnce(controller, toggle_smart, *world, kernel);
     passed &= Expect(
         controller.State().smart_mode_enabled,
         "Ctrl toggle should enable smart mode.");
 
     novaria::app::PlayerInputIntent hold_shift{};
     hold_shift.smart_context_held = true;
-    TickOnce(controller, hold_shift, world, kernel);
+    TickOnce(controller, hold_shift, *world, kernel);
     passed &= Expect(
         controller.State().context_slot_visible,
         "Hold Shift should expose context slot.");
@@ -464,7 +643,7 @@ bool TestSmartModeAndHotbarRowCycle() {
         controller.State().context_slot_current == 0,
         "Smart context should suggest pickaxe slot for stone target.");
 
-    TickOnce(controller, novaria::app::PlayerInputIntent{}, world, kernel);
+    TickOnce(controller, novaria::app::PlayerInputIntent{}, *world, kernel);
     passed &= Expect(
         !controller.State().context_slot_visible &&
             controller.State().selected_hotbar_slot == 3,
